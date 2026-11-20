@@ -1,55 +1,79 @@
-import { Camera, CheckCircle2, HelpCircle, PhoneCall, Smartphone } from 'lucide-react';
+import { Camera, CheckCircle2, Info, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
-import { Button, Card, PageHeader, Sheet } from '@/components/ui';
-import { useApp } from '@/store/useApp';
-import QrCode from './QrCode';
-import RecipePhoto from './RecipePhoto';
-import RecipeReview from './RecipeReview';
+import { Alert, Button, Campo, Card, Chip, PageHeader, claseInput } from '@/components/ui';
+import { api, ApiError } from '@/lib/api';
+import { fecha, hora } from '@/lib/format';
+import type { Recipe } from '@/lib/tipos';
+import { avisar } from '@/store/avisos';
 
+/** El cajero toma la foto del récipe; queda en «Por revisar» para el farmacéutico. */
 export default function RecipePage() {
-  const rx = useApp((s) => s.recipes[0]!);
-  const [foto, setFoto] = useState<string | undefined>();
-  const [qr, setQr] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [cedula, setCedula] = useState('');
+  const [foto, setFoto] = useState<File | null>(null);
+  const [vista, setVista] = useState<string | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  const [enviados, setEnviados] = useState<Recipe[]>([]);
+  const input = useRef<HTMLInputElement>(null);
+
+  const elegir = (f: File | undefined) => {
+    if (!f) return;
+    setFoto(f);
+    setVista(URL.createObjectURL(f));
+  };
 
   return (
-    <div className="flex flex-col gap-4">
-      <PageHeader
-        title="Récipe"
-        subtitle="La app lee el nombre de los medicamentos. Tú confirmas antes de vender."
-        actions={
-          <>
-            <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) setFoto(URL.createObjectURL(f)); }} />
-            {/* En PC: foto con el teléfono por QR. En teléfono/tablet: cámara directa. */}
-            <Button size="lg" variant="primary" className="xl:hidden" icon={<Camera className="h-5 w-5" />} onClick={() => fileRef.current?.click()}>Tomar foto</Button>
-            <Button size="lg" variant="primary" className="hidden xl:inline-flex" icon={<Smartphone className="h-5 w-5" />} onClick={() => setQr(true)}>Tomar foto con el teléfono</Button>
-          </>
-        }
-      />
-      <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-xl bg-surface p-3 text-sm">
-        <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-ok" /><b>Listo:</b> se leyó bien</span>
-        <span className="flex items-center gap-1.5"><HelpCircle className="h-4 w-4 text-warn" /><b>Pregúntale al cliente:</b> la letra no es clara</span>
-        <span className="flex items-center gap-1.5"><PhoneCall className="h-4 w-4 text-bad" /><b>Llama al farmacéutico:</b> puede ser peligroso</span>
-      </div>
-      <div className="grid gap-4 md:grid-cols-[minmax(0,.8fr)_minmax(0,1.2fr)]">
-        <Card className="self-start">
-          <RecipePhoto src={foto} medico={rx.medico} especialidad={rx.especialidad} />
-          <p className="text-sm text-muted">{rx.medico} · {rx.especialidad}</p>
-        </Card>
-        <RecipeReview rx={rx} />
-      </div>
-
-      <Sheet open={qr} onClose={() => setQr(false)} title="Toma la foto con tu teléfono">
-        <div className="flex flex-col items-center gap-4 text-center">
-          <QrCode size={220} />
-          <ol className="flex flex-col gap-2 text-left text-base">
-            <li><b>1.</b> Abre la cámara de tu teléfono.</li>
-            <li><b>2.</b> Apunta a este código.</li>
-            <li><b>3.</b> Toma la foto del récipe. Aparece aquí sola.</li>
-          </ol>
-          <p className="text-sm text-muted">Esperando la foto…</p>
+    <div className="flex max-w-3xl flex-col gap-4">
+      <PageHeader title="Récipe" subtitle="Toma la foto del récipe. El farmacéutico lo revisa antes de vender." />
+      <Alert tone="info" icon={<Info className="mt-0.5 h-4 w-4 shrink-0" />}>
+        La lectura automática con IA llega en la siguiente fase. Por ahora el farmacéutico ve la foto y la aprueba.
+      </Alert>
+      <Card>
+        <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" className="hidden" onChange={(e) => elegir(e.target.files?.[0])} />
+        {vista ? (
+          <img src={vista} alt="Foto del récipe" className="max-h-[420px] w-full rounded-lg bg-surface2 object-contain" />
+        ) : (
+          <button onClick={() => input.current?.click()} className="flex h-56 flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-line text-muted hover:border-accent hover:text-accent">
+            <Camera className="h-10 w-10" />
+            <span className="font-semibold">Tomar o elegir foto</span>
+            <span className="text-xs">JPG, PNG o WEBP, hasta 5 MB</span>
+          </button>
+        )}
+        <Campo etiqueta="Cédula del cliente" ayuda="Así el récipe queda en su ficha y sirve para la venta">
+          <input id="rx-cedula" value={cedula} onChange={(e) => setCedula(e.target.value)} inputMode="numeric" placeholder="V-14582307" className={claseInput} />
+        </Campo>
+        <div className="flex flex-wrap gap-2">
+          {vista && <Button icon={<Upload className="h-4 w-4" />} onClick={() => input.current?.click()}>Otra foto</Button>}
+          <Button variant="primary" size="lg" disabled={!foto || enviando} onClick={async () => {
+            const form = new FormData();
+            form.append('foto', foto!);
+            if (cedula.trim()) form.append('cedula', cedula.trim());
+            setEnviando(true);
+            try {
+              const r = await api<Recipe>('/recipes', { form });
+              setEnviados((x) => [r, ...x]);
+              setFoto(null); setVista(null); setCedula('');
+              avisar('Récipe enviado al farmacéutico', 'ok');
+            } catch (e) {
+              avisar(e instanceof ApiError ? e.message : 'No se pudo enviar', 'bad');
+            } finally {
+              setEnviando(false);
+            }
+          }}>{enviando ? 'Enviando…' : 'Enviar al farmacéutico'}</Button>
         </div>
-      </Sheet>
+      </Card>
+      {enviados.length > 0 && (
+        <Card>
+          <h2 className="text-base font-bold">Enviados en esta sesión</h2>
+          <ul className="flex flex-col gap-2 text-sm">
+            {enviados.map((r) => (
+              <li key={r.id} className="flex items-center justify-between gap-2">
+                <span>{r.cedula ?? 'Sin cédula'} · {fecha(r.creadoEn)} {hora(r.creadoEn)}</span>
+                <Chip tone="ok" icon={<CheckCircle2 className="h-3 w-3" />}>Enviado</Chip>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
     </div>
   );
 }

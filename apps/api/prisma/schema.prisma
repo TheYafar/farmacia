@@ -33,6 +33,7 @@ model Usuario {
   sesiones        Sesion[]
   ventas          Venta[]         @relation("CajeroVenta")
   autorizaciones  Autorizacion[]  @relation("RegenteAutoriza")
+  solicitudes     Autorizacion[]  @relation("SolicitaAutorizacion")
   recipesCreados  Recipe[]        @relation("RecipeCreadoPor")
   recipesValidados Recipe[]       @relation("RecipeValidadoPor")
   tasas           TasaCambio[]
@@ -220,21 +221,37 @@ model Recipe {
   @@index([estado, creadoEn])
 }
 
-/// Permiso de un Regente para vender un producto delicado a un paciente. Se usa una sola vez y vence.
+enum EstadoAutorizacion {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
+}
+
+/// Permiso de un Regente para vender un producto delicado a un paciente.
+/// El cajero lo pide (PENDIENTE) o el Regente lo da directo (APROBADA). Se usa una sola vez y vence.
 model Autorizacion {
-  id         String    @id @default(uuid()) @db.Uuid
-  cedula     String
-  paciente   Paciente  @relation(fields: [cedula], references: [cedula])
-  productoId String    @db.Uuid
-  producto   Producto  @relation(fields: [productoId], references: [id])
-  regenteId  String    @db.Uuid
-  regente    Usuario   @relation("RegenteAutoriza", fields: [regenteId], references: [id])
-  motivo     String
-  expira     DateTime
-  usadaEn    DateTime?
-  creadaEn   DateTime  @default(now())
+  id              String             @id @default(uuid()) @db.Uuid
+  cedula          String
+  paciente        Paciente           @relation(fields: [cedula], references: [cedula])
+  productoId      String             @db.Uuid
+  producto        Producto           @relation(fields: [productoId], references: [id])
+  estado          EstadoAutorizacion @default(PENDIENTE)
+  /// Qué necesita revisión: ALERGIA o CONTROLADO.
+  razon           String?
+  solicitadaPorId String?            @db.Uuid
+  solicitadaPor   Usuario?           @relation("SolicitaAutorizacion", fields: [solicitadaPorId], references: [id])
+  regenteId       String?            @db.Uuid
+  regente         Usuario?           @relation("RegenteAutoriza", fields: [regenteId], references: [id])
+  motivo          String?
+  respondidaEn    DateTime?
+  expira          DateTime?
+  usadaEn         DateTime?
+  creadaEn        DateTime           @default(now())
 
   lineas VentaLinea[]
+
+  @@index([estado, creadaEn])
+  @@index([cedula, productoId, estado])
 }
 
 // ---------- Ventas ----------

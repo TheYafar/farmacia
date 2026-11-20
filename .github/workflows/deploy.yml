@@ -3,7 +3,7 @@ name: Publicar demo en GitHub Pages
 on:
   push:
     branches: [main]
-    paths: ['apps/web/**', 'packages/shared/**', '.github/workflows/deploy.yml']
+    paths: ['apps/demo/**', '.github/workflows/deploy.yml']
   workflow_dispatch:
 
 permissions:
@@ -29,7 +29,7 @@ jobs:
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: apps/web/dist
+          path: apps/demo/dist
 
   deploy:
     needs: build

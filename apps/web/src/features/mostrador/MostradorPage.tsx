@@ -1,23 +1,43 @@
 import { ScanBarcode, Search } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Card, EmptyState, SearchInput, Sheet } from '@/components/ui';
-import { buscar } from '@/data/catalog';
-import { productos } from '@/data/mock';
-import { useApp } from '@/store/useApp';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Card, Cargando, EmptyState, ErrorCarga, SearchInput, Sheet } from '@/components/ui';
+import { api, ApiError } from '@/lib/api';
+import type { Grupo, Opcion, Principio } from '@/lib/tipos';
+import { avisar } from '@/store/avisos';
+import { useSesion } from '@/store/sesion';
+import { useVenta } from '@/store/venta';
 import ProductGroup from './ProductGroup';
-import { CartBody, CobroSheet, MobileCartBar, useCartSummary, useCobrarShortcut } from './Cart';
-
-const SUGERENCIAS = ['acetaminofén', 'losartán', 'amoxicilina', 'ibuprofeno'];
+import { CartBody, CobroSheet, MobileCartBar, useCobrarShortcut, useResumenVenta } from './Cart';
 
 export default function MostradorPage() {
-  const [q, setQ] = useState('acetaminofén');
+  const [q, setQ] = useState('');
+  const [grupos, setGrupos] = useState<Grupo[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [cargando, setCargando] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [cobroOpen, setCobroOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const grupos = useMemo(() => buscar(q), [q]);
-  const addToCart = useApp((s) => s.addToCart);
-  const toast = useApp((s) => s.toast);
-  const { unidades, bloqueos } = useCartSummary();
+  const agregar = useVenta((s) => s.agregar);
+  const tasa = useSesion((s) => s.tasa);
+  const { unidades } = useResumenVenta();
+
+  // Busca mientras escribe, esperando 250 ms después de la última tecla.
+  useEffect(() => {
+    if (!q.trim()) { setGrupos(null); return; }
+    let vivo = true;
+    setCargando(true);
+    const t = setTimeout(async () => {
+      try {
+        const r = await api<{ grupos: Grupo[] }>(`/catalogo/buscar?q=${encodeURIComponent(q)}`);
+        if (vivo) { setGrupos(r.grupos); setError(null); }
+      } catch (e) {
+        if (vivo) setError(e instanceof ApiError ? e.message : 'No se pudo buscar');
+      } finally {
+        if (vivo) setCargando(false);
+      }
+    }, 250);
+    return () => { vivo = false; clearTimeout(t); };
+  }, [q]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'F2') { e.preventDefault(); inputRef.current?.focus(); inputRef.current?.select(); } };
@@ -25,19 +45,27 @@ export default function MostradorPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
   const abrirCobro = useCallback(() => { setCartOpen(false); setCobroOpen(true); }, []);
-  useCobrarShortcut(abrirCobro, unidades > 0 && bloqueos.length === 0);
+  useCobrarShortcut(abrirCobro, unidades > 0 && !!tasa);
 
-  // Un lector USB "escribe" el código y envía Enter: si coincide exacto, va directo al carrito.
-  const onEnter = () => {
-    const hit = productos.find((p) => p.codigoBarras === q.trim());
-    if (hit) {
-      if (hit.stockLibre > 0) { addToCart(hit); toast(`Escaneado: ${hit.nombreComercial}`, 'ok'); } else toast(`${hit.nombreComercial} está agotado`, 'bad');
+  // El lector USB "escribe" el código y envía Enter: si es un código exacto, va directo a la cuenta.
+  const onEnter = async () => {
+    const codigo = q.trim();
+    if (!/^\d{8,14}$/.test(codigo)) return;
+    try {
+      const p = await api<Opcion & { principioActivo: Principio }>(`/catalogo/codigo/${codigo}`);
+      const r = await api<{ grupos: Grupo[] }>(`/catalogo/buscar?q=${codigo}`);
+      const opcion = r.grupos.flatMap((g) => g.opciones).find((o) => o.id === p.id);
+      if (!opcion || opcion.stockLibre === 0) { avisar(`${p.nombreComercial}: no hay`, 'bad'); return; }
+      agregar(opcion, r.grupos.find((g) => g.opciones.includes(opcion))!.principio);
+      avisar(`Escaneado: ${p.nombreComercial}`, 'ok');
       setQ('');
+    } catch (e) {
+      avisar(e instanceof ApiError ? e.message : 'Código no encontrado', 'bad');
     }
   };
 
   return (
-    <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_360px]">
+    <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_380px]">
       <div className="flex min-w-0 flex-col gap-3">
         <div className="flex gap-2">
           <SearchInput
@@ -46,34 +74,29 @@ export default function MostradorPage() {
             className="flex-1"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && onEnter()}
+            onKeyDown={(e) => { if (e.key === 'Enter') void onEnter(); }}
             onClear={() => setQ('')}
             placeholder="¿Qué medicamento busca?"
             aria-label="Buscar medicamento"
             shortcut="F2"
             autoComplete="off"
+            autoFocus
           />
-          <button className="grid w-12 shrink-0 place-items-center rounded-xl border border-line bg-surface text-muted hover:text-fg xl:hidden" aria-label="Escanear código de barras" onClick={() => toast('Aquí se abre la cámara para escanear', 'info')}>
+          <button className="grid w-12 shrink-0 place-items-center rounded-xl border border-line bg-surface text-muted hover:text-fg xl:hidden" aria-label="Escanear código de barras" onClick={() => avisar('El escáner con la cámara llega en la siguiente versión. Escribe el código o usa el lector', 'info')}>
             <ScanBarcode className="h-5 w-5" />
           </button>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
-          <span>Ejemplos:</span>
-          {SUGERENCIAS.map((s) => (
-            <button key={s} onClick={() => setQ(s)} className="rounded-full border border-dashed border-line px-2.5 py-1 hover:border-accent hover:text-accent">{s}</button>
-          ))}
-        </div>
 
-        {q.trim() === '' ? (
+        {error ? <ErrorCarga mensaje={error} /> : !q.trim() ? (
           <EmptyState icon={<Search className="h-8 w-8" />} title="¿Qué medicamento busca el cliente?">
-            Escribe el nombre o escanea la caja.
+            Escribe el nombre, el principio activo o los mg, o escanea la caja.
           </EmptyState>
-        ) : grupos.length === 0 ? (
+        ) : cargando && !grupos ? <Cargando texto="Buscando…" /> : grupos && grupos.length === 0 ? (
           <EmptyState icon={<Search className="h-8 w-8" />} title={`No encontramos «${q}»`}>
             Revisa cómo está escrito o prueba con otro nombre.
           </EmptyState>
         ) : (
-          grupos.map((g) => <ProductGroup key={g.key} g={g} />)
+          grupos?.map((g) => <ProductGroup key={`${g.principio.id}|${g.concentracion}|${g.forma}`} g={g} />)
         )}
       </div>
 

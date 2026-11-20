@@ -9,8 +9,9 @@
     "dev:web": "npm run dev -w @farmacia/web",
     "dev:api": "npm run dev -w @farmacia/api",
     "build": "npm run build -w @farmacia/shared && npm run build -w @farmacia/api && npm run build -w @farmacia/web",
-    "build:pages": "npm run build -w @farmacia/shared && npm run build:pages -w @farmacia/web",
-    "test": "npm run build -w @farmacia/shared && npm test -w @farmacia/api"
+    "build:pages": "npm run build:pages -w @farmacia/demo",
+    "test": "npm run build -w @farmacia/shared && npm test -w @farmacia/api",
+    "dev:demo": "npm run dev -w @farmacia/demo"
   },
   "engines": {
     "node": ">=22"

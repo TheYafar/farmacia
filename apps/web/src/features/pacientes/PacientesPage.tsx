@@ -1,36 +1,51 @@
 import { AlertTriangle, MessageCircle, Plus, ShoppingCart, UserSearch } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Avatar, Button, Card, Chip, EmptyState, SearchInput } from '@/components/ui';
-import { productoById } from '@/data/catalog';
-import { pacientes } from '@/data/mock';
-import { cedula, initials, usd } from '@/lib/format';
-import { useApp } from '@/store/useApp';
+import { Avatar, Button, Card, Cargando, Chip, EmptyState, ErrorCarga, SearchInput } from '@/components/ui';
+import { api, ApiError } from '@/lib/api';
+import { cedula, fecha, initials, usd } from '@/lib/format';
+import type { Paciente } from '@/lib/tipos';
+import { useVenta } from '@/store/venta';
+import RegistrarCliente from './RegistrarCliente';
 
 export default function PacientesPage() {
-  const [q, setQ] = useState('14582307');
-  const buscarPaciente = useApp((s) => s.buscarPaciente);
-  const setPaciente = useApp((s) => s.setPaciente);
-  const addToCart = useApp((s) => s.addToCart);
-  const espera = useApp((s) => s.espera);
-  const toast = useApp((s) => s.toast);
+  const [q, setQ] = useState('');
+  const [p, setP] = useState<Paciente | null>(null);
+  const [estado, setEstado] = useState<'inicio' | 'cargando' | 'no-existe' | 'error' | 'listo'>('inicio');
+  const [error, setError] = useState('');
+  const [registrar, setRegistrar] = useState(false);
+  const ponerCliente = useVenta((s) => s.ponerCliente);
   const navigate = useNavigate();
-  const p = q.trim() ? buscarPaciente(q) : null;
-  const encargos = p ? espera.filter((w) => w.cedula === p.cedula && ['en_espera', 'notificado', 'custodia'].includes(w.estado)) : [];
+
+  const buscar = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!q.trim()) return;
+    setEstado('cargando');
+    try {
+      setP(await api<Paciente>(`/pacientes/${encodeURIComponent(q)}`));
+      setEstado('listo');
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) setEstado('no-existe');
+      else { setError(err instanceof ApiError ? err.message : 'No se pudo buscar'); setEstado('error'); }
+    }
+  };
 
   return (
     <div className="flex flex-col gap-4">
-      <SearchInput id="buscar-cedula" value={q} onChange={(e) => setQ(e.target.value)} onClear={() => setQ('')} inputMode="numeric" placeholder="Escribe la cédula" aria-label="Buscar por cédula" shortcut="F4" className="font-mono" />
-      <div className="flex flex-wrap gap-1.5 text-xs text-muted">
-        <span>Ejemplos:</span>
-        {pacientes.map((x) => <button key={x.cedula} onClick={() => setQ(x.cedula.slice(2))} className="rounded-full border border-dashed border-line px-2.5 py-1 font-mono hover:border-accent hover:text-accent">{cedula(x.cedula)}</button>)}
-      </div>
+      <form onSubmit={buscar} className="flex gap-2">
+        <SearchInput id="buscar-cedula" value={q} onChange={(e) => setQ(e.target.value)} onClear={() => setQ('')} inputMode="numeric" placeholder="Escribe la cédula y pulsa Enter" aria-label="Buscar por cédula" className="flex-1 font-mono" />
+        <Button type="submit" variant="primary" size="lg">Buscar</Button>
+      </form>
 
-      {!p ? (
-        <EmptyState icon={<UserSearch className="h-8 w-8" />} title={q ? 'Este cliente no está registrado' : 'Busca al cliente por su cédula'}>
-          {q ? <Button variant="primary" className="mt-2" icon={<Plus className="h-4 w-4" />} onClick={() => toast('Aquí se abre el registro rápido', 'info')}>Registrar cliente</Button> : 'Así ves sus alergias y lo que suele comprar.'}
+      {estado === 'inicio' && <EmptyState icon={<UserSearch className="h-8 w-8" />} title="Busca al cliente por su cédula">Así ves sus alergias y lo que siempre compra.</EmptyState>}
+      {estado === 'cargando' && <Cargando />}
+      {estado === 'error' && <ErrorCarga mensaje={error} reintentar={() => buscar()} />}
+      {estado === 'no-existe' && (
+        <EmptyState icon={<UserSearch className="h-8 w-8" />} title="Este cliente no está registrado">
+          <Button variant="primary" className="mt-2" icon={<Plus className="h-4 w-4" />} onClick={() => setRegistrar(true)}>Registrar cliente</Button>
         </EmptyState>
-      ) : (
+      )}
+      {estado === 'listo' && p && (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[1.1fr_1fr_1fr]">
           <Card>
             <div className="flex items-center gap-3">
@@ -42,64 +57,49 @@ export default function PacientesPage() {
             </div>
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
               <dt className="text-muted">WhatsApp</dt><dd className="font-mono">{p.telefono}</dd>
-              <dt className="text-muted">Cliente desde</dt><dd>{p.clienteDesde}</dd>
-              {p.medicoFrecuente && (<><dt className="text-muted">Médico</dt><dd>{p.medicoFrecuente}</dd></>)}
+              <dt className="text-muted">Cliente desde</dt><dd>{fecha(p.creadoEn)}</dd>
             </dl>
             <div className="flex flex-wrap gap-1.5">
-              {p.alergias.length === 0 && p.condiciones.length === 0 && <Chip>Sin alergias</Chip>}
-              {p.alergias.map((a) => <Chip key={a} tone="bad" icon={<AlertTriangle className="h-3 w-3" />}>Alérgica a {a === 'aines' ? 'AINEs' : a === 'penicilinas' ? 'penicilina' : a}</Chip>)}
+              {p.alergias.length === 0 && p.condiciones.length === 0 && <Chip>Sin alergias registradas</Chip>}
+              {p.alergias.map((a) => <Chip key={a} tone="bad" icon={<AlertTriangle className="h-3 w-3" />}>Alérgico a {a}</Chip>)}
               {p.condiciones.map((c) => <Chip key={c} tone="warn">{c}</Chip>)}
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="primary" icon={<ShoppingCart className="h-4 w-4" />} onClick={() => { setPaciente(p); navigate('/mostrador'); }}>Venderle</Button>
-              <Button icon={<MessageCircle className="h-4 w-4" />}>WhatsApp</Button>
+              <Button variant="primary" icon={<ShoppingCart className="h-4 w-4" />} onClick={() => { ponerCliente(p); navigate('/vender'); }}>Venderle</Button>
+              <a className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-line bg-surface px-3.5 text-sm font-semibold hover:bg-surface2" href={`https://wa.me/58${p.telefono.replace(/\D/g, '').replace(/^0/, '')}`} target="_blank" rel="noreferrer"><MessageCircle className="h-4 w-4" />WhatsApp</a>
             </div>
           </Card>
-
           <Card>
             <h3 className="text-base font-bold">Lo que siempre compra</h3>
-            {p.habituales.length === 0 ? <p className="text-sm text-muted">Todavía no tiene compras registradas.</p> : (
+            {!p.habituales?.length ? <p className="text-sm text-muted">Todavía no tiene compras registradas.</p> : (
               <ul className="flex flex-col divide-y divide-dashed divide-line">
-                {p.habituales.map((h) => {
-                  const prod = productoById(h.productoId)!;
-                  return (
-                    <li key={h.productoId} className="flex items-center justify-between gap-2 py-2.5">
-                      <div className="min-w-0 text-sm">
-                        <div className="font-semibold">{prod.nombreComercial} {prod.concentracion}</div>
-                        <div className="text-xs text-muted">Caja de {prod.unidadesPorCaja} · última vez {h.ultima}</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-sm">{usd(prod.precioUsd)}</span>
-                        <Button size="sm" variant="primary" aria-label={`Agregar ${prod.nombreComercial}`} disabled={!prod.stockLibre} onClick={() => { setPaciente(p); addToCart(prod); toast(`Agregado: ${prod.nombreComercial}`, 'ok'); }}><Plus className="h-4 w-4" /></Button>
-                      </div>
-                    </li>
-                  );
-                })}
+                {p.habituales.filter((h) => h.producto).map((h) => (
+                  <li key={h.producto!.id} className="flex items-center justify-between gap-2 py-2.5 text-sm">
+                    <div className="min-w-0">
+                      <div className="font-semibold">{h.producto!.nombreComercial} {h.producto!.concentracion}</div>
+                      <div className="text-xs text-muted">{h.veces} {h.veces === 1 ? 'vez' : 'veces'}{h.ultimaVez ? ` · última ${fecha(h.ultimaVez)}` : ''}</div>
+                    </div>
+                    <span className="font-mono">{usd(h.producto!.precioUsd)}</span>
+                  </li>
+                ))}
               </ul>
             )}
           </Card>
-
           <Card className="md:col-span-2 xl:col-span-1">
             <h3 className="text-base font-bold">Récipes y encargos</h3>
-            {p.recipes.length > 0 ? (
-              <div className="flex gap-2">
-                {p.recipes.map((r) => (
-                  <figure key={r.fecha} className="flex flex-col items-center gap-1">
-                    <div className="paper h-[76px] w-[58px] rounded-md border border-line" />
-                    <figcaption className="text-[11px] text-muted">{r.fecha}</figcaption>
-                  </figure>
-                ))}
-              </div>
+            {p.recipes?.length ? (
+              <ul className="flex flex-col gap-1 text-sm">{p.recipes.map((r) => <li key={r.id} className="flex justify-between"><span>Récipe del {fecha(r.creadoEn)}</span><Chip tone={r.estado === 'VALIDADO' ? 'ok' : r.estado === 'RECHAZADO' ? 'bad' : 'warn'}>{r.estado === 'VALIDADO' ? 'Válido' : r.estado === 'RECHAZADO' ? 'Rechazado' : 'Por revisar'}</Chip></li>)}</ul>
             ) : <p className="text-sm text-muted">Sin récipes guardados.</p>}
-            {encargos.map((w) => (
+            {p.esperas?.map((w) => (
               <div key={w.id} className="rounded-lg border border-line p-3 text-sm">
-                <div className="font-semibold">{w.producto}</div>
-                <div className="text-xs text-muted">{w.estado === 'en_espera' ? 'Le avisamos cuando llegue' : w.estado === 'notificado' ? 'Ya llegó, falta que pague' : `Pagado · está en la gaveta ${w.gaveta}`}</div>
+                <div className="font-semibold">{w.producto.nombreComercial} {w.producto.concentracion}</div>
+                <div className="text-xs text-muted">{w.estado === 'EN_ESPERA' ? 'Le avisamos cuando llegue' : w.estado === 'NOTIFICADO' ? 'Ya llegó, falta que pague' : `Pagado · gaveta ${w.gaveta ?? '—'}`}</div>
               </div>
             ))}
           </Card>
         </div>
       )}
+      <RegistrarCliente abierto={registrar} cedulaInicial={q} onCerrar={() => setRegistrar(false)} onListo={(n) => { setRegistrar(false); setP({ ...n, habituales: [], recipes: [], esperas: [] }); setEstado('listo'); }} />
     </div>
   );
 }

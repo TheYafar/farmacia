@@ -1,18 +1,20 @@
-import { BarChart3, Camera, Clock, Package, ShieldCheck, ShoppingCart, Users } from 'lucide-react';
+import { BarChart3, Camera, Clock, Package, ShieldCheck, ShoppingCart, UserCog, Users } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { Role } from '@/data/types';
+import type { Rol } from '@farmacia/shared';
 
-export interface NavItem { to: string; label: string; short: string; icon: LucideIcon; roles: Role[] }
+export interface NavItem { to: string; label: string; short: string; icon: LucideIcon; roles: Rol[] }
 
-// Cajero: solo 3 opciones. Lo demás aparece cuando hace falta.
+// El cajero ve solo 3 opciones. Lo demás aparece cuando hace falta.
 export const NAV: NavItem[] = [
-  { to: '/mostrador', label: 'Vender', short: 'Vender', icon: ShoppingCart, roles: ['cajero', 'regente', 'admin'] },
-  { to: '/recipe', label: 'Récipe', short: 'Récipe', icon: Camera, roles: ['cajero', 'regente', 'admin'] },
-  { to: '/pacientes', label: 'Clientes', short: 'Clientes', icon: Users, roles: ['cajero', 'regente', 'admin'] },
-  { to: '/validaciones', label: 'Por revisar', short: 'Revisar', icon: ShieldCheck, roles: ['regente', 'admin'] },
-  { to: '/espera', label: 'Encargos', short: 'Encargos', icon: Clock, roles: ['regente', 'admin'] },
-  { to: '/inventario', label: 'Inventario', short: 'Inventario', icon: Package, roles: ['admin'] },
-  { to: '/panel', label: 'Resumen', short: 'Resumen', icon: BarChart3, roles: ['admin'] },
+  { to: '/vender', label: 'Vender', short: 'Vender', icon: ShoppingCart, roles: ['CAJERO', 'REGENTE', 'ADMIN'] },
+  { to: '/recipe', label: 'Récipe', short: 'Récipe', icon: Camera, roles: ['CAJERO', 'REGENTE', 'ADMIN'] },
+  { to: '/clientes', label: 'Clientes', short: 'Clientes', icon: Users, roles: ['CAJERO', 'REGENTE', 'ADMIN'] },
+  { to: '/revisar', label: 'Por revisar', short: 'Revisar', icon: ShieldCheck, roles: ['REGENTE', 'ADMIN'] },
+  { to: '/encargos', label: 'Encargos', short: 'Encargos', icon: Clock, roles: ['REGENTE', 'ADMIN'] },
+  { to: '/inventario', label: 'Inventario', short: 'Inventario', icon: Package, roles: ['REGENTE', 'ADMIN'] },
+  { to: '/resumen', label: 'Resumen', short: 'Resumen', icon: BarChart3, roles: ['ADMIN'] },
+  { to: '/usuarios', label: 'Usuarios', short: 'Usuarios', icon: UserCog, roles: ['ADMIN'] },
 ];
 
-export const ROLE_LABEL: Record<Role, string> = { cajero: 'Cajero', regente: 'Farmacéutico', admin: 'Dueño' };
+export const ROLE_LABEL: Record<Rol, string> = { CAJERO: 'Cajero', REGENTE: 'Farmacéutico', ADMIN: 'Dueño' };
+export const INICIO: Record<Rol, string> = { CAJERO: '/vender', REGENTE: '/revisar', ADMIN: '/resumen' };

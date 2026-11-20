@@ -3,19 +3,24 @@ import { LogOut, Moon, MoreHorizontal, Sun } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { NAV, ROLE_LABEL, type NavItem } from '@/config/nav';
+import { api } from '@/lib/api';
 import { num2 } from '@/lib/format';
-import { useApp, useRole } from '@/store/useApp';
+import { useCargar } from '@/lib/useCargar';
+import { useRol, useSesion } from '@/store/sesion';
 import { Sheet, Toaster } from '@/components/ui';
 
-function useBadges(): Record<string, number> {
-  const espera = useApp((s) => s.espera);
-  const recipes = useApp((s) => s.recipes);
-  const pendientes = recipes.reduce((a, r) => a + r.items.filter((i) => i.confianza < 90 && i.resueltoCon === undefined).length, 0);
-  return {
-    '/espera': espera.filter((w) => w.estado === 'notificado').length,
-    '/recipe': pendientes,
-    '/validaciones': pendientes,
-  };
+/** Números rojos del menú: lo que espera al farmacéutico o al dueño. Se actualiza cada 20 segundos. */
+function useBadges(rol: string): Record<string, number> {
+  const { datos } = useCargar(async (): Promise<Record<string, number>> => {
+    if (rol === 'CAJERO') return {};
+    const [permisos, recipes, avisados] = await Promise.all([
+      api<unknown[]>('/autorizaciones'),
+      api<unknown[]>('/recipes/pendientes'),
+      api<unknown[]>('/espera?estado=NOTIFICADO'),
+    ]);
+    return { '/revisar': permisos.length + recipes.length, '/encargos': avisados.length };
+  }, [rol], 20_000);
+  return datos ?? {};
 }
 
 function Brand({ full }: { full?: boolean }) {
@@ -24,7 +29,7 @@ function Brand({ full }: { full?: boolean }) {
       <span className="grid h-9 w-9 place-items-center rounded-lg bg-accent">
         <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden><path fill="white" d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z" /></svg>
       </span>
-      {full && <span className="font-display text-base font-bold">Farmacia Ávila</span>}
+      {full && <span className="font-display text-base font-bold">Farmacia</span>}
     </div>
   );
 }
@@ -36,7 +41,7 @@ function ThemeToggle() {
   useEffect(() => {
     if (theme) document.documentElement.dataset.theme = theme;
     else delete document.documentElement.dataset.theme;
-    try { theme ? localStorage.setItem('theme', theme) : localStorage.removeItem('theme'); } catch { /* sin almacenamiento */ }
+    try { if (theme) localStorage.setItem('theme', theme); else localStorage.removeItem('theme'); } catch { /* sin almacenamiento */ }
   }, [theme]);
   const isDark = theme ? theme === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
   return (
@@ -52,16 +57,17 @@ function Badge({ n, inline }: { n?: number; inline?: boolean }) {
 }
 
 export default function AppShell() {
-  const role = useRole();
-  const user = useApp((s) => s.user)!;
-  const tasa = useApp((s) => s.tasa);
-  const logout = useApp((s) => s.logout);
-  const badges = useBadges();
-  const nav = NAV.filter((n) => n.roles.includes(role));
+  const rol = useRol();
+  const usuario = useSesion((s) => s.usuario)!;
+  const tasa = useSesion((s) => s.tasa);
+  const salir = useSesion((s) => s.salir);
+  const badges = useBadges(rol);
+  const nav = NAV.filter((n) => n.roles.includes(rol));
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const current = nav.find((n) => pathname.startsWith(n.to));
   const [moreOpen, setMoreOpen] = useState(false);
+  const cerrar = async () => { await salir(); navigate('/'); };
 
   const bottom = nav.length <= 5 ? nav : nav.slice(0, 4);
   const extra = nav.length <= 5 ? [] : nav.slice(4);
@@ -88,7 +94,6 @@ export default function AppShell() {
 
   return (
     <div className="flex h-full">
-      {/* Riel (tablet) y menú lateral (PC) */}
       <nav aria-label="Menú principal" className="hidden w-[88px] shrink-0 flex-col gap-1 border-r border-line bg-surface px-2 py-4 md:flex xl:w-60 xl:px-3">
         <div className="mb-4 flex justify-center xl:justify-start xl:px-2">
           <span className="xl:hidden"><Brand /></span>
@@ -97,12 +102,12 @@ export default function AppShell() {
         {nav.map(railItem)}
         <div className="mt-auto flex flex-col items-center gap-2 border-t border-line pt-3 xl:items-stretch xl:px-2">
           <div className="hidden text-xs text-muted xl:block">
-            <div className="font-semibold text-fg">{user.nombre}</div>
-            <div>{ROLE_LABEL[role]}</div>
+            <div className="font-semibold text-fg">{usuario.nombre}</div>
+            <div>{ROLE_LABEL[rol]}</div>
           </div>
           <div className="flex items-center gap-1">
             <ThemeToggle />
-            <button onClick={() => { logout(); navigate('/'); }} className="rounded-lg p-2 text-muted hover:bg-surface2 hover:text-fg" aria-label="Cerrar sesión">
+            <button onClick={cerrar} className="rounded-lg p-2 text-muted hover:bg-surface2 hover:text-fg" aria-label="Cerrar sesión">
               <LogOut className="h-5 w-5" />
             </button>
           </div>
@@ -110,20 +115,14 @@ export default function AppShell() {
       </nav>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {(import.meta.env.MODE === 'demo' || import.meta.env.MODE === 'pages') && (
-          <div className="flex items-center justify-between gap-3 bg-accent px-4 py-1.5 text-[13px] font-semibold text-accent-ink md:px-6">
-            <span>Demostración · datos de ejemplo</span>
-            <button onClick={() => { logout(); navigate('/'); }} className="underline underline-offset-2">Entrar como otra persona</button>
-          </div>
-        )}
         <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-line bg-surface/95 px-4 py-2.5 backdrop-blur md:px-6" style={{ paddingTop: 'max(0.625rem, env(safe-area-inset-top))' }}>
           <div className="flex min-w-0 items-center gap-2.5">
             <span className="md:hidden"><Brand /></span>
             <span className="truncate font-display text-lg font-bold">{current?.label ?? 'Farmacia'}</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="whitespace-nowrap rounded-md bg-surface2 px-2 py-1 font-mono text-xs text-muted" title="Tasa BCV del día">
-              Dólar: {num2(tasa)} Bs
+            <span className={clsx('whitespace-nowrap rounded-md px-2 py-1 font-mono text-xs', tasa ? 'bg-surface2 text-muted' : 'bg-warn-soft text-warn')} title="Tasa del dólar">
+              {tasa ? `Dólar: ${num2(tasa)} Bs` : 'Falta la tasa'}
             </span>
             <span className="md:hidden"><ThemeToggle /></span>
           </div>
@@ -133,7 +132,6 @@ export default function AppShell() {
           <Outlet />
         </main>
 
-        {/* Barra inferior (teléfono) */}
         <nav aria-label="Menú principal" className="pb-safe fixed inset-x-0 bottom-0 z-30 flex justify-around border-t border-line bg-surface pt-1.5 md:hidden">
           {bottom.map((n) => (
             <NavLink key={n.to} to={n.to} className={({ isActive }) => clsx('relative flex min-w-[64px] flex-col items-center gap-0.5 px-2 py-1 text-[11px] font-semibold', isActive ? 'text-accent' : 'text-muted')}>
@@ -164,8 +162,8 @@ export default function AppShell() {
             </NavLink>
           ))}
           <div className="mt-2 flex items-center justify-between border-t border-line px-3 pt-3 text-sm text-muted">
-            <span>{user.nombre} · {ROLE_LABEL[role]}</span>
-            <button onClick={() => { logout(); navigate('/'); }} className="flex items-center gap-1.5 font-semibold text-fg"><LogOut className="h-4 w-4" />Salir</button>
+            <span>{usuario.nombre} · {ROLE_LABEL[rol]}</span>
+            <button onClick={cerrar} className="flex items-center gap-1.5 font-semibold text-fg"><LogOut className="h-4 w-4" />Salir</button>
           </div>
         </div>
       </Sheet>

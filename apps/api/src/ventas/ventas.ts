@@ -31,6 +31,8 @@ export class VentasService {
       // 1. Reglas clínicas: el servidor las aplica aunque la app no las muestre.
       const bloqueos: Bloqueo[] = [];
       const autorizacionesUsadas: string[] = [];
+      const recipes = new Map<string, string>();
+      const permisos = new Map<string, string>();
       for (const l of lineas) {
         const p = productos.find((x) => x.id === l.productoId)!;
         const nombre = `${p.nombreComercial} ${p.concentracion}`;
@@ -42,15 +44,22 @@ export class VentasService {
           continue;
         }
         if (p.requiereRecipe || controlado) {
-          const rx = l.recipeId ? await tx.recipe.findUnique({ where: { id: l.recipeId } }) : null;
+          // Sin número explícito, se usa el récipe más reciente del cliente (últimos 30 días, no rechazado).
+          const rx = l.recipeId
+            ? await tx.recipe.findUnique({ where: { id: l.recipeId } })
+            : await tx.recipe.findFirst({ where: { cedula: b.cedula, estado: { not: 'RECHAZADO' }, creadoEn: { gte: new Date(Date.now() - 30 * 86_400_000) } }, orderBy: { creadoEn: 'desc' } });
+          if (rx) recipes.set(p.id, rx.id);
           if (!rx || rx.cedula !== b.cedula || rx.estado === 'RECHAZADO') {
             bloqueos.push({ productoId: p.id, motivo: 'FALTA_RECIPE', mensaje: `${nombre} necesita la foto del récipe del cliente` });
             continue;
           }
         }
         if (alergia || controlado) {
-          const a = l.autorizacionId ? await tx.autorizacion.findUnique({ where: { id: l.autorizacionId } }) : null;
-          const valida = a && !a.usadaEn && a.expira > new Date() && a.cedula === b.cedula && a.productoId === p.id;
+          // Sin número explícito, se busca un permiso aprobado y vigente para este cliente y producto.
+          const a = l.autorizacionId
+            ? await tx.autorizacion.findUnique({ where: { id: l.autorizacionId } })
+            : await tx.autorizacion.findFirst({ where: { cedula: b.cedula, productoId: p.id, estado: 'APROBADA', usadaEn: null, expira: { gt: new Date() } }, orderBy: { respondidaEn: 'desc' } });
+          const valida = a && a.estado === 'APROBADA' && !a.usadaEn && !!a.expira && a.expira > new Date() && a.cedula === b.cedula && a.productoId === p.id;
           if (!valida) {
             bloqueos.push(alergia
               ? { productoId: p.id, motivo: 'ALERGIA', mensaje: `El cliente es alérgico a ${alergia} y ${nombre} lo contiene. Llama al farmacéutico` }
@@ -58,6 +67,7 @@ export class VentasService {
             continue;
           }
           autorizacionesUsadas.push(a!.id);
+          permisos.set(p.id, a!.id);
         }
       }
       if (bloqueos.length) throw new UnprocessableEntityException({ mensaje: 'Hay productos que necesitan revisión', bloqueos });
@@ -75,7 +85,7 @@ export class VentasService {
         const partes = await descontarFefo(tx, p.id, l.cantidad, `${p.nombreComercial} ${p.concentracion}`);
         for (const parte of partes) {
           await tx.ventaLinea.create({
-            data: { ventaId: venta.id, productoId: p.id, loteId: parte.loteId, cantidad: parte.cantidad, precioUsd: p.precioUsd, autorizacionId: l.autorizacionId, recipeId: l.recipeId },
+            data: { ventaId: venta.id, productoId: p.id, loteId: parte.loteId, cantidad: parte.cantidad, precioUsd: p.precioUsd, autorizacionId: permisos.get(p.id), recipeId: recipes.get(p.id) ?? l.recipeId },
           });
         }
         total = total.add(p.precioUsd.mul(l.cantidad));

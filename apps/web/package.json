@@ -6,8 +6,6 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "build:pages": "tsc -b && vite build --mode pages",
-    "build:demo": "tsc -b && vite build --mode demo",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -17,7 +15,8 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",
-    "zustand": "^4.5.5"
+    "zustand": "^4.5.5",
+    "@farmacia/shared": "0.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",

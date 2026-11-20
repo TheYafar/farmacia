@@ -12,13 +12,20 @@ Alcance acordado: **todo lo del documento de planificación** (venta, inventario
 - 30 pruebas automáticas contra PostgreSQL real, que corren en GitHub en cada cambio.
 - Despliegue con Docker + Caddy (HTTPS) probado de punta a punta, respaldos cifrados probados.
 
-### Fase 2 · Conectar la app a la API
+### Fase 2 · Conectar la app a la API ✅ casi completa
 
-- Inicio de sesión real y renovación automática de la sesión.
-- Pantallas existentes leyendo y guardando en la API: Vender, Clientes, Récipe (subir foto), Por revisar, Encargos, Inventario, Resumen.
-- Pantallas que faltan: usuarios, productos y precios, carga de factura de droguería, carga inicial del inventario desde Excel/CSV.
-- Aviso «sin conexión» y reintento cuando se va el internet.
-- Ticket de custodia para imprimir.
+Hecho:
+- Inicio de sesión real, la sesión se mantiene al recargar y se renueva sola.
+- Vender: búsqueda en el servidor, cliente por cédula (y registro rápido), foto del récipe desde la cuenta, **permiso al farmacéutico en vivo** (la caja ve la aprobación sin recargar), cobro y «avisar cuando llegue».
+- Récipe, Por revisar (permisos y récipes), Clientes, Encargos, Inventario con carga de facturas, Resumen con tasa del dólar y Usuarios.
+- Probado de punta a punta en el navegador con cajero (PC), farmacéutico (teléfono) y dueño a la vez.
+- La demo de ejemplo quedó aparte en `apps/demo` y sigue publicada en GitHub Pages.
+
+Falta:
+- Productos y precios desde la app (hoy se cargan por la API o la carga inicial).
+- Carga inicial del inventario desde Excel/CSV.
+- Escáner de código de barras con la cámara del teléfono (el lector USB ya funciona).
+- Ticket de custodia para imprimir y aviso claro cuando se va el internet.
 
 ### Fase 3 · Integraciones
 
@@ -44,9 +51,9 @@ Alcance acordado: **todo lo del documento de planificación** (venta, inventario
 | **Cuánto tiempo guardar las fotos de récipes** | Son datos de salud |
 | **Soporte después de la entrega** | Quién atiende fallas y actualizaciones, y si tiene un costo mensual |
 
-## Costos mensuales que paga el cliente
+## Costos mensuales
 
-Son servicios de terceros, aparte del desarrollo. Los montos son aproximados: confirma los precios actuales antes de presentarlos.
+Son servicios de terceros, aparte del desarrollo. Si el sistema se vende como servicio ([NEGOCIO.md](NEGOCIO.md)), los pagas tú y van incluidos en la suscripción; si se instala para un solo cliente, los paga él desde sus cuentas. Los montos son aproximados: confirma los precios actuales antes de presentarlos.
 
 | Servicio | Para qué |
 |---|---|
@@ -62,5 +69,5 @@ Son servicios de terceros, aparte del desarrollo. Los montos son aproximados: co
 
 - **Pagos por fase**, no al final. Por ejemplo: 30 % al empezar, 40 % al entregar la fase 2 funcionando, 30 % al dejarlo en marcha en la farmacia.
 - **Alcance por escrito**: lo que está en este plan, y que cualquier cosa nueva (por ejemplo la impresora fiscal) se cotiza aparte.
-- **Los servicios mensuales los paga el cliente** desde su propia cuenta (Contabo, Meta, IA), así los datos y las cuentas quedan a su nombre.
-- **Soporte mensual** después de la entrega, como un servicio aparte.
+- **Mejor como servicio que como venta única**: suscripción mensual que incluye servidor, IA, respaldos y soporte. Detalle en [NEGOCIO.md](NEGOCIO.md).
+- **El código sigue siendo tuyo**: los 1.000 $ pagan la implementación y el uso, no la propiedad del software.

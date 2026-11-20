@@ -148,6 +148,19 @@ export const autorizacionSchema = z.object({
 });
 export type AutorizacionInput = z.infer<typeof autorizacionSchema>;
 
+/** El cajero pide permiso al Regente desde la venta. */
+export const solicitarAutorizacionSchema = z.object({
+  cedula: cedulaSchema,
+  productoId: z.string().uuid(),
+  razon: z.enum(['ALERGIA', 'CONTROLADO']),
+});
+export type SolicitarAutorizacionInput = z.infer<typeof solicitarAutorizacionSchema>;
+
+export const responderAutorizacionSchema = z.object({
+  motivo: z.string().trim().max(300).optional(),
+});
+export type ResponderAutorizacionInput = z.infer<typeof responderAutorizacionSchema>;
+
 export const crearVentaSchema = z.object({
   cedula: cedulaSchema.optional(),
   lineas: z

@@ -1,41 +1,48 @@
+import { useEffect, type ReactNode } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
-import type { ReactNode } from 'react';
 import AppShell from '@/layout/AppShell';
-import { NAV } from '@/config/nav';
-import { useApp, useRole } from '@/store/useApp';
+import { INICIO, NAV } from '@/config/nav';
+import { useRol, useSesion } from '@/store/sesion';
+import { Cargando } from '@/components/ui';
 import LoginPage from '@/features/auth/LoginPage';
-import MostradorPage from '@/features/mostrador/MostradorPage';
+import VenderPage from '@/features/mostrador/MostradorPage';
 import RecipePage from '@/features/recipes/RecipePage';
-import PacientesPage from '@/features/pacientes/PacientesPage';
-import EsperaPage from '@/features/espera/EsperaPage';
-import ValidacionesPage from '@/features/validaciones/ValidacionesPage';
+import ClientesPage from '@/features/pacientes/PacientesPage';
+import RevisarPage from '@/features/validaciones/ValidacionesPage';
+import EncargosPage from '@/features/espera/EsperaPage';
 import InventarioPage from '@/features/inventario/InventarioPage';
-import PanelPage from '@/features/panel/PanelPage';
+import ResumenPage from '@/features/panel/PanelPage';
+import UsuariosPage from '@/features/usuarios/UsuariosPage';
 
-function RequireRole({ path, children }: { path: string; children: ReactNode }) {
-  const role = useRole();
-  const item = NAV.find((n) => n.to === path);
-  return item && !item.roles.includes(role) ? <Navigate to="/mostrador" replace /> : <>{children}</>;
+/** Esconde la ruta a quien no tiene el rol (el servidor igual lo rechazaría). */
+function ConRol({ ruta, children }: { ruta: string; children: ReactNode }) {
+  const rol = useRol();
+  const item = NAV.find((n) => n.to === ruta);
+  return item && !item.roles.includes(rol) ? <Navigate to={INICIO[rol]} replace /> : <>{children}</>;
 }
 
 export default function App() {
-  const user = useApp((s) => s.user);
-  if (!user) {
+  const { usuario, listo, restaurar } = useSesion();
+  useEffect(() => { void restaurar(); }, [restaurar]);
+
+  if (!listo) return <Cargando texto="Abriendo…" />;
+  if (!usuario) {
     return (
       <Routes>
         <Route path="*" element={<LoginPage />} />
       </Routes>
     );
   }
-  const pages: [string, ReactNode][] = [
-    ['/mostrador', <MostradorPage />], ['/recipe', <RecipePage />], ['/pacientes', <PacientesPage />],
-    ['/espera', <EsperaPage />], ['/validaciones', <ValidacionesPage />], ['/inventario', <InventarioPage />], ['/panel', <PanelPage />],
+  const paginas: [string, ReactNode][] = [
+    ['/vender', <VenderPage />], ['/recipe', <RecipePage />], ['/clientes', <ClientesPage />],
+    ['/revisar', <RevisarPage />], ['/encargos', <EncargosPage />], ['/inventario', <InventarioPage />],
+    ['/resumen', <ResumenPage />], ['/usuarios', <UsuariosPage />],
   ];
   return (
     <Routes>
       <Route element={<AppShell />}>
-        {pages.map(([p, el]) => <Route key={p} path={p} element={<RequireRole path={p}>{el}</RequireRole>} />)}
-        <Route path="*" element={<Navigate to="/mostrador" replace />} />
+        {paginas.map(([p, el]) => <Route key={p} path={p} element={<ConRol ruta={p}>{el}</ConRol>} />)}
+        <Route path="*" element={<Navigate to={INICIO[usuario.rol]} replace />} />
       </Route>
     </Routes>
   );

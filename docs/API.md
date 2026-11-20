@@ -35,8 +35,13 @@ Roles: **C** = Cajero · **R** = Regente · **A** = Dueño (Administrador). «To
 | GET | `/ventas?desde=2026-11-01` | Todos | El cajero ve solo las suyas |
 | GET | `/ventas/:id` | Todos | Detalle |
 | POST | `/ventas/:id/anular` | A | Anula y devuelve el stock |
-| POST | `/autorizaciones` | R, A | `{ cedula, productoId, motivo }` → permiso de un solo uso (30 min) |
-| GET | `/autorizaciones/vigentes` | R, A | Permisos sin usar |
+| POST | `/autorizaciones/solicitudes` | Todos | El cajero pide permiso: `{ cedula, productoId, razon: "ALERGIA" \| "CONTROLADO" }` |
+| GET | `/autorizaciones/:id` | Todos | Ver si ya respondieron (la caja lo consulta cada pocos segundos) |
+| GET | `/autorizaciones` | R, A | Solicitudes pendientes |
+| POST | `/autorizaciones/:id/aprobar` · `/rechazar` | R, A | `{ motivo? }`. El permiso aprobado vale 30 min y una sola venta |
+| POST | `/autorizaciones` | R, A | El Regente da el permiso directo: `{ cedula, productoId, motivo }` |
+
+Si la venta no lleva `recipeId` ni `autorizacionId`, el servidor usa el récipe más reciente del cliente (30 días) y un permiso aprobado y vigente para ese cliente y producto.
 
 Motivos de bloqueo: `FALTA_CEDULA`, `FALTA_RECIPE`, `ALERGIA`, `CONTROLADO`.
 

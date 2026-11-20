@@ -41,7 +41,7 @@ export class CatalogoService {
       const opciones = productos.filter((p) => p.principioActivoId === c.principioActivoId && p.concentracion === c.concentracion && p.forma === c.forma);
       const pa = opciones[0]!.principioActivo;
       return {
-        principio: { id: pa.id, nombre: pa.nombre, riesgo: pa.riesgo, uso: pa.uso },
+        principio: { id: pa.id, nombre: pa.nombre, familia: pa.familia, riesgo: pa.riesgo, uso: pa.uso },
         concentracion: c.concentracion,
         forma: c.forma,
         opciones: opciones.map(({ lotes, principioActivo: _pa, ...p }) => ({

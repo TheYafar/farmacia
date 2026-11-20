@@ -1,7 +1,8 @@
 import { clsx } from 'clsx';
 import { AlertTriangle, Info, Lock, Search, X } from 'lucide-react';
 import { forwardRef, useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
-import { useApp } from '@/store/useApp';
+import { useSesion } from '@/store/sesion';
+import { useAvisos } from '@/store/avisos';
 import { bs, usd } from '@/lib/format';
 
 type Tone = 'neutral' | 'ok' | 'warn' | 'bad' | 'info' | 'accent';
@@ -73,8 +74,8 @@ export const SearchInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTML
   },
 );
 
-export function Money({ value, className, size = 'md' }: { value: number; className?: string; size?: 'sm' | 'md' | 'lg' }) {
-  const tasa = useApp((s) => s.tasa);
+export function Money({ value, className, size = 'md' }: { value: number | string; className?: string; size?: 'sm' | 'md' | 'lg' }) {
+  const tasa = useSesion((s) => s.tasa);
   return (
     <div className={clsx('text-right font-mono tabular', className)}>
       <div className={clsx('font-medium', size === 'lg' ? 'text-2xl' : size === 'md' ? 'text-[15px]' : 'text-sm')}>{usd(value)}</div>
@@ -131,6 +132,34 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
   );
 }
 
+export function Cargando({ texto = 'Cargando…' }: { texto?: string }) {
+  return <div className="py-10 text-center text-sm text-muted" role="status">{texto}</div>;
+}
+
+export function ErrorCarga({ mensaje, reintentar }: { mensaje: string; reintentar?: () => void }) {
+  return (
+    <Alert tone="bad">
+      <div className="flex flex-wrap items-center gap-3">
+        <span>{mensaje}</span>
+        {reintentar && <Button size="sm" onClick={reintentar}>Reintentar</Button>}
+      </div>
+    </Alert>
+  );
+}
+
+/** Campo de formulario con etiqueta visible. */
+export function Campo({ etiqueta, children, ayuda }: { etiqueta: string; children: ReactNode; ayuda?: string }) {
+  return (
+    <label className="flex flex-col gap-1 text-sm font-semibold">
+      {etiqueta}
+      {children}
+      {ayuda && <span className="text-xs font-normal text-muted">{ayuda}</span>}
+    </label>
+  );
+}
+
+export const claseInput = 'h-11 rounded-lg border border-line bg-surface px-3 text-base font-normal outline-none focus:border-accent';
+
 export function EmptyState({ icon, title, children }: { icon: ReactNode; title: string; children?: ReactNode }) {
   return (
     <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-line px-6 py-10 text-center text-muted">
@@ -142,12 +171,12 @@ export function EmptyState({ icon, title, children }: { icon: ReactNode; title: 
 }
 
 export function Toaster() {
-  const toasts = useApp((s) => s.toasts);
+  const toasts = useAvisos((s) => s.lista);
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-40 z-50 flex flex-col items-center gap-2 px-4 md:bottom-6" aria-live="polite">
       {toasts.map((t) => (
-        <div key={t.id} className={clsx('rounded-xl px-4 py-2.5 text-sm font-semibold shadow-pop', t.tone === 'bad' ? 'bg-bad text-white' : 'bg-fg text-bg')}>
-          {t.text}
+        <div key={t.id} className={clsx('rounded-xl px-4 py-2.5 text-sm font-semibold shadow-pop', t.tono === 'bad' ? 'bg-bad text-white' : 'bg-fg text-bg')}>
+          {t.texto}
         </div>
       ))}
     </div>

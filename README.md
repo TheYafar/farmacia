@@ -13,11 +13,13 @@ Sistema de mostrador para farmacias en Venezuela: venta con alternativas por pre
 | [docs/SEGURIDAD.md](docs/SEGURIDAD.md) | Cada control de seguridad y dónde está en el código |
 | [docs/API.md](docs/API.md) | Todas las rutas de la API y quién puede usarlas |
 | [docs/DESPLIEGUE.md](docs/DESPLIEGUE.md) | Puesta en marcha en un VPS de Contabo, paso a paso |
+| [docs/NEGOCIO.md](docs/NEGOCIO.md) | Costos, modelo de suscripción y cómo tratar con los clientes |
 
 ## Estructura
 
 ```
-apps/web         App React (Vite, TypeScript, Tailwind)
+apps/web         App real conectada a la API (React, Vite, TypeScript, Tailwind)
+apps/demo        Demo con datos de ejemplo (la de GitHub Pages)
 apps/api         API NestJS + PostgreSQL (Prisma)
 packages/shared  Reglas y validaciones comunes a la app y la API
 infra            Docker Compose, Caddy (HTTPS), respaldos, preparación del servidor
@@ -54,7 +56,7 @@ npm run build -w @farmacia/api && SEED_DEMO=true npm run db:seed -w @farmacia/ap
 npm run dev:api
 ```
 
-En otra terminal:
+En otra terminal (la app abre en http://localhost:5173 y envía `/api` al servidor local):
 
 ```bash
 npm run dev:web
@@ -68,4 +70,4 @@ Las pruebas de la API corren contra una base PostgreSQL real (`DATABASE_URL_TEST
 npm test
 ```
 
-GitHub las corre en cada cambio (`.github/workflows/ci.yml`). La demo se publica sola en GitHub Pages cuando cambia `apps/web` (`.github/workflows/deploy.yml`).
+GitHub las corre en cada cambio (`.github/workflows/ci.yml`). La demo se publica sola en GitHub Pages cuando cambia `apps/demo` (`.github/workflows/deploy.yml`).

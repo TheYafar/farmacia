@@ -118,6 +118,42 @@ describe('Reglas del mostrador', () => {
       assert.equal(otra.status, 422);
     });
 
+    it('el cajero pide permiso, el Regente aprueba y la venta encuentra sola el récipe y el permiso', async () => {
+      await cajero.subir('/recipes').field('cedula', 'V-14582307').attach('foto', PNG, 'r.png');
+      const bloqueada = await venderAmoxicilina();
+      assert.equal(bloqueada.body.bloqueos[0].motivo, 'ALERGIA');
+
+      const sol = await cajero.post('/autorizaciones/solicitudes', { cedula: 'V-14582307', productoId: d.amoxil.id, razon: 'ALERGIA' });
+      assert.equal(sol.status, 201);
+      assert.equal(sol.body.estado, 'PENDIENTE');
+      // Pedir dos veces no duplica la solicitud.
+      assert.equal((await cajero.post('/autorizaciones/solicitudes', { cedula: 'V-14582307', productoId: d.amoxil.id, razon: 'ALERGIA' })).body.id, sol.body.id);
+
+      assert.equal((await cajero.get('/autorizaciones')).status, 403, 'el cajero no ve la bandeja del Regente');
+      assert.equal((await cajero.post(`/autorizaciones/${sol.body.id}/aprobar`, {})).status, 403, 'ni se aprueba a sí mismo');
+      const pendientes = await regente.get('/autorizaciones');
+      assert.equal(pendientes.body.length, 1);
+      assert.deepEqual(pendientes.body[0].paciente.alergias, ['Penicilinas']);
+
+      assert.equal((await venderAmoxicilina()).status, 422, 'pendiente todavía no sirve');
+      assert.equal((await regente.post(`/autorizaciones/${sol.body.id}/aprobar`, { motivo: 'El médico lo confirmó' })).status, 201);
+      assert.equal((await cajero.get(`/autorizaciones/${sol.body.id}`)).body.estado, 'APROBADA');
+
+      const ok = await venderAmoxicilina();
+      assert.equal(ok.status, 201, JSON.stringify(ok.body));
+      assert.ok(ok.body.lineas[0].autorizacionId);
+      assert.ok(ok.body.lineas[0].recipeId);
+      assert.equal((await venderAmoxicilina()).status, 422, 'el permiso sirve una sola vez');
+    });
+
+    it('si el Regente rechaza, la venta sigue bloqueada', async () => {
+      await cajero.subir('/recipes').field('cedula', 'V-14582307').attach('foto', PNG, 'r.png');
+      const sol = (await cajero.post('/autorizaciones/solicitudes', { cedula: 'V-14582307', productoId: d.amoxil.id, razon: 'ALERGIA' })).body;
+      assert.equal((await regente.post(`/autorizaciones/${sol.id}/rechazar`, { motivo: 'Riesgo de reacción' })).status, 201);
+      assert.equal((await regente.post(`/autorizaciones/${sol.id}/aprobar`, {})).status, 409);
+      assert.equal((await venderAmoxicilina()).status, 422);
+    });
+
     it('una autorización para otro paciente no sirve', async () => {
       await prisma.paciente.create({ data: { cedula: 'V-9871220', nombre: 'José Peña', telefono: '0412-5550148', alergias: [], condiciones: [] } });
       const rx = (await cajero.subir('/recipes').field('cedula', 'V-14582307').attach('foto', PNG, 'r.png')).body;

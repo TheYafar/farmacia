@@ -266,3 +266,22 @@ El servidor de quien vende el sistema funciona también como **panel central**: 
 6. **Acceso remoto:** solo si el dueño lo permite (Soporte → Acceso remoto, de 1 a 24 horas), aparece el botón **Entrar** en el panel. Soporte entra como «Soporte técnico»: todo queda en la auditoría, y el dueño ve un aviso arriba con un botón para quitar el acceso al instante.
 
 Si un código se filtra, genera uno nuevo desde la ficha de la farmacia: el anterior deja de funcionar. Para dar de baja a una farmacia, usa **Desactivar**.
+
+## Cajas (equipos de cobro)
+
+Cada computadora o tablet donde se cobra puede ser una **caja**.
+
+- **Crear una caja:** al abrir la caja en un equipo nuevo, toca «Crear caja aquí». El dueño también puede crearlas desde **Cajas**.
+- **Pasarla a otro equipo** (por ejemplo, a una tablet): en Caja, o en Cajas si eres el dueño, toca **Pasar a otro equipo**. Sale un código de 6 letras que vale 30 minutos y sirve una sola vez. En la tablet, en la pantalla de entrada, toca «Tengo un código».
+- **Qué ve el dueño en Cajas:** en qué equipos está cada caja, quién la tiene abierta y cuánto vendió hoy. Puede quitar un equipo o desactivar la caja.
+- **Una persona a la vez:** si la caja ya está abierta por alguien, otra persona no puede abrirla al mismo tiempo.
+- **Entrar con correo:** el dueño puede ponerle correo a cada usuario (en Usuarios) para que entre con el correo en lugar del usuario.
+
+## Demo con datos de ejemplo
+
+La pantalla de entrada tiene el botón **Prueba la demo**. Se puede entrar como dueño, farmacéutico o cajero, sin clave.
+
+- **Datos separados:** la demo usa un esquema aparte de la base de datos (`demo`), con una farmacia inventada que tiene productos, clientes, dos meses de ventas, cierres, encargos y compras. Lo que se haga en la demo nunca toca la farmacia real.
+- **Se reinicia sola:** los datos se borran y se vuelven a cargar cada noche.
+- **Lo que no se puede hacer en la demo:** crear usuarios, subir fotos de récipes ni usar soporte.
+- **Para quitar el botón:** pon `DEMO=false` en el `.env` y corre `./instalar.sh`.

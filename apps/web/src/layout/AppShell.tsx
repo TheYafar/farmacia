@@ -1,5 +1,5 @@
 import { clsx } from 'clsx';
-import { ChevronDown, LogOut, Moon, MoreHorizontal, Sun } from 'lucide-react';
+import { ChevronDown, HelpCircle, LogOut, Moon, MonitorSmartphone, MoreHorizontal, Sun } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { GRUPOS, NAV, ROLE_LABEL, type Grupo, type NavItem } from '@/config/nav';
@@ -13,6 +13,8 @@ import { useConexion } from '@/lib/api';
 import { useConfig } from '@/store/config';
 import { descartarRechazada, enviarPendientes, guardarCatalogo, useSinConexion } from '@/lib/sinConexion';
 import { avisar } from '@/store/avisos';
+import Guia, { useGuia } from '@/features/guia/Guia';
+import { useCajaEquipo } from '@/store/cajaEquipo';
 const usdF = (v: number) => `$${v.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /** Números rojos del menú: lo que espera al farmacéutico o al dueño. Se actualiza cada 20 segundos. */
@@ -69,6 +71,9 @@ export default function AppShell() {
   const rol = useRol();
   const central = rol === 'SUPERADMIN' || rol === 'SOPORTE';
   useEffect(() => { if (!central) void cargarConfig(); }, [cargarConfig, central]);
+  const abrirGuia = useGuia((s) => s.abrir);
+  const { caja: cajaEquipo, cargada: cajaCargada, cargar: cargarCaja } = useCajaEquipo();
+  useEffect(() => { if (!central && !cajaCargada) void cargarCaja(); }, [central, cajaCargada, cargarCaja]);
   const usuario = useSesion((s) => s.usuario)!;
   const tasa = useSesion((s) => s.tasa);
   const tasaModo = useConfig((s) => s.config?.tasaModo);
@@ -77,7 +82,7 @@ export default function AppShell() {
   const nav = NAV.filter((n) => n.roles.includes(rol));
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const current = nav.find((n) => pathname.startsWith(n.to));
+  const current = nav.find((n) => pathname === n.to || pathname.startsWith(`${n.to}/`));
   const [moreOpen, setMoreOpen] = useState(false);
   const cerrar = async () => { await salir(); navigate('/'); };
 
@@ -142,8 +147,10 @@ export default function AppShell() {
           <div className="hidden text-xs text-muted xl:block">
             <div className="font-semibold text-fg">{usuario.nombre}</div>
             <div>{usuario.soporte ? 'Soporte remoto' : ROLE_LABEL[rol]}</div>
+            {cajaEquipo && <div className="mt-1 flex items-center gap-1 text-accent"><MonitorSmartphone className="h-3.5 w-3.5" aria-hidden />{cajaEquipo.nombre}</div>}
           </div>
           <div className="flex items-center gap-1">
+            {!central && <button onClick={abrirGuia} className="rounded-lg p-2 text-muted hover:bg-surface2 hover:text-fg" aria-label="Ver la guía rápida" title="Guía rápida"><HelpCircle className="h-5 w-5" /></button>}
             <ThemeToggle />
             <button onClick={cerrar} className="rounded-lg p-2 text-muted hover:bg-surface2 hover:text-fg" aria-label="Cerrar sesión">
               <LogOut className="h-5 w-5" />
@@ -154,7 +161,14 @@ export default function AppShell() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         {central ? null : <SinConexion />}
+        {usuario.demo && (
+          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-warn-soft px-4 py-1.5 text-center text-[13px] font-semibold text-warn">
+            <span>Estás en la demo: los datos son de ejemplo y se borran cada noche.</span>
+            <button className="underline" onClick={cerrar}>Salir de la demo</button>
+          </div>
+        )}
         <AvisoSoporte />
+        <Guia />
         <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-line bg-surface/95 px-4 py-2.5 backdrop-blur md:px-6" style={{ paddingTop: 'max(0.625rem, env(safe-area-inset-top))' }}>
           <div className="flex min-w-0 items-center gap-2.5">
             <span className="md:hidden"><Brand /></span>
@@ -164,6 +178,7 @@ export default function AppShell() {
             {central ? <span className="whitespace-nowrap rounded-md bg-accent-soft px-2 py-1 text-xs font-semibold text-accent">Panel central</span> : <span className={clsx('whitespace-nowrap rounded-md px-2 py-1 font-mono text-xs', tasa ? 'bg-surface2 text-muted' : 'bg-warn-soft text-warn')} title={tasaModo === 'BCV_EUR' ? 'Los precios en $ se convierten con la tasa del euro del BCV' : 'Tasa con la que se cobra'}>
               {tasa ? `${tasaModo === 'BCV_EUR' ? 'Euro BCV' : tasaModo === 'BCV_USD' ? 'Dólar BCV' : 'Tasa'}: ${num2(tasa)} Bs` : 'Falta la tasa'}
             </span>}
+            {!central && <button onClick={abrirGuia} className="rounded-lg p-2 text-muted hover:bg-surface2 md:hidden" aria-label="Ver la guía rápida"><HelpCircle className="h-5 w-5" /></button>}
             <span className="md:hidden"><ThemeToggle /></span>
           </div>
         </header>

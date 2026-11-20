@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, Eye, EyeOff, KeyRound, Lock, MessageCircle, ShieldCheck, ShoppingCart, User } from 'lucide-react';
+import { ArrowRightLeft, BarChart3, Eye, EyeOff, KeyRound, Lock, MessageCircle, MonitorSmartphone, PlayCircle, ShieldCheck, ShoppingCart, User } from 'lucide-react';
 import { Alert, Button } from '@/components/ui';
 import { INICIO } from '@/config/nav';
 import { ApiError } from '@/lib/api';
 import { useSesion } from '@/store/sesion';
 import { useCaja } from '@/store/caja';
+import { useCajaEquipo } from '@/store/cajaEquipo';
+import { VincularConCodigo } from '@/features/cajas/Cajas';
 
 const Logo = ({ className = 'h-11 w-11' }: { className?: string }) => (
   <span className={`grid shrink-0 place-items-center rounded-2xl bg-white/15 ring-1 ring-white/25 ${className}`}>
@@ -26,6 +28,54 @@ function Reloj() {
     <div>
       <div className="font-display text-4xl font-bold tabular-nums">{ahora.toLocaleTimeString('es-VE', { hour: 'numeric', minute: '2-digit' })}</div>
       <div className="text-sm text-white/75">{((d) => d.charAt(0).toUpperCase() + d.slice(1))(ahora.toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long' }))}</div>
+    </div>
+  );
+}
+
+/** Qué caja es este equipo; si no es ninguna, se puede vincular con el código de otra. */
+function CajaEnEntrada() {
+  const { caja, cargada, cargar } = useCajaEquipo();
+  const [codigo, setCodigo] = useState(false);
+  useEffect(() => { if (!cargada) void cargar(); }, [cargada, cargar]);
+  if (!cargada) return null;
+  if (caja) return <div className="flex items-center gap-2 rounded-xl bg-accent-soft px-3 py-2 text-sm text-accent"><MonitorSmartphone className="h-4 w-4" aria-hidden />Este equipo es <b>{caja.nombre}</b></div>;
+  return codigo ? (
+    <div className="flex flex-col gap-1.5 rounded-xl border border-line p-3">
+      <span className="text-sm font-semibold">Código de la caja</span>
+      <span className="text-xs text-muted">Sácalo en el otro equipo: Caja → Pasar a otro equipo (o el dueño en Cajas).</span>
+      <VincularConCodigo listo={() => setCodigo(false)} />
+      <button type="button" className="self-start text-xs text-muted underline" onClick={() => setCodigo(false)}>Cancelar</button>
+    </div>
+  ) : (
+    <button type="button" onClick={() => setCodigo(true)} className="flex items-center gap-2 text-sm text-muted hover:text-fg">
+      <ArrowRightLeft className="h-4 w-4" aria-hidden />Este equipo no es una caja. <span className="font-semibold text-accent underline">Tengo un código</span>
+    </button>
+  );
+}
+
+/** Probar el sistema con una farmacia de ejemplo, sin clave. */
+function ProbarDemo() {
+  const entrarDemo = useSesion((s) => s.entrarDemo);
+  const navigate = useNavigate();
+  const [entrando, setEntrando] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const roles = [['ADMIN', 'Dueño', 'Ve todo: ventas, reportes, inventario'], ['REGENTE', 'Farmacéutico', 'Revisa récipes y da permisos'], ['CAJERO', 'Cajero', 'Vende y cobra']] as const;
+  return (
+    <div className="mt-6 rounded-2xl border border-accent/30 bg-accent-soft/50 p-4">
+      <div className="flex items-center gap-2 font-bold"><PlayCircle className="h-5 w-5 text-accent" aria-hidden />¿Primera vez? Prueba la demo</div>
+      <p className="mt-1 text-sm text-muted">Una farmacia de ejemplo con productos, clientes y dos meses de ventas. Toca y explora: nada de lo que hagas afecta a tu farmacia.</p>
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        {roles.map(([rol, nombre, que]) => (
+          <button key={rol} type="button" disabled={!!entrando} title={que} onClick={async () => {
+            setEntrando(rol); setError(null);
+            try { await entrarDemo(rol); navigate(INICIO[rol], { replace: true }); } catch (e) { setError(e instanceof ApiError ? e.message : 'No se pudo abrir la demo'); setEntrando(null); }
+          }} className="flex flex-col items-center gap-0.5 rounded-xl border border-line bg-surface px-2 py-2.5 text-sm font-semibold transition hover:border-accent hover:text-accent disabled:opacity-60">
+            {entrando === rol ? 'Abriendo…' : nombre}
+            <span className="hidden text-center text-[11px] font-normal leading-tight text-muted sm:block">{que}</span>
+          </button>
+        ))}
+      </div>
+      {error && <div className="mt-2"><Alert tone="bad">{error}</Alert></div>}
     </div>
   );
 }
@@ -115,9 +165,10 @@ export default function LoginPage() {
             <h1 className="font-display text-2xl font-bold">Iniciar sesión</h1>
             <p className="mt-1 text-sm text-muted">Entra con el usuario y la clave que te dio el dueño.</p>
 
-            <form className="mt-6 flex flex-col gap-4" onSubmit={enviar}>
+            <div className="mt-5"><CajaEnEntrada /></div>
+            <form className="mt-4 flex flex-col gap-4" onSubmit={enviar}>
               <label className="flex flex-col gap-1.5 text-sm font-semibold">
-                Usuario
+                Usuario o correo
                 <span className="relative">
                   <User className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-muted" aria-hidden />
                   <input id="usuario" value={usuario} onChange={(e) => setUsuario(e.target.value)} autoComplete="username" autoCapitalize="none" spellCheck={false} required autoFocus={!usuario}
@@ -163,6 +214,7 @@ export default function LoginPage() {
                 </a>
               )}
             </div>
+            {farmacia.hayDemo && <ProbarDemo />}
             <p className="mt-6 flex items-center gap-1.5 text-xs text-muted"><Lock className="h-3.5 w-3.5" aria-hidden />Conexión segura. Tu sesión se cierra sola en los equipos que no uses.</p>
           </div>
         </div>

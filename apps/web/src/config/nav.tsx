@@ -1,4 +1,4 @@
-import { Headset, LifeBuoy, Store, UsersRound, BarChart3, Settings, ClipboardList, Receipt, Tags, BookLock, Building2, MessageCircle, PieChart, Truck, Camera, Clock, Package, ShieldCheck, ShoppingCart, UserCog, Users, Wallet } from 'lucide-react';
+import { MonitorSmartphone, Headset, LifeBuoy, Store, UsersRound, BarChart3, Settings, ClipboardList, Receipt, Tags, BookLock, Building2, MessageCircle, PieChart, Truck, Camera, Clock, Package, ShieldCheck, ShoppingCart, UserCog, Users, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Rol } from '@farmacia/shared';
 
@@ -26,6 +26,7 @@ export const NAV: NavItem[] = [
   { to: '/reportes', label: 'Reportes', short: 'Reportes', icon: PieChart, roles: ['ADMIN'], grupo: 'Negocio' },
   { to: '/auditoria', label: 'Auditoría', short: 'Auditoría', icon: ClipboardList, roles: ['ADMIN'], grupo: 'Administración' },
   { to: '/configuracion', label: 'Configuración', short: 'Ajustes', icon: Settings, roles: ['ADMIN'], grupo: 'Administración' },
+  { to: '/cajas', label: 'Cajas', short: 'Cajas', icon: MonitorSmartphone, roles: ['ADMIN'], grupo: 'Administración' },
   { to: '/usuarios', label: 'Usuarios', short: 'Usuarios', icon: UserCog, roles: ['ADMIN'], grupo: 'Administración' },
   { to: '/soporte', label: 'Soporte', short: 'Soporte', icon: LifeBuoy, roles: ['CAJERO', 'REGENTE', 'ADMIN'], grupo: 'Administración' },
   // Panel central: quien vende el sistema ve todas las farmacias y les da soporte.

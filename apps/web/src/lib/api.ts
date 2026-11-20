@@ -30,6 +30,16 @@ export class ApiError extends Error {
   }
 }
 
+/** Demo: la caja del equipo se guarda aparte para no mezclarla con la de la farmacia real. */
+let modoDemo = false;
+export const ponerModoDemo = (v: boolean) => { modoDemo = v; };
+export const esModoDemo = () => modoDemo;
+export const claveCaja = () => (modoDemo ? 'cajaDemo' : 'caja');
+/** Token de la caja de este equipo (se envía en cada petición para saber en qué caja se cobra). */
+export function tokenCaja(): string | null {
+  try { return (JSON.parse(localStorage.getItem(claveCaja()) ?? 'null') as { token?: string } | null)?.token ?? null; } catch { return null; }
+}
+
 export const sesionToken = {
   poner: (t: string | null) => { token = t; },
   alExpirar: (fn: () => void) => { alExpirar = fn; },
@@ -54,6 +64,8 @@ interface Opciones { method?: string; body?: unknown; form?: FormData; crudo?: b
 export async function api<T = unknown>(ruta: string, op: Opciones = {}, reintento = true): Promise<T> {
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
+  const caja = tokenCaja();
+  if (caja) headers['x-caja'] = caja;
   if (op.body !== undefined) headers['Content-Type'] = 'application/json';
 
   let r: Response;

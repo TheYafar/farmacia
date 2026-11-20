@@ -4,6 +4,7 @@ import { Alert, Button, Campo, Card, claseInput } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
 import { avisar } from '@/store/avisos';
 import { useCaja } from '@/store/caja';
+import { CajaDelEquipo } from '@/features/cajas/Cajas';
 
 export const leerMonto = (s: string) => (s.trim() ? Number(s.trim().replace(/\./g, '').replace(',', '.')) : 0);
 
@@ -22,6 +23,7 @@ export default function AbrirCaja() {
           <p className="text-sm text-muted">Escribe el sencillo con el que empiezas el turno.</p>
         </div>
       </div>
+      <CajaDelEquipo />
       <form className="flex flex-col gap-3" onSubmit={async (e) => {
         e.preventDefault();
         setError(null);

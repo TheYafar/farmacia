@@ -1,6 +1,6 @@
 import type { CategoriaRiesgo, EstadoEspera, NivelPrecio, Rol } from '@farmacia/shared';
 
-export interface UsuarioSesion { id: string; nombre: string; usuario?: string; rol: Rol; soporte?: boolean }
+export interface UsuarioSesion { id: string; nombre: string; usuario?: string; rol: Rol; soporte?: boolean; demo?: boolean }
 
 export interface Opcion {
   id: string;
@@ -88,7 +88,7 @@ export interface Resumen {
   demandaInsatisfecha: { producto?: { nombreComercial: string; concentracion: string }; veces: number }[];
 }
 
-export interface Usuario { id: string; nombre: string; usuario: string; rol: Rol; activo: boolean; bloqueadoHasta: string | null }
+export interface Usuario { id: string; nombre: string; usuario: string; correo?: string | null; rol: Rol; activo: boolean; bloqueadoHasta: string | null }
 
 export interface Pago { id: string; metodo: import('@farmacia/shared').MetodoPago; moneda: 'USD' | 'BS'; monto: string; montoUsd: string; referencia: string | null }
 
@@ -126,4 +126,4 @@ export interface Turno {
   _count?: { ventas: number };
 }
 
-export interface Farmacia { nombre: string; rif: string; direccion: string; telefono: string; soporte?: string | null }
+export interface Farmacia { nombre: string; rif: string; direccion: string; telefono: string; soporte?: string | null; hayDemo?: boolean }

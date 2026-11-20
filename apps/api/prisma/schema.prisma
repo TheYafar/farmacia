@@ -26,6 +26,8 @@ model Usuario {
   id               String    @id @default(uuid()) @db.Uuid
   nombre           String
   usuario          String    @unique
+  /// Correo para entrar (además del usuario). Opcional.
+  correo           String?   @unique
   claveHash        String
   rol              Rol
   activo           Boolean   @default(true)
@@ -385,6 +387,9 @@ model Turno {
   revisadoPorId String?     @db.Uuid
   revisadoPor   Usuario?    @relation("TurnoRevisor", fields: [revisadoPorId], references: [id])
   revisadoEn    DateTime?
+  /// Caja (equipo) donde se abrió el turno.
+  cajaId        String?     @db.Uuid
+  caja          Caja?       @relation(fields: [cajaId], references: [id])
 
   ventas Venta[]
 
@@ -740,4 +745,35 @@ model DevolucionProveedor {
   motivo    String
   usuarioId String   @db.Uuid
   creadoEn  DateTime @default(now())
+}
+
+// ---------- Cajas (equipos de cobro) ----------
+
+/// Una caja registradora. Puede estar en uno o varios equipos (computadora, tablet) vinculados con un código.
+model Caja {
+  id          String       @id @default(uuid()) @db.Uuid
+  nombre      String
+  activa      Boolean      @default(true)
+  creadaPorId String?      @db.Uuid
+  creadaEn    DateTime     @default(now())
+  /// Código para pasar la caja a otro equipo (se guarda solo el hash; vale 30 minutos y una sola vez).
+  codigoHash  String?      @unique
+  codigoVence DateTime?
+
+  equipos     CajaEquipo[]
+  turnos      Turno[]
+}
+
+/// Un equipo (navegador) que funciona como esa caja. Se identifica con un token guardado en el equipo.
+model CajaEquipo {
+  id         String    @id @default(uuid()) @db.Uuid
+  cajaId     String    @db.Uuid
+  caja       Caja      @relation(fields: [cajaId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  agente     String?
+  creadoEn   DateTime  @default(now())
+  ultimoUso  DateTime  @default(now())
+  quitadoEn  DateTime?
+
+  @@index([cajaId])
 }

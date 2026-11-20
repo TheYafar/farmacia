@@ -114,7 +114,7 @@ POST /api/v1/ventas
 <!-- rutas:inicio -->
 ## Todas las rutas
 
-Generada del código con `python3 infra/generar-api-doc.py`. 121 rutas.
+Generada del código con `python3 infra/generar-api-doc.py`. 130 rutas.
 
 | Método | Ruta | Quién | Qué hace |
 |---|---|---|---|
@@ -122,6 +122,7 @@ Generada del código con `python3 infra/generar-api-doc.py`. 121 rutas.
 | POST | `/auth/2fa/activar` | Todos |  |
 | POST | `/auth/2fa/desactivar` | Todos |  |
 | POST | `/auth/2fa/iniciar` | Todos |  |
+| POST | `/auth/demo` | Público | Probar la demo con datos de ejemplo, como dueño, farmacéutico o cajero. |
 | POST | `/auth/renovar` | Público |  |
 | POST | `/auth/salir` | Todos |  |
 | POST | `/auth/soporte` | Público | Entrada de soporte remoto con el enlace que el dueño autorizó. |
@@ -132,11 +133,19 @@ Generada del código con `python3 infra/generar-api-doc.py`. 121 rutas.
 | POST | `/autorizaciones/:id/aprobar` | R, A |  |
 | POST | `/autorizaciones/:id/rechazar` | R, A |  |
 | POST | `/autorizaciones/solicitudes` | Todos | Cualquier usuario pide permiso. Si ya hay una solicitud abierta igual, devuelve esa. |
-| POST | `/caja/abrir` | Todos |  |
+| POST | `/caja/abrir` | Todos | Abre el turno. Si este equipo es una caja, el turno queda en esa caja (una persona a la vez). |
 | GET | `/caja/actual` | Todos | Mi caja abierta. El cajero NO ve cuánto debería haber (cierre a ciegas): así cuenta de verdad. El Regente y el dueño sí lo ven. |
 | POST | `/caja/cerrar` | Todos |  |
 | GET | `/caja/turnos` | R, A |  |
 | POST | `/caja/turnos/:id/revisar` | A | El dueño marca el cierre como revisado (por ejemplo, después de aclarar una diferencia). |
+| GET | `/cajas` | A | Todas las cajas: equipos, quién la tiene abierta y lo vendido hoy. |
+| POST | `/cajas` | C, R, A | Crear una caja. Normalmente en el mismo equipo donde se va a cobrar. |
+| PATCH | `/cajas/:id` | A |  |
+| POST | `/cajas/:id/codigo` | C, R, A | Código para pasar la caja a otro equipo. Lo pide el dueño o alguien desde un equipo de esa caja. |
+| POST | `/cajas/equipos/:id/quitar` | A |  |
+| GET | `/cajas/este-equipo` | Público | Qué caja es este equipo (se muestra también en la pantalla de entrada). |
+| POST | `/cajas/salir` | C, R, A | Este equipo deja de ser caja. |
+| POST | `/cajas/vincular` | Público | Convertir este equipo en una caja que ya existe, con el código que se generó en otro equipo. |
 | GET | `/catalogo/buscar` | Todos |  |
 | GET | `/catalogo/codigo/:codigo` | Todos | Lector de código de barras: devuelve el producto exacto. |
 | GET | `/catalogo/configuracion` | Todos |  |

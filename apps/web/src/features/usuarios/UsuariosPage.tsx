@@ -11,18 +11,19 @@ import { avisar } from '@/store/avisos';
 import { useSesion } from '@/store/sesion';
 
 function NuevoUsuario({ abierto, onCerrar, onListo }: { abierto: boolean; onCerrar: () => void; onListo: () => void }) {
-  const [f, setF] = useState({ nombre: '', usuario: '', clave: '', rol: 'CAJERO' as Rol });
+  const [f, setF] = useState({ nombre: '', usuario: '', correo: '', clave: '', rol: 'CAJERO' as Rol });
   const [error, setError] = useState<string | null>(null);
   return (
     <Sheet open={abierto} onClose={onCerrar} title="Nuevo usuario">
       <form className="flex flex-col gap-3" onSubmit={async (e) => {
         e.preventDefault();
         setError(null);
-        try { await api('/usuarios', { body: f }); avisar('Usuario creado', 'ok'); setF({ nombre: '', usuario: '', clave: '', rol: 'CAJERO' }); onListo(); }
+        try { await api('/usuarios', { body: f }); avisar('Usuario creado', 'ok'); setF({ nombre: '', usuario: '', correo: '', clave: '', rol: 'CAJERO' }); onListo(); }
         catch (err) { setError(err instanceof ApiError ? [err.message, ...err.errores.map((x) => x.mensaje)].join('. ') : 'No se pudo crear'); }
       }}>
         <Campo etiqueta="Nombre"><input required value={f.nombre} onChange={(e) => setF({ ...f, nombre: e.target.value })} className={claseInput} /></Campo>
         <Campo etiqueta="Usuario para entrar" ayuda="Letras y números, sin espacios"><input required value={f.usuario} onChange={(e) => setF({ ...f, usuario: e.target.value.toLowerCase() })} autoCapitalize="none" className={claseInput} /></Campo>
+        <Campo etiqueta="Correo (opcional)" ayuda="Para entrar con el correo en lugar del usuario"><input type="email" value={f.correo} onChange={(e) => setF({ ...f, correo: e.target.value })} autoCapitalize="none" className={claseInput} /></Campo>
         <Campo etiqueta="Clave" ayuda="Al menos 10 caracteres"><input required type="password" minLength={10} value={f.clave} onChange={(e) => setF({ ...f, clave: e.target.value })} autoComplete="new-password" className={claseInput} /></Campo>
         <Campo etiqueta="Rol">
           <select value={f.rol} onChange={(e) => setF({ ...f, rol: e.target.value as Rol })} className={claseInput}>
@@ -53,10 +54,10 @@ function CambiarClave({ u, onCerrar }: { u: Usuario | null; onCerrar: () => void
 }
 
 function EditarUsuario({ u, onCerrar, onListo }: { u: Usuario | null; onCerrar: () => void; onListo: () => void }) {
-  const [f, setF] = useState<{ nombre: string; rol: Rol }>({ nombre: '', rol: 'CAJERO' });
+  const [f, setF] = useState<{ nombre: string; rol: Rol; correo: string }>({ nombre: '', rol: 'CAJERO', correo: '' });
   const [error, setError] = useState<string | null>(null);
   const [visto, setVisto] = useState<string | null>(null);
-  if (u && visto !== u.id) { setVisto(u.id); setF({ nombre: u.nombre, rol: u.rol }); setError(null); }
+  if (u && visto !== u.id) { setVisto(u.id); setF({ nombre: u.nombre, rol: u.rol, correo: u.correo ?? '' }); setError(null); }
   return (
     <Sheet open={!!u} onClose={onCerrar} title={`Editar a ${u?.nombre ?? ''}`}>
       <form className="flex flex-col gap-3" onSubmit={async (e) => {
@@ -69,6 +70,7 @@ function EditarUsuario({ u, onCerrar, onListo }: { u: Usuario | null; onCerrar: 
         } catch (err) { setError(err instanceof ApiError ? err.message : 'No se pudo guardar'); }
       }}>
         <Campo etiqueta="Nombre"><input required value={f.nombre} onChange={(e) => setF({ ...f, nombre: e.target.value })} className={claseInput} /></Campo>
+        <Campo etiqueta="Correo" ayuda="Para entrar con el correo. Vacío = sin correo"><input type="email" value={f.correo} onChange={(e) => setF({ ...f, correo: e.target.value })} autoCapitalize="none" className={claseInput} /></Campo>
         <Campo etiqueta="Rol" ayuda="Cajero: vende. Farmacéutico: además revisa récipes y da permisos. Dueño: todo.">
           <select value={f.rol} onChange={(e) => setF({ ...f, rol: e.target.value as Rol })} className={claseInput}>
             {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
@@ -106,7 +108,7 @@ export default function UsuariosPage() {
                 <li key={u.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                   <div className="min-w-0">
                     <div className="font-semibold">{u.nombre} {u.id === yo.id && <span className="text-xs text-muted">(tú)</span>}</div>
-                    <div className="text-xs text-muted">@{u.usuario}</div>
+                    <div className="text-xs text-muted">@{u.usuario}{u.correo ? ` · ${u.correo}` : ''}</div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Chip tone={u.rol === 'ADMIN' ? 'accent' : u.rol === 'REGENTE' ? 'info' : 'neutral'}>{ROLE_LABEL[u.rol]}</Chip>

@@ -113,7 +113,8 @@ const texto = (max: number) => z.string().trim().min(1).max(max);
 const montoUsd = z.number().positive().max(100_000).multipleOf(0.01);
 
 export const loginSchema = z.object({
-  usuario: z.string().trim().toLowerCase().min(3).max(40),
+  /** Usuario o correo. */
+  usuario: z.string().trim().toLowerCase().min(3).max(120),
   clave: z.string().min(6).max(128),
   /** Código de 6 números de la app de autenticación, si el usuario tiene la clave de dos pasos. */
   codigo: z.string().trim().regex(/^\d{6}$/).optional(),
@@ -125,6 +126,7 @@ export const crearUsuarioSchema = z.object({
   usuario: z.string().trim().toLowerCase().regex(/^[a-z0-9._-]{3,40}$/, 'Solo letras, números, punto, guion y guion bajo'),
   clave: z.string().min(10, 'La clave debe tener al menos 10 caracteres').max(128),
   rol: z.enum(ROLES),
+  correo: z.string().trim().toLowerCase().email('Correo inválido').max(120).optional().or(z.literal('').transform(() => undefined)),
 });
 export type CrearUsuarioInput = z.infer<typeof crearUsuarioSchema>;
 
@@ -503,7 +505,12 @@ export function redondearBs(v: number, paso: number) {
 
 // ---------- Usuarios ----------
 
-export const editarUsuarioSchema = z.object({ nombre: texto(80).optional(), rol: z.enum(ROLES).optional() });
+export const editarUsuarioSchema = z.object({
+  nombre: texto(80).optional(),
+  rol: z.enum(ROLES).optional(),
+  /** Vacío = quitar el correo. */
+  correo: z.string().trim().toLowerCase().email('Correo inválido').max(120).nullable().optional().or(z.literal('').transform(() => null)),
+});
 export type EditarUsuarioInput = z.infer<typeof editarUsuarioSchema>;
 
 // ---------- Controlados conocidos ----------
@@ -548,3 +555,17 @@ export type MensajeSoporteInput = z.infer<typeof mensajeSoporteSchema>;
 export const enlaceCentralSchema = z.object({ codigo: z.string().trim().min(20).max(600) });
 /** Acceso remoto: el dueño deja entrar a soporte por unas horas. */
 export const accesoSoporteSchema = z.object({ horas: z.number().int().min(1).max(24) });
+
+// ---------- Cajas (equipos de cobro) ----------
+
+export const cajaSchema = z.object({
+  nombre: texto(40),
+  /** true: este equipo queda como esa caja. false: solo se crea (para pasarla luego con un código). */
+  enEsteEquipo: z.boolean().default(true),
+});
+export type CajaInput = z.infer<typeof cajaSchema>;
+/** Código de 6 letras/números para pasar una caja a otro equipo (se aceptan guiones y minúsculas). */
+export const vincularCajaSchema = z.object({
+  codigo: z.string().transform((v) => v.toUpperCase().replace(/[^A-Z0-9]/g, '')).pipe(z.string().length(6, 'El código tiene 6 letras o números')),
+});
+export const editarCajaSchema = z.object({ nombre: texto(40).optional(), activa: z.boolean().optional() });

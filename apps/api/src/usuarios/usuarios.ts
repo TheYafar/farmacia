@@ -7,7 +7,7 @@ import { Roles, Usuario, type UsuarioActual } from '../common/seguridad';
 import { Validar } from '../common/validacion';
 import { cifrarClave } from '../auth/auth';
 
-const campos = { id: true, nombre: true, usuario: true, rol: true, activo: true, bloqueadoHasta: true, creadoEn: true } as const;
+const campos = { id: true, nombre: true, usuario: true, correo: true, rol: true, activo: true, bloqueadoHasta: true, creadoEn: true } as const;
 const claveSchema = z.object({ clave: crearUsuarioSchema.shape.clave });
 
 /** Solo el dueño administra usuarios. La clave nunca sale del servidor. */
@@ -30,7 +30,7 @@ export class UsuariosController {
   @Post()
   async crear(@Body(new Validar(crearUsuarioSchema)) b: CrearUsuarioInput, @Usuario() yo: UsuarioActual) {
     const u = await this.prisma.usuario.create({
-      data: { nombre: b.nombre, usuario: b.usuario, rol: b.rol, claveHash: await cifrarClave(b.clave) },
+      data: { nombre: b.nombre, usuario: b.usuario, correo: b.correo, rol: b.rol, claveHash: await cifrarClave(b.clave) },
       select: campos,
     });
     await this.auditoria.registrar({ usuarioId: yo.id, accion: 'USUARIO_CREADO', entidad: 'Usuario', entidadId: u.id, datos: { rol: u.rol } });

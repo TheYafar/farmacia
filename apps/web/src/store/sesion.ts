@@ -1,7 +1,15 @@
 import { create } from 'zustand';
-import { api, renovar, sesionToken } from '@/lib/api';
+import { api, esModoDemo, ponerModoDemo, renovar, sesionToken } from '@/lib/api';
+import { useCajaEquipo } from './cajaEquipo';
 import type { UsuarioSesion } from '@/lib/tipos';
 import { useCaja } from './caja';
+
+/** Entrar o salir de la demo: cambian el nombre de la farmacia y la caja del equipo. */
+async function cambiarModo(demo: boolean) {
+  ponerModoDemo(demo);
+  useCajaEquipo.setState({ caja: null, cargada: false });
+  await useCaja.getState().cargarFarmacia();
+}
 
 const olvidarCaja = () => useCaja.setState({ turno: null, cargada: false, ventas: 0, totalUsd: '0.00' });
 
@@ -13,6 +21,8 @@ interface Sesion {
   errorEntrada: string | null;
   restaurar: () => Promise<void>;
   entrar: (usuario: string, clave: string, codigo?: string) => Promise<void>;
+  /** Probar la demo con datos de ejemplo. */
+  entrarDemo: (rol: 'ADMIN' | 'REGENTE' | 'CAJERO') => Promise<void>;
   salir: () => Promise<void>;
   cargarTasa: () => Promise<void>;
 }
@@ -42,7 +52,9 @@ export const useSesion = create<Sesion>((set, get) => ({
     }
     if (await renovar()) {
       try {
-        set({ usuario: await api<UsuarioSesion>('/auth/yo') });
+        const u = await api<UsuarioSesion>('/auth/yo');
+        if (u.demo) await cambiarModo(true);
+        set({ usuario: u });
         await get().cargarTasa();
       } catch { /* sesión inválida */ }
     }
@@ -53,6 +65,16 @@ export const useSesion = create<Sesion>((set, get) => ({
     const r = await api<{ accessToken: string; usuario: UsuarioSesion }>('/auth/login', { body: { usuario, clave, codigo: codigo || undefined } });
     sesionToken.poner(r.accessToken);
     olvidarCaja();
+    if (esModoDemo()) await cambiarModo(false);
+    set({ usuario: r.usuario, errorEntrada: null });
+    await get().cargarTasa();
+  },
+
+  entrarDemo: async (rol) => {
+    const r = await api<{ accessToken: string; usuario: UsuarioSesion }>('/auth/demo', { body: { rol } });
+    sesionToken.poner(r.accessToken);
+    olvidarCaja();
+    await cambiarModo(true);
     set({ usuario: r.usuario, errorEntrada: null });
     await get().cargarTasa();
   },
@@ -62,6 +84,7 @@ export const useSesion = create<Sesion>((set, get) => ({
     sesionToken.poner(null);
     olvidarCaja();
     set({ usuario: null });
+    await cambiarModo(false);
   },
 
   cargarTasa: async () => {

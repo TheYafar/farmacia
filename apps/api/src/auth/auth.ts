@@ -12,9 +12,13 @@ import { AuditoriaService } from '../auditoria/auditoria';
 import { CONFIG, type Config } from '../config';
 import { Publico, Usuario, type UsuarioActual } from '../common/seguridad';
 import { Validar } from '../common/validacion';
+import { contextoDemo, enDemo } from '../prisma/prisma.service';
+import { DemoModule, DemoService } from '../demo/demo';
+import { USUARIOS_DEMO } from '../demo/datos';
 
 const COOKIE = 'farm_rt';
 const tokenSoporteSchema = z.object({ token: z.string().min(20).max(100) });
+const demoSchema = z.object({ rol: z.enum(['ADMIN', 'REGENTE', 'CAJERO']) });
 const RUTA_COOKIE = '/api/v1/auth';
 
 /** Parámetros de Argon2id recomendados por OWASP (19 MiB, 2 pasadas). */
@@ -33,10 +37,24 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly auditoria: AuditoriaService,
     @Inject(CONFIG) private readonly config: Config,
+    private readonly demo: DemoService,
   ) {}
 
+  /** Entrar a la demo con un rol (sin clave). Todo pasa en el esquema demo. */
+  async entrarDemo(rol: keyof typeof USUARIOS_DEMO, ip?: string, agente?: string) {
+    if (!this.config.DEMO) throw new ForbiddenException('La demo está apagada');
+    await this.demo.preparar();
+    return contextoDemo.run({ demo: true }, async () => {
+      const u = await this.prisma.usuario.update({ where: { usuario: USUARIOS_DEMO[rol].usuario }, data: { activo: true, bloqueadoHasta: null } });
+      const refresh = randomBytes(32).toString('base64url');
+      const sesion = await this.prisma.sesion.create({ data: { usuarioId: u.id, refreshHash: sha256(refresh), expira: new Date(Date.now() + 86_400_000), ip, agente: agente?.slice(0, 200) } });
+      return { refresh, ...(await this.respuesta(u.id, sesion.id)) };
+    });
+  }
+
   async login({ usuario, clave, codigo }: LoginInput, ip?: string, agente?: string) {
-    const u = await this.prisma.usuario.findUnique({ where: { usuario } });
+    // Se entra con el usuario o con el correo.
+    const u = await this.prisma.usuario.findUnique({ where: usuario.includes('@') ? { correo: usuario } : { usuario } });
     const valida = await argon2.verify(u?.claveHash ?? (await this.hashFalso), clave);
 
     if (!u || !u.activo || u.sistema) throw new UnauthorizedException('Usuario o clave incorrectos');
@@ -149,8 +167,9 @@ export class AuthService {
 
   private async respuesta(usuarioId: string, sesionId: string) {
     const { sistema, ...u } = await this.prisma.usuario.findUniqueOrThrow({ where: { id: usuarioId }, select: { id: true, nombre: true, usuario: true, rol: true, sistema: true } });
-    const accessToken = await this.jwt.signAsync({ sub: u.id, sid: sesionId, rol: u.rol }, { expiresIn: `${this.config.ACCESS_TOKEN_MINUTOS}m`, algorithm: 'HS256' });
-    return { accessToken, usuario: { ...u, soporte: sistema } };
+    const demo = enDemo() || undefined;
+    const accessToken = await this.jwt.signAsync({ sub: u.id, sid: sesionId, rol: u.rol, demo }, { expiresIn: `${this.config.ACCESS_TOKEN_MINUTOS}m`, algorithm: 'HS256' });
+    return { accessToken, usuario: { ...u, soporte: sistema, demo } };
   }
 }
 
@@ -180,14 +199,27 @@ export class AuthController {
     return r;
   }
 
+  /** Probar la demo con datos de ejemplo, como dueño, farmacéutico o cajero. */
+  @Publico()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('demo')
+  @HttpCode(200)
+  async entrarDemo(@Body(new Validar(demoSchema)) b: z.infer<typeof demoSchema>, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const { refresh, ...r } = await this.auth.entrarDemo(b.rol, req.ip, req.headers['user-agent']);
+    this.ponerCookie(res, `d.${refresh}`);
+    return r;
+  }
+
   @Publico()
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Post('renovar')
   @HttpCode(200)
   async renovar(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     this.verificarOrigen(req);
-    const { refresh, ...r } = await this.auth.renovar(req.cookies?.[COOKIE]);
-    this.ponerCookie(res, refresh);
+    // Las sesiones de la demo llevan «d.» delante (así se sabe qué base usar).
+    const cookie: string | undefined = req.cookies?.[COOKIE];
+    const { refresh, ...r } = await this.auth.renovar(enDemo() && cookie?.startsWith('d.') ? cookie.slice(2) : cookie);
+    this.ponerCookie(res, enDemo() ? `d.${refresh}` : refresh);
     return r;
   }
 
@@ -200,7 +232,7 @@ export class AuthController {
 
   @Get('yo')
   async yo(@Usuario() u: UsuarioActual) {
-    return { id: u.id, nombre: u.nombre, rol: u.rol, soporte: !!u.soporte, dosPasos: await this.auth.tiene2fa(u.id) };
+    return { id: u.id, nombre: u.nombre, rol: u.rol, soporte: !!u.soporte, demo: enDemo() || undefined, dosPasos: await this.auth.tiene2fa(u.id) };
   }
 
   @Post('2fa/iniciar')
@@ -238,5 +270,5 @@ export class AuthController {
   }
 }
 
-@Module({ providers: [AuthService], controllers: [AuthController] })
+@Module({ imports: [DemoModule], providers: [AuthService], controllers: [AuthController] })
 export class AuthModule {}

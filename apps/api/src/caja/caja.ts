@@ -1,10 +1,11 @@
-import { Body, ConflictException, Controller, Get, HttpCode, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, ConflictException, Controller, Get, Headers, HttpCode, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { abrirCajaSchema, cerrarCajaSchema, METODOS_PAGO, type AbrirCajaInput, type CerrarCajaInput, type MetodoPago, type MontosPorMetodo } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
 import { Roles, Usuario, type UsuarioActual } from '../common/seguridad';
 import { Validar } from '../common/validacion';
+import { CajasModule, CajasService } from '../cajas/cajas';
 
 type Cliente = PrismaService | Prisma.TransactionClient;
 const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
@@ -14,7 +15,7 @@ export class CajaService {
   constructor(private readonly prisma: PrismaService, private readonly auditoria: AuditoriaService) {}
 
   turnoAbierto(cajeroId: string, cliente: Cliente = this.prisma) {
-    return cliente.turno.findFirst({ where: { cajeroId, estado: 'ABIERTO' } });
+    return cliente.turno.findFirst({ where: { cajeroId, estado: 'ABIERTO' }, include: { caja: { select: { id: true, nombre: true } } } });
   }
 
   /**
@@ -46,12 +47,19 @@ export class CajaService {
 
 @Controller('caja')
 export class CajaController {
-  constructor(private readonly caja: CajaService, private readonly prisma: PrismaService, private readonly auditoria: AuditoriaService) {}
+  constructor(private readonly caja: CajaService, private readonly prisma: PrismaService, private readonly auditoria: AuditoriaService, private readonly cajas: CajasService) {}
 
+  /** Abre el turno. Si este equipo es una caja, el turno queda en esa caja (una persona a la vez). */
   @Post('abrir')
-  async abrir(@Body(new Validar(abrirCajaSchema)) b: AbrirCajaInput, @Usuario() u: UsuarioActual) {
+  async abrir(@Body(new Validar(abrirCajaSchema)) b: AbrirCajaInput, @Usuario() u: UsuarioActual, @Headers('x-caja') token?: string) {
     if (await this.caja.turnoAbierto(u.id)) throw new ConflictException('Ya tienes una caja abierta');
-    const t = await this.prisma.turno.create({ data: { cajeroId: u.id, fondoUsd: b.fondoUsd, fondoBs: b.fondoBs } });
+    const equipo = await this.cajas.equipo(token);
+    if (equipo) {
+      const otro = await this.prisma.turno.findFirst({ where: { cajaId: equipo.cajaId, estado: 'ABIERTO' }, include: { cajero: { select: { nombre: true } } } });
+      if (otro) throw new ConflictException(`${equipo.caja.nombre} ya está abierta por ${otro.cajero.nombre}. Que la cierre primero, o usa otra caja`);
+      await this.prisma.cajaEquipo.update({ where: { id: equipo.id }, data: { ultimoUso: new Date() } });
+    }
+    const t = await this.prisma.turno.create({ data: { cajeroId: u.id, fondoUsd: b.fondoUsd, fondoBs: b.fondoBs, cajaId: equipo?.cajaId } });
     await this.auditoria.registrar({ usuarioId: u.id, accion: 'CAJA_ABIERTA', entidad: 'Turno', entidadId: t.id, datos: { fondoUsd: b.fondoUsd, fondoBs: b.fondoBs } });
     return t;
   }
@@ -109,5 +117,5 @@ export class CajaController {
   }
 }
 
-@Module({ providers: [CajaService], controllers: [CajaController], exports: [CajaService] })
+@Module({ imports: [CajasModule], providers: [CajaService], controllers: [CajaController], exports: [CajaService] })
 export class CajaModule {}

@@ -14,6 +14,7 @@ import { useConfig } from '@/store/config';
 import { descartarRechazada, enviarPendientes, guardarCatalogo, useSinConexion } from '@/lib/sinConexion';
 import { avisar } from '@/store/avisos';
 import Guia, { useGuia } from '@/features/guia/Guia';
+import { AvisoGuiaModulo, BotonGuiaModulo } from '@/features/guia/GuiaModulo';
 import { useCajaEquipo } from '@/store/cajaEquipo';
 const usdF = (v: number) => `$${v.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -173,6 +174,7 @@ export default function AppShell() {
           <div className="flex min-w-0 items-center gap-2.5">
             <span className="md:hidden"><Brand /></span>
             <span className="truncate font-display text-lg font-bold">{current?.label ?? 'Farmacia'}</span>
+            <BotonGuiaModulo ruta={current?.to} titulo={current?.label ?? ''} />
           </div>
           <div className="flex items-center gap-2">
             {central ? <span className="whitespace-nowrap rounded-md bg-accent-soft px-2 py-1 text-xs font-semibold text-accent">Panel central</span> : <span className={clsx('whitespace-nowrap rounded-md px-2 py-1 font-mono text-xs', tasa ? 'bg-surface2 text-muted' : 'bg-warn-soft text-warn')} title={tasaModo === 'BCV_EUR' ? 'Los precios en $ se convierten con la tasa del euro del BCV' : 'Tasa con la que se cobra'}>
@@ -183,6 +185,7 @@ export default function AppShell() {
           </div>
         </header>
 
+        {!usuario.soporte && <AvisoGuiaModulo ruta={current?.to} titulo={current?.label ?? ''} />}
         <main className="min-w-0 flex-1 overflow-y-auto px-4 pb-28 pt-4 md:px-6 md:pb-8 xl:px-8">
           <Outlet />
         </main>

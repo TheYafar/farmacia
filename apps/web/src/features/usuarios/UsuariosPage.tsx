@@ -1,3 +1,4 @@
+import { DosPasos } from '@/features/gestion/Gestion';
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
 import { ROLES, type Rol } from '@farmacia/shared';
@@ -64,6 +65,7 @@ export default function UsuariosPage() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader title="Usuarios" subtitle="Quién puede entrar y qué puede hacer" actions={<Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setNuevo(true)}>Nuevo usuario</Button>} />
+      <DosPasos />
       {error && <ErrorCarga mensaje={error} reintentar={recargar} />}
       {cargando ? <Cargando /> : (
         <Card>

@@ -16,7 +16,7 @@ export class ReportesController {
     const hace30 = new Date(inicioHoy.getTime() - 30 * 86_400_000);
     const en30 = new Date(inicioHoy.getTime() + 30 * 86_400_000);
 
-    const [hoy, semana, vencen, esperando, custodia, demanda] = await Promise.all([
+    const [hoy, semana, vencen, esperando, custodia, demanda, devHoy, devSemana, bajo] = await Promise.all([
       this.prisma.venta.aggregate({ where: { estado: 'COMPLETADA', creadaEn: { gte: inicioHoy } }, _sum: { totalUsd: true, totalBs: true }, _count: true }),
       this.prisma.$queryRaw<{ dia: Date; usd: Prisma.Decimal }[]>`
         SELECT date_trunc('day', "creadaEn") AS dia, sum("totalUsd") AS usd FROM "Venta"
@@ -28,12 +28,20 @@ export class ReportesController {
         by: ['productoId'], where: { solicitadaEn: { gte: hace30 } }, _count: { _all: true },
         orderBy: { _count: { productoId: 'desc' } }, take: 10,
       }),
+      this.prisma.devolucion.aggregate({ where: { creadoEn: { gte: inicioHoy } }, _sum: { montoUsd: true } }),
+      this.prisma.$queryRaw<{ dia: Date; usd: Prisma.Decimal }[]>`
+        SELECT date_trunc('day', "creadoEn") AS dia, sum("montoUsd") AS usd FROM "Devolucion" WHERE "creadoEn" >= ${hace7} GROUP BY 1`,
+      this.prisma.$queryRaw<{ n: bigint }[]>`
+        SELECT count(*) AS n FROM "Producto" p WHERE p.activo AND p."stockMinimo" > 0 AND p."stockMinimo" >=
+          COALESCE((SELECT sum(l."stockLibre") FROM "Lote" l WHERE l."productoId" = p.id AND l.vence >= current_date), 0)`,
     ]);
+    const menos = (d: Date) => devSemana.find((x) => x.dia.getTime() === d.getTime())?.usd ?? 0;
     const productos = await this.prisma.producto.findMany({ where: { id: { in: demanda.map((d) => d.productoId) } }, select: { id: true, nombreComercial: true, concentracion: true } });
 
     return {
-      hoy: { ventas: hoy._count, usd: (hoy._sum.totalUsd ?? new Prisma.Decimal(0)).toFixed(2), bs: (hoy._sum.totalBs ?? new Prisma.Decimal(0)).toFixed(2) },
-      semana: semana.map((d) => ({ dia: d.dia, usd: new Prisma.Decimal(d.usd).toFixed(2) })),
+      hoy: { ventas: hoy._count, usd: (hoy._sum.totalUsd ?? new Prisma.Decimal(0)).sub(devHoy._sum.montoUsd ?? 0).toFixed(2), devueltoUsd: (devHoy._sum.montoUsd ?? new Prisma.Decimal(0)).toFixed(2), bs: (hoy._sum.totalBs ?? new Prisma.Decimal(0)).toFixed(2) },
+      semana: semana.map((d) => ({ dia: d.dia, usd: new Prisma.Decimal(d.usd).sub(menos(d.dia)).toFixed(2) })),
+      stockBajo: Number(bajo[0]?.n ?? 0),
       lotesVencen30Dias: vencen,
       clientesEsperando: esperando,
       enGaveta: custodia,

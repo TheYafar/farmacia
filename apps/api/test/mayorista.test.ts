@@ -1,7 +1,8 @@
 import { after, before, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { INestApplication } from '@nestjs/common';
-import { como, entrar, escenario, levantar, prisma } from './ayuda';
+import request from 'supertest';
+import { CLAVE, ORIGEN, como, entrar, escenario, levantar, prisma } from './ayuda';
 
 // Acetaminofén genérico: 0,85 $ al detal, 12 unidades vendibles (2 «PRONTO» + 10 «TARDE").
 describe('Compras, venta al mayor y reportes', () => {
@@ -121,3 +122,70 @@ describe('Descuentos, devoluciones y ajustes', () => {
     assert.ok(lista.length >= 1 && typeof lista[0].stock === 'number');
   });
 });
+
+describe('IVA, IGTF, venta sin duplicar, precios masivos y clave de dos pasos', () => {
+  let app: INestApplication;
+  let d: Awaited<ReturnType<typeof escenario>>;
+  let admin: ReturnType<typeof como>;
+  before(async () => { app = await levantar(); });
+  after(async () => { await app.close(); await prisma.$disconnect(); });
+  beforeEach(async () => {
+    d = await escenario();
+    admin = como(app, (await entrar(app, 'admin')).token);
+  });
+
+  it('suma IVA del producto y el IGTF de lo pagado en divisas', async () => {
+    await prisma.producto.update({ where: { id: d.generico.id }, data: { ivaPct: 16 } });
+    assert.equal((await admin.post('/catalogo/configuracion', { igtfActivo: true, igtfPct: 3 })).status, 200);
+    const v = await admin.post('/ventas', { lineas: [{ productoId: d.generico.id, cantidad: 10 }], metodoPago: 'EFECTIVO_USD' });
+    assert.equal(v.status, 201, JSON.stringify(v.body));
+    // 8,50 + 16 % IVA (1,36) = 9,86; + 3 % IGTF (0,30) = 10,16
+    assert.equal(v.body.ivaUsd, '1.36');
+    assert.equal(v.body.igtfUsd, '0.3');
+    assert.equal(v.body.totalUsd, '10.16');
+  });
+
+  it('la misma clave no guarda la venta dos veces', async () => {
+    const clave = '5b0e7a52-3f0c-4b8e-9a51-1f2d3c4b5a69';
+    const cuerpo = { clave, lineas: [{ productoId: d.generico.id, cantidad: 1 }], metodoPago: 'EFECTIVO_USD' };
+    const a = await admin.post('/ventas', cuerpo);
+    const b = await admin.post('/ventas', cuerpo);
+    assert.equal(a.body.id, b.body.id);
+    assert.equal(await prisma.venta.count(), 1);
+  });
+
+  it('cambio de precios masivo: vista previa no guarda, confirmar sí', async () => {
+    const prev = await admin.post('/catalogo/precios/masivo', { laboratorio: 'Lab. Orinoco', pct: 10 });
+    assert.equal(prev.status, 201, JSON.stringify(prev.body));
+    assert.equal(prev.body.cambios[0].despues, '0.95'); // 0,85 + 10 % = 0,935 → 0,95
+    assert.equal((await prisma.producto.findUniqueOrThrow({ where: { id: d.generico.id } })).precioUsd.toFixed(2), '0.85');
+    await admin.post('/catalogo/precios/masivo', { laboratorio: 'Lab. Orinoco', pct: 10, vistaPrevia: false });
+    assert.equal((await prisma.producto.findUniqueOrThrow({ where: { id: d.generico.id } })).precioUsd.toFixed(2), '0.95');
+  });
+
+  it('con la clave de dos pasos activa, el login pide el código', async () => {
+    const { verificarCodigo } = await import('../src/common/totp');
+    const ini = await admin.post('/auth/2fa/iniciar', {});
+    assert.match(ini.body.url, /^otpauth:\/\/totp\//);
+    const codigoActual = calcular(ini.body.secreto);
+    assert.ok(verificarCodigo(ini.body.secreto, codigoActual));
+    assert.equal((await admin.post('/auth/2fa/activar', { codigo: codigoActual })).status, 200);
+    const sinCodigo = await request(app.getHttpServer()).post('/api/v1/auth/login').set('Origin', ORIGEN).send({ usuario: 'admin', clave: CLAVE });
+    assert.equal(sinCodigo.status, 401);
+    assert.equal(sinCodigo.body.codigo, 'REQUIERE_2FA');
+    const conCodigo = await request(app.getHttpServer()).post('/api/v1/auth/login').set('Origin', ORIGEN).send({ usuario: 'admin', clave: CLAVE, codigo: calcular(ini.body.secreto) });
+    assert.equal(conCodigo.status, 200);
+  });
+});
+
+function calcular(secreto: string) {
+  // TOTP de referencia (RFC 6238) escrito aparte para no probar el código consigo mismo.
+  const { createHmac } = require('node:crypto') as typeof import('node:crypto');
+  const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  const bits = [...secreto].map((c) => A.indexOf(c).toString(2).padStart(5, '0')).join('');
+  const clave = Buffer.from(bits.match(/.{8}/g)!.map((b) => parseInt(b, 2)));
+  const msg = Buffer.alloc(8); msg.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000)));
+  const h = createHmac('sha1', clave).update(msg).digest();
+  const o = h[19]! & 15;
+  return ((h.readUInt32BE(o) & 0x7fffffff) % 1e6).toString().padStart(6, '0');
+}

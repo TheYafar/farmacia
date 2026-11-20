@@ -9,6 +9,7 @@ import { useCargar } from '@/lib/useCargar';
 import { useRol, useSesion } from '@/store/sesion';
 import { Sheet, Toaster } from '@/components/ui';
 import { useCaja } from '@/store/caja';
+import { useConexion } from '@/lib/api';
 
 /** Números rojos del menú: lo que espera al farmacéutico o al dueño. Se actualiza cada 20 segundos. */
 function useBadges(rol: string): Record<string, number> {
@@ -117,6 +118,7 @@ export default function AppShell() {
       </nav>
 
       <div className="flex min-w-0 flex-1 flex-col">
+        <SinConexion />
         <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-line bg-surface/95 px-4 py-2.5 backdrop-blur md:px-6" style={{ paddingTop: 'max(0.625rem, env(safe-area-inset-top))' }}>
           <div className="flex min-w-0 items-center gap-2.5">
             <span className="md:hidden"><Brand /></span>
@@ -172,4 +174,16 @@ export default function AppShell() {
       <Toaster />
     </div>
   );
+}
+
+/** Barra roja cuando se cae el internet o el servidor no responde. Se quita sola al volver. */
+function SinConexion() {
+  const enLinea = useConexion((s) => s.enLinea);
+  useEffect(() => {
+    if (enLinea) return;
+    const t = setInterval(() => { void fetch('/api/v1/salud').then((r) => { if (r.ok) useConexion.setState({ enLinea: true }); }).catch(() => {}); }, 5000);
+    return () => clearInterval(t);
+  }, [enLinea]);
+  if (enLinea) return null;
+  return <div role="alert" className="bg-bad px-4 py-1.5 text-center text-[13px] font-semibold text-white">Sin conexión con el servidor. Lo que estabas haciendo no se pierde: reintenta cuando vuelva el internet.</div>;
 }

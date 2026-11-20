@@ -4,6 +4,7 @@ import { api, ApiError } from '@/lib/api';
 import { bs, num2, usd } from '@/lib/format';
 import type { Resumen } from '@/lib/tipos';
 import { useCargar } from '@/lib/useCargar';
+import { Link } from 'react-router-dom';
 import { avisar } from '@/store/avisos';
 import { useSesion } from '@/store/sesion';
 
@@ -69,11 +70,17 @@ export default function PanelPage() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader title="Resumen de hoy" subtitle="Cómo va la farmacia" />
+      <Igtf />
       {error && <ErrorCarga mensaje={error} reintentar={recargar} />}
       {cargando || !datos ? <Cargando /> : (
         <>
+          {!!datos.stockBajo && (
+            <Link to="/catalogo" className="flex items-center justify-between gap-3 rounded-xl bg-warn-soft px-4 py-3 text-sm font-semibold text-warn">
+              <span>{datos.stockBajo} {datos.stockBajo === 1 ? 'producto llegó' : 'productos llegaron'} al stock mínimo</span><span className="underline">Ver en Catálogo</span>
+            </Link>
+          )}
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-            <Kpi k="Vendido hoy" v={usd(datos.hoy.usd)} sub={`Bs ${num2(datos.hoy.bs)} · ${datos.hoy.ventas} ventas`} />
+            <Kpi k="Vendido hoy" v={usd(datos.hoy.usd)} sub={`${datos.hoy.ventas} ventas${Number(datos.hoy.devueltoUsd) > 0 ? ` · devuelto ${usd(datos.hoy.devueltoUsd!)}` : ''}`} />
             <Kpi k="En la gaveta" v={String(datos.enGaveta)} sub="pagados, esperando que los busquen" />
             <Kpi k="Lotes que vencen en 30 días" v={String(datos.lotesVencen30Dias)} sub="revisar devolución" tone={datos.lotesVencen30Dias ? 'bad' : undefined} />
             <Kpi k="Clientes esperando" v={String(datos.clientesEsperando)} sub="pidieron algo que no había" />
@@ -118,5 +125,25 @@ export default function PanelPage() {
         <p className="text-xs text-muted">Referencia: {bs(1, tasa)} por cada dólar.</p>
       </Card>
     </div>
+  );
+}
+
+/** Interruptor del IGTF (impuesto a pagos en divisas). Lo decide el dueño con su contador. */
+function Igtf() {
+  const c = useCargar(() => api<{ igtfActivo: boolean; igtfPct: number }>('/catalogo/configuracion'), []);
+  if (!c.datos) return null;
+  const guardar = async (igtfActivo: boolean, igtfPct: number) => {
+    try { await api('/catalogo/configuracion', { body: { igtfActivo, igtfPct } }); avisar(igtfActivo ? `IGTF ${igtfPct} % activado en pagos en $ efectivo` : 'IGTF desactivado', 'ok'); c.recargar(); }
+    catch { avisar('No se pudo guardar', 'bad'); }
+  };
+  return (
+    <label className="flex flex-wrap items-center gap-2 text-sm text-muted">
+      <input type="checkbox" checked={c.datos.igtfActivo} onChange={(e) => guardar(e.target.checked, c.datos!.igtfPct)} className="h-4 w-4" />
+      Cobrar IGTF de
+      <select value={c.datos.igtfPct} onChange={(e) => guardar(c.datos!.igtfActivo, Number(e.target.value))} className="h-8 rounded-lg border border-line bg-surface px-2">
+        {[1, 2, 3].map((p) => <option key={p} value={p}>{p} %</option>)}
+      </select>
+      a los pagos en $ efectivo
+    </label>
   );
 }

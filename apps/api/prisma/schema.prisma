@@ -27,6 +27,9 @@ model Usuario {
   rol              Rol
   activo           Boolean   @default(true)
   intentosFallidos Int       @default(0)
+  /// Segundo factor (TOTP), cifrado. Solo se exige si totpActivo.
+  totpSecreto      String?
+  totpActivo       Boolean   @default(false)
   bloqueadoHasta   DateTime?
   creadoEn         DateTime  @default(now())
 
@@ -112,6 +115,9 @@ model Producto {
   requiereRecipe    Boolean         @default(false)
   /// Aviso de stock bajo cuando la existencia llega a este número (0 = sin aviso).
   stockMinimo       Int             @default(0)
+  /// IVA en % que se suma al precio (0 = exento, la mayoría de los medicamentos).
+  ivaPct            Decimal         @default(0) @db.Decimal(5, 2)
+  categoria         String          @default("Medicamentos")
   activo            Boolean         @default(true)
   actualizadoEn     DateTime        @updatedAt
 
@@ -304,6 +310,10 @@ model Venta {
   descuentoPct   Decimal     @default(0) @db.Decimal(5, 2)
   descuentoUsd   Decimal     @default(0) @db.Decimal(12, 2)
   descuentoMotivo String?
+  ivaUsd         Decimal     @default(0) @db.Decimal(12, 2)
+  igtfUsd        Decimal     @default(0) @db.Decimal(12, 2)
+  /// Clave que manda la app para no registrar dos veces la misma venta si se cae el internet al cobrar.
+  clave          String?     @unique
   devoluciones   Devolucion[]
 
   lineas  VentaLinea[]
@@ -553,4 +563,12 @@ model AjusteInventario {
   nota      String?
   usuarioId String   @db.Uuid
   creadoEn  DateTime @default(now())
+}
+
+/// Ajustes de la farmacia (una sola fila).
+model Configuracion {
+  id         Int     @id @default(1)
+  /// IGTF sobre lo pagado en divisas.
+  igtfActivo Boolean @default(false)
+  igtfPct    Decimal @default(3) @db.Decimal(5, 2)
 }

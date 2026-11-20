@@ -4,7 +4,8 @@ import { Throttle } from '@nestjs/throttler';
 import * as argon2 from 'argon2';
 import { createHash, randomBytes } from 'node:crypto';
 import type { Request, Response } from 'express';
-import { loginSchema, type LoginInput } from '@farmacia/shared';
+import { codigo2faSchema, loginSchema, type LoginInput } from '@farmacia/shared';
+import { cifrar, descifrar, nuevoSecreto, urlTotp, verificarCodigo } from '../common/totp';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
 import { CONFIG, type Config } from '../config';
@@ -32,7 +33,7 @@ export class AuthService {
     @Inject(CONFIG) private readonly config: Config,
   ) {}
 
-  async login({ usuario, clave }: LoginInput, ip?: string, agente?: string) {
+  async login({ usuario, clave, codigo }: LoginInput, ip?: string, agente?: string) {
     const u = await this.prisma.usuario.findUnique({ where: { usuario } });
     const valida = await argon2.verify(u?.claveHash ?? (await this.hashFalso), clave);
 
@@ -49,6 +50,15 @@ export class AuthService {
       });
       if (bloquear) await this.auditoria.registrar({ usuarioId: u.id, accion: 'USUARIO_BLOQUEADO', entidad: 'Usuario', entidadId: u.id, ip });
       throw new UnauthorizedException('Usuario o clave incorrectos');
+    }
+
+    // Clave de dos pasos: además de la clave, el código de 6 números de la app del teléfono.
+    if (u.totpActivo && u.totpSecreto) {
+      if (!codigo) throw new UnauthorizedException({ mensaje: 'Escribe el código de 6 números de tu app de autenticación', codigo: 'REQUIERE_2FA' });
+      if (!verificarCodigo(descifrar(u.totpSecreto, this.config.JWT_SECRET), codigo)) {
+        await this.prisma.usuario.update({ where: { id: u.id }, data: { intentosFallidos: { increment: 1 } } });
+        throw new UnauthorizedException({ mensaje: 'Código incorrecto', codigo: 'REQUIERE_2FA' });
+      }
     }
 
     await this.prisma.usuario.update({ where: { id: u.id }, data: { intentosFallidos: 0, bloqueadoHasta: null } });
@@ -92,6 +102,25 @@ export class AuthService {
     return new Date(Date.now() + this.config.SESION_DIAS * 86_400_000);
   }
 
+  /** Genera un secreto nuevo (todavía inactivo) para escanear con la app. */
+  async iniciar2fa(u: UsuarioActual) {
+    const secreto = nuevoSecreto();
+    const usr = await this.prisma.usuario.update({ where: { id: u.id }, data: { totpSecreto: cifrar(secreto, this.config.JWT_SECRET), totpActivo: false } });
+    return { secreto, url: urlTotp(secreto, usr.usuario, this.config.FARMACIA_NOMBRE) };
+  }
+
+  async cambiar2fa(u: UsuarioActual, codigo: string, activo: boolean) {
+    const usr = await this.prisma.usuario.findUniqueOrThrow({ where: { id: u.id } });
+    if (!usr.totpSecreto || !verificarCodigo(descifrar(usr.totpSecreto, this.config.JWT_SECRET), codigo)) throw new UnauthorizedException('Código incorrecto');
+    await this.prisma.usuario.update({ where: { id: u.id }, data: activo ? { totpActivo: true } : { totpActivo: false, totpSecreto: null } });
+    await this.auditoria.registrar({ usuarioId: u.id, accion: activo ? '2FA_ACTIVADO' : '2FA_DESACTIVADO', entidad: 'Usuario', entidadId: u.id });
+    return { activo };
+  }
+
+  async tiene2fa(id: string) {
+    return (await this.prisma.usuario.findUniqueOrThrow({ where: { id }, select: { totpActivo: true } })).totpActivo;
+  }
+
   private async respuesta(usuarioId: string, sesionId: string) {
     const u = await this.prisma.usuario.findUniqueOrThrow({ where: { id: usuarioId }, select: { id: true, nombre: true, usuario: true, rol: true } });
     const accessToken = await this.jwt.signAsync({ sub: u.id, sid: sesionId, rol: u.rol }, { expiresIn: `${this.config.ACCESS_TOKEN_MINUTOS}m`, algorithm: 'HS256' });
@@ -133,8 +162,26 @@ export class AuthController {
   }
 
   @Get('yo')
-  yo(@Usuario() u: UsuarioActual) {
-    return { id: u.id, nombre: u.nombre, rol: u.rol };
+  async yo(@Usuario() u: UsuarioActual) {
+    return { id: u.id, nombre: u.nombre, rol: u.rol, dosPasos: await this.auth.tiene2fa(u.id) };
+  }
+
+  @Post('2fa/iniciar')
+  @HttpCode(200)
+  iniciar2fa(@Usuario() u: UsuarioActual) {
+    return this.auth.iniciar2fa(u);
+  }
+
+  @Post('2fa/activar')
+  @HttpCode(200)
+  activar2fa(@Body(new Validar(codigo2faSchema)) b: { codigo: string }, @Usuario() u: UsuarioActual) {
+    return this.auth.cambiar2fa(u, b.codigo, true);
+  }
+
+  @Post('2fa/desactivar')
+  @HttpCode(200)
+  desactivar2fa(@Body(new Validar(codigo2faSchema)) b: { codigo: string }, @Usuario() u: UsuarioActual) {
+    return this.auth.cambiar2fa(u, b.codigo, false);
   }
 
   private ponerCookie(res: Response, valor: string) {

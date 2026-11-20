@@ -111,6 +111,8 @@ const montoUsd = z.number().positive().max(100_000).multipleOf(0.01);
 export const loginSchema = z.object({
   usuario: z.string().trim().toLowerCase().min(3).max(40),
   clave: z.string().min(6).max(128),
+  /** Código de 6 números de la app de autenticación, si el usuario tiene la clave de dos pasos. */
+  codigo: z.string().trim().regex(/^\d{6}$/).optional(),
 });
 export type LoginInput = z.infer<typeof loginSchema>;
 
@@ -143,6 +145,8 @@ export const productoSchema = z.object({
   nivel: z.enum(NIVELES_PRECIO),
   requiereRecipe: z.boolean().default(false),
   stockMinimo: z.number().int().min(0).max(100_000).default(0),
+  ivaPct: z.number().min(0).max(30).default(0),
+  categoria: z.string().trim().min(1).max(40).default('Medicamentos'),
   activo: z.boolean().default(true),
 });
 export type ProductoInput = z.infer<typeof productoSchema>;
@@ -263,6 +267,8 @@ export const crearVentaSchema = z
     /** Descuento a toda la venta. El cajero puede dar hasta 10 %; más, solo el farmacéutico o el dueño. */
     descuentoPct: z.number().min(0).max(50).default(0),
     descuentoMotivo: z.string().trim().max(60).optional(),
+    /** Identificador que genera la app por cada cobro: evita guardar dos veces la misma venta. */
+    clave: z.string().uuid().optional(),
   })
   .refine((v) => !v.descuentoPct || !!v.descuentoMotivo, { message: 'El descuento necesita un motivo', path: ['descuentoMotivo'] })
   .refine((v) => !!v.pagos?.length || !!v.metodoPago, { message: 'Falta el pago', path: ['pagos'] })
@@ -396,3 +402,22 @@ export const medicoSchema = z.object({
   especialidad: z.string().trim().max(60).default('General'),
 });
 export type MedicoInput = z.infer<typeof medicoSchema>;
+
+export const CATEGORIAS = ['Medicamentos', 'Cuidado personal', 'Bebé', 'Misceláneos'] as const;
+
+export const configuracionSchema = z.object({ igtfActivo: z.boolean(), igtfPct: z.number().min(0).max(10) });
+export type ConfiguracionInput = z.infer<typeof configuracionSchema>;
+
+export const preciosMasivoSchema = z.object({
+  laboratorio: z.string().trim().max(120).optional(),
+  categoria: z.string().trim().max(40).optional(),
+  productoIds: z.array(z.string().uuid()).max(2000).optional(),
+  /** Porcentaje de cambio: 5 = +5 %, -10 = −10 %. */
+  pct: z.number().min(-50).max(200).refine((n) => n !== 0, 'El cambio no puede ser 0'),
+  /** Redondear el precio nuevo a múltiplos de 0,05 $. */
+  redondear: z.boolean().default(true),
+  vistaPrevia: z.boolean().default(true),
+}).refine((b) => b.laboratorio || b.categoria || b.productoIds?.length, { message: 'Elige un laboratorio, una categoría o productos', path: ['laboratorio'] });
+export type PreciosMasivoInput = z.infer<typeof preciosMasivoSchema>;
+
+export const codigo2faSchema = z.object({ codigo: z.string().trim().regex(/^\d{6}$/, 'El código tiene 6 números') });

@@ -10,7 +10,7 @@ interface Sesion {
   listo: boolean;
   tasa: number | null;
   restaurar: () => Promise<void>;
-  entrar: (usuario: string, clave: string) => Promise<void>;
+  entrar: (usuario: string, clave: string, codigo?: string) => Promise<void>;
   salir: () => Promise<void>;
   cargarTasa: () => Promise<void>;
 }
@@ -31,8 +31,8 @@ export const useSesion = create<Sesion>((set, get) => ({
     set({ listo: true });
   },
 
-  entrar: async (usuario, clave) => {
-    const r = await api<{ accessToken: string; usuario: UsuarioSesion }>('/auth/login', { body: { usuario, clave } });
+  entrar: async (usuario, clave, codigo) => {
+    const r = await api<{ accessToken: string; usuario: UsuarioSesion }>('/auth/login', { body: { usuario, clave, codigo: codigo || undefined } });
     sesionToken.poner(r.accessToken);
     olvidarCaja();
     set({ usuario: r.usuario });

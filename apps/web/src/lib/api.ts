@@ -1,3 +1,4 @@
+import { create } from 'zustand';
 /**
  * Cliente de la API. El token de acceso vive solo en memoria (nunca en localStorage);
  * la sesión se renueva con la cookie protegida que pone el servidor.
@@ -9,12 +10,21 @@ let alExpirar: (() => void) | null = null;
 
 export interface Bloqueo { productoId: string; motivo: 'FALTA_CEDULA' | 'FALTA_RECIPE' | 'ALERGIA' | 'CONTROLADO'; mensaje: string }
 
+/** Estado de la conexión con el servidor: la barra roja «Sin conexión» lo usa. */
+export const useConexion = create<{ enLinea: boolean }>(() => ({ enLinea: true }));
+const marcar = (enLinea: boolean) => { if (useConexion.getState().enLinea !== enLinea) useConexion.setState({ enLinea }); };
+if (typeof window !== 'undefined') {
+  window.addEventListener('offline', () => marcar(false));
+  window.addEventListener('online', () => { void fetch(`${BASE}/salud`).then((r) => marcar(r.ok)).catch(() => {}); });
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
     mensaje: string,
     public errores: { campo: string; mensaje: string }[] = [],
     public bloqueos: Bloqueo[] = [],
+    public codigo?: string,
   ) {
     super(mensaje);
   }
@@ -55,8 +65,14 @@ export async function api<T = unknown>(ruta: string, op: Opciones = {}, reintent
       body: op.form ?? (op.body !== undefined ? JSON.stringify(op.body) : undefined),
     });
   } catch {
+    marcar(false);
     throw new ApiError(0, 'Sin conexión con el servidor. Revisa el internet e intenta de nuevo');
   }
+  if (r.status >= 502 && r.status <= 504) {
+    marcar(false);
+    throw new ApiError(0, 'El servidor no responde. Intenta de nuevo en un momento');
+  }
+  marcar(true);
 
   if (r.status === 401 && reintento && !ruta.startsWith('/auth/')) {
     if (await renovar()) return api<T>(ruta, op, false);
@@ -66,7 +82,7 @@ export async function api<T = unknown>(ruta: string, op: Opciones = {}, reintent
   if (r.status === 204) return undefined as T;
 
   const datos = await r.json().catch(() => ({}));
-  if (!r.ok) throw new ApiError(r.status, datos.mensaje ?? 'Ocurrió un error', datos.errores, datos.bloqueos);
+  if (!r.ok) throw new ApiError(r.status, datos.mensaje ?? 'Ocurrió un error', datos.errores, datos.bloqueos, datos.codigo);
   return datos as T;
 }
 

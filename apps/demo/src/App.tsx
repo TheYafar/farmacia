@@ -10,7 +10,7 @@ import PacientesPage from '@/features/pacientes/PacientesPage';
 import EsperaPage from '@/features/espera/EsperaPage';
 import ValidacionesPage from '@/features/validaciones/ValidacionesPage';
 import InventarioPage from '@/features/inventario/InventarioPage';
-import { ComprasPage, LibroPage, MayoristaPage, ReportesPage, WhatsappPage } from '@/features/extra/Extra';
+import { AuditoriaPage, CatalogoPage, ComprasPage, LibroPage, VentasPage, MayoristaPage, ReportesPage, WhatsappPage } from '@/features/extra/Extra';
 import PanelPage from '@/features/panel/PanelPage';
 
 function RequireRole({ path, children }: { path: string; children: ReactNode }) {
@@ -31,7 +31,7 @@ export default function App() {
   const pages: [string, ReactNode][] = [
     ['/mostrador', <MostradorPage />], ['/recipe', <RecipePage />], ['/pacientes', <PacientesPage />],
     ['/espera', <EsperaPage />], ['/validaciones', <ValidacionesPage />], ['/inventario', <InventarioPage />], ['/panel', <PanelPage />],
-    ['/compras', <ComprasPage />], ['/mayorista', <MayoristaPage />], ['/whatsapp', <WhatsappPage />], ['/libro', <LibroPage />], ['/reportes', <ReportesPage />],
+    ['/compras', <ComprasPage />], ['/mayorista', <MayoristaPage />], ['/whatsapp', <WhatsappPage />], ['/libro', <LibroPage />], ['/reportes', <ReportesPage />], ['/ventas', <VentasPage />], ['/catalogo', <CatalogoPage />], ['/auditoria', <AuditoriaPage />],
   ];
   return (
     <Routes>

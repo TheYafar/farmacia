@@ -5,6 +5,7 @@ import { Alert, Button, Campo, Card, Cargando, Chip, ErrorCarga, PageHeader, Sea
 import { api, ApiError } from '@/lib/api';
 import { useCargar } from '@/lib/useCargar';
 import type { Paciente, Principio, Venta } from '@/lib/tipos';
+import { CATEGORIAS } from '@farmacia/shared';
 import { avisar } from '@/store/avisos';
 import { useRol } from '@/store/sesion';
 import Ticket from '@/features/caja/Ticket';
@@ -212,7 +213,7 @@ export function VentasPage() {
 }
 
 /* ───────── Catálogo: productos, principios activos y ajustes ───────── */
-interface ProductoAdm { id: string; codigoBarras: string | null; nombreComercial: string; laboratorio: string; concentracion: string; forma: string; unidadesPorCaja: number; precioUsd: string; nivel: string; requiereRecipe: boolean; stockMinimo: number; activo: boolean; stock: number; bajo: boolean; principioActivo: { id: string; nombre: string; riesgo: string } }
+interface ProductoAdm { id: string; ivaPct: number; categoria: string; costoUsd: string | null; margenPct: number | null; codigoBarras: string | null; nombreComercial: string; laboratorio: string; concentracion: string; forma: string; unidadesPorCaja: number; precioUsd: string; nivel: string; requiereRecipe: boolean; stockMinimo: number; activo: boolean; stock: number; bajo: boolean; principioActivo: { id: string; nombre: string; riesgo: string } }
 const RIESGO: Record<string, [string, 'neutral' | 'warn' | 'bad']> = { NORMAL: ['Normal', 'neutral'], ANTIBIOTICO: ['Antibiótico', 'warn'], PSICOTROPICO: ['Psicotrópico', 'bad'] };
 const NIVELES: [string, string][] = [['GENERICO', 'Genérico'], ['MEDIO', 'Medio'], ['MARCA', 'Marca']];
 
@@ -223,6 +224,7 @@ function FormProducto({ p, principios, onCerrar, onListo }: { p: ProductoAdm | '
     concentracion: base?.concentracion ?? '', forma: base?.forma ?? 'Tabletas', unidadesPorCaja: String(base?.unidadesPorCaja ?? 1),
     precioUsd: base?.precioUsd ?? '', nivel: base?.nivel ?? 'GENERICO', codigoBarras: base?.codigoBarras ?? '',
     requiereRecipe: base?.requiereRecipe ?? false, stockMinimo: String(base?.stockMinimo ?? 0), activo: base?.activo ?? true,
+    ivaPct: String(base?.ivaPct ?? 0), categoria: base?.categoria ?? 'Medicamentos',
   });
   const [f, setF] = useState(ini);
   const [error, setError] = useState<string | null>(null);
@@ -238,6 +240,7 @@ function FormProducto({ p, principios, onCerrar, onListo }: { p: ProductoAdm | '
           nombreComercial: f.nombreComercial, laboratorio: f.laboratorio, principioActivoId: f.principioActivoId, concentracion: f.concentracion, forma: f.forma,
           unidadesPorCaja: Number(f.unidadesPorCaja), precioUsd: Number(String(f.precioUsd).replace(',', '.')), nivel: f.nivel,
           codigoBarras: f.codigoBarras.trim() || undefined, requiereRecipe: f.requiereRecipe, stockMinimo: Number(f.stockMinimo) || 0, activo: f.activo,
+          ivaPct: Number(f.ivaPct), categoria: f.categoria,
         };
         try {
           await api(base ? `/catalogo/productos/${base.id}` : '/catalogo/productos', { method: base ? 'PATCH' : 'POST', body });
@@ -256,6 +259,8 @@ function FormProducto({ p, principios, onCerrar, onListo }: { p: ProductoAdm | '
           {t('precioUsd', 'Precio ($)', { inputMode: 'decimal', required: true })}
           <Campo etiqueta="Nivel de precio"><select value={f.nivel} onChange={(e) => setF({ ...f, nivel: e.target.value })} className={claseInput}>{NIVELES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Campo>
           {t('codigoBarras', 'Código de barras', { inputMode: 'numeric' })}{t('stockMinimo', 'Stock mínimo', { inputMode: 'numeric' })}
+          <Campo etiqueta="Categoría"><select value={f.categoria} onChange={(e) => setF({ ...f, categoria: e.target.value })} className={claseInput}>{CATEGORIAS.map((c) => <option key={c}>{c}</option>)}</select></Campo>
+          <Campo etiqueta="IVA" ayuda="La mayoría de los medicamentos son exentos"><select value={f.ivaPct} onChange={(e) => setF({ ...f, ivaPct: e.target.value })} className={claseInput}><option value="0">Exento</option><option value="8">8 %</option><option value="16">16 %</option></select></Campo>
         </div>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={f.requiereRecipe} onChange={(e) => setF({ ...f, requiereRecipe: e.target.checked })} className="h-4 w-4" /> Necesita récipe</label>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={f.activo} onChange={(e) => setF({ ...f, activo: e.target.checked })} className="h-4 w-4" /> Activo (se puede vender)</label>
@@ -338,12 +343,56 @@ function FormAjuste({ abierto, onCerrar, onListo }: { abierto: boolean; onCerrar
   );
 }
 
+function CambiarPrecios({ abierto, onCerrar, onListo }: { abierto: boolean; onCerrar: () => void; onListo: () => void }) {
+  const labs = useCargar(() => (abierto ? api<string[]>('/catalogo/laboratorios') : Promise.resolve([])), [abierto]);
+  const [por, setPor] = useState<'laboratorio' | 'categoria'>('laboratorio');
+  const [valor, setValor] = useState('');
+  const [pct, setPct] = useState('5');
+  const [prev, setPrev] = useState<{ nombre: string; antes: string; despues: string }[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { setPrev(null); setError(null); }, [por, valor, pct, abierto]);
+  const enviar = async (vistaPrevia: boolean) => {
+    setError(null);
+    try {
+      const r = await api<{ cambios: { nombre: string; antes: string; despues: string }[] }>('/catalogo/precios/masivo', { body: { [por]: valor, pct: Number(pct.replace(',', '.')), vistaPrevia } });
+      if (vistaPrevia) setPrev(r.cambios);
+      else { avisar(`${r.cambios.length} precios actualizados`, 'ok'); onListo(); onCerrar(); }
+    } catch (e) { setError(msg(e)); }
+  };
+  return (
+    <Sheet open={abierto} onClose={onCerrar} title="Cambiar precios">
+      <div className="flex flex-col gap-3">
+        <Tabs tabs={['Por laboratorio', 'Por categoría']} value={por === 'laboratorio' ? 'Por laboratorio' : 'Por categoría'} onChange={(t) => { setPor(t === 'Por laboratorio' ? 'laboratorio' : 'categoria'); setValor(''); }} />
+        <Campo etiqueta={por === 'laboratorio' ? 'Laboratorio' : 'Categoría'}>
+          <select value={valor} onChange={(e) => setValor(e.target.value)} className={claseInput}>
+            <option value="">Elige…</option>{(por === 'laboratorio' ? labs.datos ?? [] : [...CATEGORIAS]).map((x) => <option key={x}>{x}</option>)}
+          </select>
+        </Campo>
+        <Campo etiqueta="Cambio en %" ayuda="5 sube 5 %. −10 baja 10 %. Se redondea a 0,05 $"><input inputMode="decimal" value={pct} onChange={(e) => setPct(e.target.value.replace(/[^\d.,-]/g, ''))} className={claseInput} /></Campo>
+        {error && <Alert tone="bad">{error}</Alert>}
+        {!prev ? <Button variant="primary" size="lg" disabled={!valor} onClick={() => enviar(true)}>Ver cómo quedan</Button> : (
+          <>
+            <div className="max-h-64 overflow-y-auto rounded-xl border border-line text-sm">
+              {prev.map((c) => <div key={c.nombre} className="flex justify-between border-b border-line px-3 py-1.5 last:border-0"><span className="truncate">{c.nombre}</span><span className="font-mono">{usd(c.antes)} → <b>{usd(c.despues)}</b></span></div>)}
+              {!prev.length && <div className="p-3 text-muted">No hay productos activos ahí.</div>}
+            </div>
+            <Button variant="primary" size="lg" disabled={!prev.length} onClick={() => enviar(false)}>Confirmar {prev.length} precios</Button>
+          </>
+        )}
+      </div>
+    </Sheet>
+  );
+}
+
 export function CatalogoPage() {
   const rol = useRol();
   const [tab, setTab] = useState<'Productos' | 'Principios activos' | 'Ajustes'>('Productos');
   const [q, setQ] = useState('');
   const [soloBajo, setSoloBajo] = useState(false);
-  const prods = useCargar(() => api<ProductoAdm[]>(`/catalogo/productos?q=${encodeURIComponent(q)}${soloBajo ? '&bajo=1' : ''}`), [q, soloBajo]);
+  const [cat, setCat] = useState('');
+  const [precios, setPrecios] = useState(false);
+  const prods0 = useCargar(() => api<ProductoAdm[]>(`/catalogo/productos?q=${encodeURIComponent(q)}${soloBajo ? '&bajo=1' : ''}`), [q, soloBajo]);
+  const prods = { ...prods0, datos: prods0.datos && (cat ? prods0.datos.filter((p) => p.categoria === cat) : prods0.datos) };
   const princ = useCargar(() => api<Principio[]>('/catalogo/principios'), []);
   const ajustes = useCargar(() => api<Ajuste[]>('/inventario/ajustes'), []);
   const [editP, setEditP] = useState<ProductoAdm | 'nuevo' | null>(null);
@@ -354,6 +403,7 @@ export function CatalogoPage() {
     <div className="flex flex-col gap-4">
       <PageHeader title="Catálogo" subtitle="Productos, principios activos y ajustes de inventario"
         actions={<>
+          {tab === 'Productos' && admin && <Button onClick={() => setPrecios(true)}>Cambiar precios</Button>}
           {tab === 'Productos' && admin && <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setEditP('nuevo')}>Nuevo producto</Button>}
           {tab === 'Principios activos' && <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setEditPa('nuevo')}>Nuevo principio</Button>}
           {tab === 'Ajustes' && <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setAjuste(true)}>Nuevo ajuste</Button>}
@@ -363,13 +413,15 @@ export function CatalogoPage() {
         <>
           <div className="flex flex-wrap items-center gap-3">
             <SearchInput className="min-w-[220px] flex-1" value={q} onChange={(e) => setQ(e.target.value)} onClear={() => setQ('')} placeholder="Buscar por nombre, laboratorio o código" />
+            <select value={cat} onChange={(e) => setCat(e.target.value)} className="h-11 rounded-lg border border-line bg-surface px-2 text-sm"><option value="">Todas las categorías</option>{CATEGORIAS.map((c) => <option key={c}>{c}</option>)}</select>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={soloBajo} onChange={(e) => setSoloBajo(e.target.checked)} className="h-4 w-4" /> Solo stock bajo</label>
           </div>
           <Estado c={prods}>{(d) => (
-            <Tabla vacio="No hay productos con esa búsqueda." head={['Producto', 'Principio', 'Precio', 'Existencia', 'Estado', '']} rows={d.map((p) => [
-              <div><div className="font-semibold">{p.nombreComercial} {p.concentracion}</div><div className="text-xs text-muted">{p.laboratorio} · {p.forma}{p.codigoBarras ? ` · ${p.codigoBarras}` : ''}</div></div>,
+            <Tabla vacio="No hay productos con esa búsqueda." head={['Producto', 'Principio', 'Precio', 'Costo · margen', 'Existencia', 'Estado', '']} rows={d.map((p) => [
+              <div><div className="font-semibold">{p.nombreComercial} {p.concentracion}</div><div className="text-xs text-muted">{p.laboratorio} · {p.categoria}{p.ivaPct ? ` · IVA ${p.ivaPct} %` : ''}{p.codigoBarras ? ` · ${p.codigoBarras}` : ''}</div></div>,
               <span>{p.principioActivo.nombre} {p.principioActivo.riesgo !== 'NORMAL' && <Chip tone={RIESGO[p.principioActivo.riesgo][1]}>{RIESGO[p.principioActivo.riesgo][0]}</Chip>}</span>,
               mono(usd(p.precioUsd)),
+              p.costoUsd ? <span className="font-mono tabular">{usd(p.costoUsd)} · <span className={p.margenPct != null && p.margenPct < 15 ? 'text-bad' : 'text-ok'}>{p.margenPct} %</span></span> : <span className="text-xs text-muted">Sin costo</span>,
               p.bajo ? <Chip tone="bad">{p.stock} · mín. {p.stockMinimo}</Chip> : mono(p.stock),
               p.activo ? <Chip tone="ok">Activo</Chip> : <Chip>Inactivo</Chip>,
               admin && <Button size="sm" icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => setEditP(p)}>Editar</Button>,
@@ -389,9 +441,10 @@ export function CatalogoPage() {
           <span>{MOTIVOS.find((m) => m[0] === a.motivo)?.[1]}{a.nota ? <span className="text-muted"> · {a.nota}</span> : ''}</span>, a.usuario,
         ])} />
       )}</Estado>}
-      <FormProducto p={editP} principios={princ.datos ?? []} onCerrar={() => setEditP(null)} onListo={prods.recargar} />
-      <FormPrincipio p={editPa} onCerrar={() => setEditPa(null)} onListo={() => { princ.recargar(); prods.recargar(); }} />
-      <FormAjuste abierto={ajuste} onCerrar={() => setAjuste(false)} onListo={() => { ajustes.recargar(); prods.recargar(); }} />
+      <CambiarPrecios abierto={precios} onCerrar={() => setPrecios(false)} onListo={prods0.recargar} />
+      <FormProducto p={editP} principios={princ.datos ?? []} onCerrar={() => setEditP(null)} onListo={prods0.recargar} />
+      <FormPrincipio p={editPa} onCerrar={() => setEditPa(null)} onListo={() => { princ.recargar(); prods0.recargar(); }} />
+      <FormAjuste abierto={ajuste} onCerrar={() => setAjuste(false)} onListo={() => { ajustes.recargar(); prods0.recargar(); }} />
     </div>
   );
 }
@@ -469,5 +522,57 @@ export function MedicoRecipe({ recipeId }: { recipeId: string }) {
       <Campo etiqueta="MPPS"><input inputMode="numeric" value={f.mpps} onChange={(e) => setF({ ...f, mpps: e.target.value.replace(/\D/g, '') })} className={claseInput + ' w-28'} /></Campo>
       <Button type="submit" size="sm" className="h-11">Guardar médico</Button>
     </form>
+  );
+}
+
+/* ───────── Clave de dos pasos ───────── */
+export function DosPasos() {
+  const yo = useCargar(() => api<{ dosPasos: boolean }>('/auth/yo'), []);
+  const [qr, setQr] = useState<{ img: string; secreto: string } | null>(null);
+  const [codigo, setCodigo] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  if (!yo.datos) return null;
+  const activo = yo.datos.dosPasos;
+  const iniciar = async () => {
+    setError(null);
+    const r = await api<{ secreto: string; url: string }>('/auth/2fa/iniciar', { body: {} });
+    const { toDataURL } = await import('qrcode');
+    setQr({ img: await toDataURL(r.url, { margin: 1, width: 220 }), secreto: r.secreto });
+  };
+  const confirmar = async (ruta: 'activar' | 'desactivar') => {
+    setError(null);
+    try {
+      await api(`/auth/2fa/${ruta}`, { body: { codigo } });
+      avisar(ruta === 'activar' ? 'Clave de dos pasos activada' : 'Clave de dos pasos desactivada', 'ok');
+      setQr(null); setCodigo(''); yo.recargar();
+    } catch (e) { setError(msg(e)); }
+  };
+  return (
+    <Card className="flex flex-col gap-3 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div><div className="font-semibold">Clave de dos pasos (tu cuenta)</div>
+          <div className="text-sm text-muted">Además de la clave, pide un código de la app Google Authenticator o Authy de tu teléfono.</div></div>
+        {activo ? <Chip tone="ok">Activada</Chip> : !qr && <Button variant="primary" onClick={() => void iniciar()}>Activar</Button>}
+      </div>
+      {qr && !activo && (
+        <div className="flex flex-wrap items-center gap-4">
+          <img src={qr.img} alt="Código QR para la app de autenticación" className="h-[180px] w-[180px] rounded-lg bg-white p-1" />
+          <div className="flex min-w-[220px] flex-1 flex-col gap-2 text-sm">
+            <ol className="list-decimal pl-5 text-muted"><li>Abre Google Authenticator o Authy y escanea el código.</li><li>Escribe los 6 números que te muestra.</li></ol>
+            <p className="text-xs text-muted">¿No puedes escanear? Clave: <span className="select-all font-mono">{qr.secreto}</span></p>
+            <div className="flex gap-2"><input inputMode="numeric" maxLength={6} value={codigo} onChange={(e) => setCodigo(e.target.value.replace(/\D/g, ''))} placeholder="000000" className={claseInput + ' w-32 text-center font-mono'} />
+              <Button variant="primary" disabled={codigo.length !== 6} onClick={() => void confirmar('activar')}>Confirmar</Button></div>
+          </div>
+        </div>
+      )}
+      {activo && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted">Para quitarla, escribe un código actual:</span>
+          <input inputMode="numeric" maxLength={6} value={codigo} onChange={(e) => setCodigo(e.target.value.replace(/\D/g, ''))} className={claseInput + ' w-28 text-center font-mono'} />
+          <Button variant="ghost" disabled={codigo.length !== 6} onClick={() => void confirmar('desactivar')}>Desactivar</Button>
+        </div>
+      )}
+      {error && <Alert tone="bad">{error}</Alert>}
+    </Card>
   );
 }

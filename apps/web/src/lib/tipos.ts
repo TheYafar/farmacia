@@ -79,7 +79,8 @@ export interface Lote {
 }
 
 export interface Resumen {
-  hoy: { ventas: number; usd: string; bs: string };
+  stockBajo?: number;
+  hoy: { ventas: number; usd: string; bs: string; devueltoUsd?: string };
   semana: { dia: string; usd: string }[];
   lotesVencen30Dias: number;
   clientesEsperando: number;

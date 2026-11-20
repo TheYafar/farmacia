@@ -13,11 +13,25 @@ import { CajaModule, CajaService } from '../caja/caja';
 /** Motivo por el que una línea no se puede vender sin más. El mensaje lo lee el cajero. */
 interface Bloqueo { productoId: string; motivo: 'ALERGIA' | 'CONTROLADO' | 'FALTA_RECIPE' | 'FALTA_CEDULA'; mensaje: string }
 
+const INCLUIR_VENTA = {
+  lineas: { include: { producto: { select: { nombreComercial: true, concentracion: true } }, lote: { select: { numero: true, vence: true } } } },
+  pagos: true,
+  cajero: { select: { nombre: true } },
+} satisfies Prisma.VentaInclude;
+
 @Injectable()
 export class VentasService {
   constructor(private readonly prisma: PrismaService, private readonly tasa: TasaService, private readonly auditoria: AuditoriaService, private readonly caja: CajaService) {}
 
   async crear(b: CrearVentaInput, cajero: UsuarioActual) {
+    // Si la app reintenta la misma venta (se cayó el internet al cobrar), se devuelve la que ya quedó guardada.
+    if (b.clave) {
+      const ya = await this.prisma.venta.findUnique({ where: { clave: b.clave }, include: INCLUIR_VENTA });
+      if (ya) {
+        if (ya.cajeroId !== cajero.id) throw new ConflictException('Clave de venta repetida');
+        return ya;
+      }
+    }
     // Un producto por línea; siempre en el mismo orden para que dos ventas no se bloqueen entre sí.
     const ids = b.lineas.map((l) => l.productoId);
     if (new Set(ids).size !== ids.length) throw new BadRequestException('Cada producto debe ir una sola vez');
@@ -78,11 +92,12 @@ export class VentasService {
       // 2. Precio y tasa del momento: la venta guarda ambos para siempre.
       const tasa = await this.tasa.actual(tx);
       const venta = await tx.venta.create({
-        data: { cajeroId: cajero.id, cedula: b.cedula, metodoPago: b.pagos?.[0]?.metodo ?? b.metodoPago!, totalUsd: 0, tasa: tasa.valor, totalBs: 0, turnoId: turno.id },
+        data: { clave: b.clave, cajeroId: cajero.id, cedula: b.cedula, metodoPago: b.pagos?.[0]?.metodo ?? b.metodoPago!, totalUsd: 0, tasa: tasa.valor, totalBs: 0, turnoId: turno.id },
       });
 
       // 3. Descontar stock (FEFO) con los lotes bloqueados.
       let total = new Prisma.Decimal(0);
+      let ivaBruto = new Prisma.Decimal(0);
       for (const l of lineas) {
         const p = productos.find((x) => x.id === l.productoId)!;
         const partes = await descontarFefo(tx, p.id, l.cantidad, `${p.nombreComercial} ${p.concentracion}`);
@@ -92,12 +107,26 @@ export class VentasService {
           });
         }
         total = total.add(p.precioUsd.mul(l.cantidad));
+        ivaBruto = ivaBruto.add(p.precioUsd.mul(l.cantidad).mul(p.ivaPct).div(100));
       }
       // Descuento a toda la venta: el cajero da hasta 10 %; más, el farmacéutico o el dueño.
       const pct = new Prisma.Decimal(b.descuentoPct ?? 0);
       if (pct.gt(10) && cajero.rol === 'CAJERO') throw new ForbiddenException('Un descuento mayor a 10 % lo da el farmacéutico o el dueño');
       const descuentoUsd = total.mul(pct).div(100).toDecimalPlaces(2);
-      total = total.sub(descuentoUsd);
+      // IVA sobre lo que se cobra (después del descuento).
+      const ivaUsd = ivaBruto.mul(new Prisma.Decimal(100).sub(pct)).div(100).toDecimalPlaces(2);
+      total = total.sub(descuentoUsd).add(ivaUsd);
+      // IGTF sobre lo pagado en divisas (efectivo en $), si la farmacia lo cobra.
+      const conf = await tx.configuracion.findUnique({ where: { id: 1 } });
+      let igtfUsd = new Prisma.Decimal(0);
+      if (conf?.igtfActivo) {
+        // Lo pagado en $ efectivo, sin contar más que el total (el resto es vuelto). Con un solo pago en $, todo es en divisas.
+        const enDivisas = b.pagos?.length
+          ? Prisma.Decimal.min(b.pagos.filter((x) => x.metodo === 'EFECTIVO_USD').reduce((a, x) => a.add(x.monto), new Prisma.Decimal(0)), total)
+          : b.metodoPago === 'EFECTIVO_USD' ? total : new Prisma.Decimal(0);
+        igtfUsd = enDivisas.mul(conf.igtfPct).div(100).toDecimalPlaces(2);
+        total = total.add(igtfUsd);
+      }
       if (autorizacionesUsadas.length) {
         const r = await tx.autorizacion.updateMany({ where: { id: { in: autorizacionesUsadas }, usadaEn: null }, data: { usadaEn: new Date() } });
         if (r.count !== autorizacionesUsadas.length) throw new ConflictException('Una autorización ya fue usada en otra venta');
@@ -137,13 +166,9 @@ export class VentasService {
           totalUsd: total, totalBs, metodoPago: principal.metodo,
           referenciaPago: pagos.find((p) => p.referencia)?.referencia,
           vueltoMoneda: excesoBs.gt(0) ? b.vueltoMoneda : null, vueltoMonto,
-          descuentoPct: pct, descuentoUsd, descuentoMotivo: pct.gt(0) ? b.descuentoMotivo : null,
+          descuentoPct: pct, descuentoUsd, descuentoMotivo: pct.gt(0) ? b.descuentoMotivo : null, ivaUsd, igtfUsd,
         },
-        include: {
-          lineas: { include: { producto: { select: { nombreComercial: true, concentracion: true } }, lote: { select: { numero: true, vence: true } } } },
-          pagos: true,
-          cajero: { select: { nombre: true } },
-        },
+        include: INCLUIR_VENTA,
       });
       await this.auditoria.registrar({ usuarioId: cajero.id, accion: 'VENTA', entidad: 'Venta', entidadId: venta.id, datos: { totalUsd: total.toFixed(2), autorizaciones: autorizacionesUsadas, descuentoPct: pct.toNumber() } }, tx);
       return final;

@@ -1,6 +1,6 @@
-import { Body, ConflictException, Controller, Get, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, ConflictException, Controller, Get, HttpCode, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { principioSchema, productoSchema, type PrincipioInput, type ProductoInput } from '@farmacia/shared';
+import { configuracionSchema, preciosMasivoSchema, principioSchema, productoSchema, type ConfiguracionInput, type PreciosMasivoInput, type PrincipioInput, type ProductoInput } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
 import { Roles, Usuario, type UsuarioActual } from '../common/seguridad';
@@ -99,20 +99,68 @@ export class CatalogoController {
     return p;
   }
 
+  /** Sube o baja precios de un laboratorio, una categoría o una selección. Con vistaPrevia no guarda nada. */
+  @Post('precios/masivo')
+  @Roles('ADMIN')
+  async preciosMasivo(@Body(new Validar(preciosMasivoSchema)) b: PreciosMasivoInput, @Usuario() yo: UsuarioActual) {
+    const lista = await this.prisma.producto.findMany({
+      where: { activo: true, laboratorio: b.laboratorio || undefined, categoria: b.categoria || undefined, id: b.productoIds?.length ? { in: b.productoIds } : undefined },
+      orderBy: { nombreComercial: 'asc' }, select: { id: true, nombreComercial: true, concentracion: true, laboratorio: true, precioUsd: true },
+    });
+    const factor = new Prisma.Decimal(100).add(b.pct).div(100);
+    const cambios = lista.map((p) => {
+      let nuevo = p.precioUsd.mul(factor);
+      nuevo = b.redondear ? nuevo.div(0.05).toDecimalPlaces(0).mul(0.05) : nuevo;
+      nuevo = Prisma.Decimal.max(nuevo.toDecimalPlaces(2), 0.01);
+      return { id: p.id, nombre: `${p.nombreComercial} ${p.concentracion}`, laboratorio: p.laboratorio, antes: p.precioUsd.toFixed(2), despues: nuevo.toFixed(2) };
+    });
+    if (!b.vistaPrevia && cambios.length) {
+      await this.prisma.$transaction(cambios.map((c) => this.prisma.producto.update({ where: { id: c.id }, data: { precioUsd: c.despues } })));
+      await this.auditoria.registrar({ usuarioId: yo.id, accion: 'PRECIOS_MASIVO', entidad: 'Producto', datos: { pct: b.pct, laboratorio: b.laboratorio, categoria: b.categoria, productos: cambios.length } });
+    }
+    return { guardado: !b.vistaPrevia, cambios };
+  }
+
+  @Get('laboratorios')
+  async laboratorios() {
+    return (await this.prisma.producto.groupBy({ by: ['laboratorio'], where: { activo: true }, orderBy: { laboratorio: 'asc' } })).map((x) => x.laboratorio);
+  }
+
+  @Get('configuracion')
+  async configuracion() {
+    const c = await this.prisma.configuracion.upsert({ where: { id: 1 }, create: {}, update: {} });
+    return { igtfActivo: c.igtfActivo, igtfPct: c.igtfPct.toNumber() };
+  }
+
+  @Post('configuracion')
+  @Roles('ADMIN')
+  @HttpCode(200)
+  async guardarConfiguracion(@Body(new Validar(configuracionSchema)) b: ConfiguracionInput, @Usuario() yo: UsuarioActual) {
+    await this.prisma.configuracion.upsert({ where: { id: 1 }, create: b, update: b });
+    await this.auditoria.registrar({ usuarioId: yo.id, accion: 'CONFIGURACION', entidad: 'Configuracion', datos: b });
+    return b;
+  }
+
   /** Lista para administrar el catálogo: incluye inactivos, existencia y aviso de stock bajo. */
   @Get('productos')
   @Roles('REGENTE', 'ADMIN')
   async productos(@Query('q') q = '', @Query('bajo') bajo?: string) {
-    const filas = await this.prisma.$queryRaw<{ id: string; stock: bigint }[]>`
-      SELECT p.id, COALESCE(sum(l."stockLibre") FILTER (WHERE l.vence >= current_date), 0) AS stock
+    const filas = await this.prisma.$queryRaw<{ id: string; stock: bigint; costo: Prisma.Decimal | null }[]>`
+      SELECT p.id, COALESCE(sum(l."stockLibre") FILTER (WHERE l.vence >= current_date), 0) AS stock,
+        (SELECT cl."costoUsd" / GREATEST(cl."factorVenta", 1) FROM "CompraLinea" cl JOIN "Compra" c ON c.id = cl."compraId"
+          WHERE cl."productoId" = p.id AND cl."costoUsd" > 0 ORDER BY c."creadaEn" DESC LIMIT 1) AS costo
       FROM "Producto" p LEFT JOIN "Lote" l ON l."productoId" = p.id GROUP BY p.id`;
     const stock = new Map(filas.map((f) => [f.id, Number(f.stock)]));
+    const costo = new Map(filas.map((f) => [f.id, f.costo === null ? null : new Prisma.Decimal(f.costo)]));
     const t = q.trim().slice(0, 60);
     const lista = await this.prisma.producto.findMany({
       where: t ? { OR: [{ nombreComercial: { contains: t, mode: 'insensitive' } }, { laboratorio: { contains: t, mode: 'insensitive' } }, { codigoBarras: t }, { principioActivo: { nombre: { contains: t, mode: 'insensitive' } } }] } : undefined,
       include: { principioActivo: { select: { id: true, nombre: true, riesgo: true } } }, orderBy: { nombreComercial: 'asc' }, take: 300,
     });
-    const r = lista.map((p) => ({ ...p, precioUsd: p.precioUsd.toFixed(2), stock: stock.get(p.id) ?? 0, bajo: p.activo && p.stockMinimo > 0 && (stock.get(p.id) ?? 0) <= p.stockMinimo }));
+    const r = lista.map((p) => ({
+      ...p, precioUsd: p.precioUsd.toFixed(2), ivaPct: p.ivaPct.toNumber(), stock: stock.get(p.id) ?? 0,
+      costoUsd: costo.get(p.id)?.toFixed(2) ?? null,
+      margenPct: costo.get(p.id) && p.precioUsd.gt(0) ? p.precioUsd.sub(costo.get(p.id)!).div(p.precioUsd).mul(100).toDecimalPlaces(0).toNumber() : null, bajo: p.activo && p.stockMinimo > 0 && (stock.get(p.id) ?? 0) <= p.stockMinimo }));
     return bajo ? r.filter((p) => p.bajo) : r;
   }
 

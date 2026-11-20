@@ -335,8 +335,8 @@ export class ReportesNegocioController {
   async ganancia(@Query('desde') desde?: string, @Query('hasta') hasta?: string) {
     const { d, h } = rango(desde, hasta);
     const filas = await this.prisma.$queryRaw<{ laboratorio: string; producto: string; unidades: bigint; venta: Prisma.Decimal; costo: Prisma.Decimal | null }[]>`
-      SELECT p.laboratorio, p."nombreComercial" || ' ' || p.concentracion AS producto, sum(vl.cantidad) AS unidades, sum(vl.cantidad * vl."precioUsd") AS venta,
-        sum(vl.cantidad * (SELECT cl."costoUsd" / GREATEST(cl."factorVenta", 1) FROM "CompraLinea" cl JOIN "Compra" c ON c.id = cl."compraId"
+      SELECT p.laboratorio, p."nombreComercial" || ' ' || p.concentracion AS producto, sum(vl.cantidad - vl.devuelto) AS unidades, sum((vl.cantidad - vl.devuelto) * vl."precioUsd" * (100 - v."descuentoPct") / 100) AS venta,
+        sum((vl.cantidad - vl.devuelto) * (SELECT cl."costoUsd" / GREATEST(cl."factorVenta", 1) FROM "CompraLinea" cl JOIN "Compra" c ON c.id = cl."compraId"
           WHERE cl."productoId" = p.id AND cl."costoUsd" > 0 ORDER BY c."creadaEn" DESC LIMIT 1)) AS costo
       FROM "VentaLinea" vl JOIN "Venta" v ON v.id = vl."ventaId" JOIN "Producto" p ON p.id = vl."productoId"
       WHERE v.estado = 'COMPLETADA' AND v."creadaEn" >= ${d} AND v."creadaEn" < ${h}
@@ -358,7 +358,7 @@ export class ReportesNegocioController {
     const hace30 = new Date(hoy0().getTime() - 30 * dia);
     const filas = await this.prisma.$queryRaw<{ producto: string; vendidos: bigint; stock: bigint; ultima: Date | null }[]>`
       SELECT p."nombreComercial" || ' ' || p.concentracion AS producto,
-        COALESCE((SELECT sum(vl.cantidad) FROM "VentaLinea" vl JOIN "Venta" v ON v.id = vl."ventaId" WHERE vl."productoId" = p.id AND v.estado = 'COMPLETADA' AND v."creadaEn" >= ${hace30}), 0) AS vendidos,
+        COALESCE((SELECT sum(vl.cantidad - vl.devuelto) FROM "VentaLinea" vl JOIN "Venta" v ON v.id = vl."ventaId" WHERE vl."productoId" = p.id AND v.estado = 'COMPLETADA' AND v."creadaEn" >= ${hace30}), 0) AS vendidos,
         COALESCE((SELECT sum(l."stockLibre") FROM "Lote" l WHERE l."productoId" = p.id), 0) AS stock,
         (SELECT max(v."creadaEn") FROM "VentaLinea" vl JOIN "Venta" v ON v.id = vl."ventaId" WHERE vl."productoId" = p.id AND v.estado = 'COMPLETADA') AS ultima
       FROM "Producto" p WHERE p.activo`;

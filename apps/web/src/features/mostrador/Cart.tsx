@@ -15,8 +15,9 @@ import PacienteBar from './PacienteBar';
 export function useResumenVenta() {
   const lineas = useVenta((s) => s.lineas);
   const total = lineas.reduce((a, l) => a + Number(l.producto.precioUsd) * l.cantidad, 0);
+  const conIva = lineas.reduce((a, l) => a + Number(l.producto.precioUsd) * l.cantidad * (1 + Number((l.producto as { ivaPct?: string | number }).ivaPct ?? 0) / 100), 0);
   const unidades = lineas.reduce((a, l) => a + l.cantidad, 0);
-  return { lineas, total, unidades };
+  return { lineas, total, conIva, unidades };
 }
 
 /** Lo que necesita la línea según las mismas reglas que aplica el servidor. */
@@ -104,7 +105,7 @@ function FotoRecipe({ productoId }: { productoId: string }) {
 }
 
 export function CartBody({ onCobrar }: { onCobrar: () => void }) {
-  const { lineas, total } = useResumenVenta();
+  const { lineas, conIva: total } = useResumenVenta();
   const cliente = useVenta((s) => s.cliente);
   const bloqueos = useVenta((s) => s.bloqueos);
   const cantidad = useVenta((s) => s.cantidad);
@@ -188,7 +189,12 @@ export function CobroSheet({ open, onClose, onVendida }: { open: boolean; onClos
   const [desc, setDesc] = useState(0);
   const [descMotivo, setDescMotivo] = useState(MOTIVOS_DESCUENTO[0]);
   const descuento = Math.round(bruto * desc) / 100;
-  const total = Math.round((bruto - descuento) * 100) / 100;
+  const ivaBruto = lineas.reduce((a, l) => a + Number(l.producto.precioUsd) * l.cantidad * Number((l.producto as { ivaPct?: string | number }).ivaPct ?? 0) / 100, 0);
+  const iva = Math.round(ivaBruto * (100 - desc)) / 100;
+  const base = Math.round((bruto - descuento + iva) * 100) / 100;
+  const [igtf, setIgtf] = useState<{ igtfActivo: boolean; igtfPct: number }>({ igtfActivo: false, igtfPct: 0 });
+  const [clave, setClave] = useState(() => crypto.randomUUID());
+  useEffect(() => { if (open) { setClave(crypto.randomUUID()); api<{ igtfActivo: boolean; igtfPct: number }>('/catalogo/configuracion').then(setIgtf).catch(() => {}); } }, [open]);
   const cliente = useVenta((s) => s.cliente);
   const vaciar = useVenta((s) => s.vaciar);
   const ponerBloqueos = useVenta((s) => s.ponerBloqueos);
@@ -205,13 +211,18 @@ export function CobroSheet({ open, onClose, onVendida }: { open: boolean; onClos
   useEffect(() => { if (open) { setPagos([]); setMonto(''); setRef(''); setError(null); setDesc(0); } }, [open]);
 
   const enBs = (p: PagoUI) => (monedaDe(p.metodo) === 'USD' ? r2(p.monto * tasa) : p.monto);
+  const pIgtf = igtf.igtfActivo ? igtf.igtfPct / 100 : 0;
+  const enDivisas = pagos.filter((p) => p.metodo === 'EFECTIVO_USD').reduce((a, p) => a + p.monto, 0);
+  const igtfUsd = r2(Math.min(enDivisas, base) * pIgtf);
+  const total = r2(base + igtfUsd);
   const totalBs = r2(total * tasa);
   const pagadoBs = r2(pagos.reduce((a, p) => a + enBs(p), 0));
   const faltaBs = r2(totalBs - pagadoBs);
   const vueltoBs = faltaBs < -0.01 ? -faltaBs : 0;
   const efectivoBs = pagos.filter((p) => ES_EFECTIVO(p.metodo)).reduce((a, p) => a + enBs(p), 0);
   const vueltoInvalido = vueltoBs > 0 && efectivoBs + 0.01 < vueltoBs;
-  const enMoneda = (bs: number, m: MetodoPago) => (monedaDe(m) === 'USD' ? r2(bs / tasa) : r2(bs));
+  const enMoneda = (bs: number, m: MetodoPago) =>
+    m === 'EFECTIVO_USD' && pIgtf ? Math.ceil((bs / tasa / (1 - pIgtf)) * 100) / 100 : monedaDe(m) === 'USD' ? r2(bs / tasa) : r2(bs);
   const simbolo = (m: MetodoPago) => (monedaDe(m) === 'USD' ? '$' : 'Bs');
 
   const agregar = (valor?: number) => {
@@ -226,9 +237,19 @@ export function CobroSheet({ open, onClose, onVendida }: { open: boolean; onClos
     setEnviando(true);
     setError(null);
     try {
-      const v = await api<Venta>('/ventas', {
-        body: { cedula: cliente?.cedula, pagos, vueltoMoneda: vueltoEn, descuentoPct: desc, descuentoMotivo: desc ? descMotivo : undefined, lineas: lineas.map((l) => ({ productoId: l.producto.id, cantidad: l.cantidad })) },
+      // Si se cae el internet al cobrar, se reintenta con la misma clave: el servidor nunca guarda la venta dos veces.
+      const enviar = () => api<Venta>('/ventas', {
+        body: { clave, cedula: cliente?.cedula, pagos, vueltoMoneda: vueltoEn, descuentoPct: desc, descuentoMotivo: desc ? descMotivo : undefined, lineas: lineas.map((l) => ({ productoId: l.producto.id, cantidad: l.cantidad })) },
       });
+      let v: Venta | undefined;
+      for (let intento = 0; !v; intento++) {
+        try { v = await enviar(); } catch (e) {
+          if (!(e instanceof ApiError) || e.status !== 0 || intento >= 4) throw e;
+          setError(`Sin conexión. Reintentando (${intento + 1}/4)…`);
+          await new Promise((r) => setTimeout(r, 2500));
+        }
+      }
+      setError(null);
       vaciar();
       onClose();
       void cargarCaja();
@@ -252,7 +273,9 @@ export function CobroSheet({ open, onClose, onVendida }: { open: boolean; onClos
         <div className="grid grid-cols-2 gap-2 rounded-xl bg-surface2 p-3 text-center font-mono tabular">
           <div><div className="text-xs font-sans text-muted">Total</div><div className="text-2xl font-medium">{usd(total)}</div></div>
           <div><div className="text-xs font-sans text-muted">En bolívares</div><div className="text-2xl font-medium">Bs {num2(totalBs)}</div></div>
-          {desc > 0 && <div className="col-span-2 text-xs font-sans text-muted">Antes {usd(bruto)} · descuento {desc} % (−{usd(descuento)})</div>}
+          {(desc > 0 || iva > 0 || igtfUsd > 0) && <div className="col-span-2 text-xs font-sans text-muted">
+            Subtotal {usd(bruto)}{desc > 0 && ` · descuento ${desc} % (−${usd(descuento)})`}{iva > 0 && ` · IVA ${usd(iva)}`}{igtfUsd > 0 && ` · IGTF ${usd(igtfUsd)}`}
+          </div>}
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-sm">

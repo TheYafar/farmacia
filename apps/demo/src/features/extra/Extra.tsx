@@ -251,3 +251,70 @@ export function LibroPage() {
     </div>
   );
 }
+
+/* ───────── Ventas (historial, devolución) ───────── */
+const VENTAS = [
+  { n: 1042, h: '10:42', p: '2 Atamel 500 mg, 1 Losartán 50 mg', c: 'Ana Pérez', t: 13.4, e: 'ok' },
+  { n: 1041, h: '10:31', p: '1 Crema Hipoglós 110 g (−10 % tercera edad)', c: 'Ana Pérez', t: 8.87, e: 'ok' },
+  { n: 1040, h: '10:18', p: '1 Amoxicilina 500 mg', c: 'Carlos Méndez', t: 2.6, e: 'dev' },
+  { n: 1039, h: '09:55', p: '3 Omeprazol 20 mg', c: 'Ana Pérez', t: 3.6, e: 'anulada' },
+];
+export function VentasPage() {
+  const toast = useToast();
+  const [dev, setDev] = useState(false);
+  return (
+    <div className="flex flex-col gap-4">
+      <PageHeader title="Ventas" subtitle="Historial, reimprimir ticket, devoluciones y anulaciones" />
+      <Table head={['N.º', 'Hora', 'Productos', 'Cajero', 'Total', 'Estado', '']} rows={VENTAS.map((v) => [
+        mono(`#${v.n}`), mono(v.h), v.p, v.c, mono(usd(v.t)),
+        v.e === 'anulada' ? <Chip tone="bad">Anulada</Chip> : v.e === 'dev' || (v.n === 1042 && dev) ? <Chip tone="warn">Con devolución</Chip> : <Chip tone="ok">Cobrada</Chip>,
+        <div className="flex gap-1"><Button size="sm" onClick={() => toast(`Ticket #${v.n} enviado a la impresora`, 'ok')}>Ticket</Button>
+          {v.n === 1042 && !dev && <Button size="sm" onClick={() => { setDev(true); toast('Devolución: 1 Losartán. Se entregan $6,90 y el producto vuelve a su lote', 'ok'); }}>Devolver</Button>}</div>,
+      ])} />
+    </div>
+  );
+}
+
+/* ───────── Catálogo ───────── */
+const PRODS = [
+  { p: 'Atamel 500 mg', l: 'Calox', c: 'Medicamentos', iva: 0, precio: 1.8, costo: 0.9, s: 140, min: 40 },
+  { p: 'Losartán 50 mg', l: 'Leti', c: 'Medicamentos', iva: 0, precio: 6.9, costo: 4.2, s: 12, min: 20 },
+  { p: 'Crema Hipoglós 110 g', l: 'Bayer', c: 'Bebé', iva: 16, precio: 8.5, costo: 5.1, s: 20, min: 5 },
+  { p: 'Rivotril 2 mg', l: 'Roche', c: 'Medicamentos', iva: 0, precio: 7.5, costo: 5.8, s: 9, min: 5, psico: true },
+];
+export function CatalogoPage() {
+  const toast = useToast();
+  const [sube, setSube] = useState(0);
+  return (
+    <div className="flex flex-col gap-4">
+      <PageHeader title="Catálogo" subtitle="Productos, precios, costo y margen" actions={<>
+        <Button onClick={() => { setSube(5); toast('Precios de Leti +5 % (vista previa confirmada)', 'ok'); }}>Cambiar precios</Button>
+        <Button variant="primary" onClick={() => toast('Formulario de nuevo producto', 'ok')}>Nuevo producto</Button></>} />
+      <Table head={['Producto', 'Categoría', 'Precio', 'Costo · margen', 'Existencia', '']} rows={PRODS.map((x) => {
+        const precio = x.l === 'Leti' ? Math.round(x.precio * (1 + sube / 100) / 0.05) * 0.05 : x.precio;
+        const m = Math.round(((precio - x.costo) / precio) * 100);
+        return [
+          <div><b>{x.p}</b> {x.psico && <Chip tone="bad">Psicotrópico</Chip>}<div className="text-xs text-muted">{x.l}{x.iva ? ` · IVA ${x.iva} %` : ''}</div></div>, x.c, mono(usd(precio)),
+          <span className="font-mono">{usd(x.costo)} · <span className={m < 30 ? 'text-bad' : 'text-ok'}>{m} %</span></span>,
+          x.s <= x.min ? <Chip tone="bad">{x.s} · mín. {x.min}</Chip> : mono(String(x.s)), <Button size="sm" onClick={() => toast('Editar producto', 'ok')}>Editar</Button>,
+        ];
+      })} />
+    </div>
+  );
+}
+
+/* ───────── Auditoría ───────── */
+export function AuditoriaPage() {
+  return (
+    <div className="flex flex-col gap-4">
+      <PageHeader title="Auditoría" subtitle="Quién hizo qué y cuándo. No se puede borrar ni editar." />
+      <Table head={['Fecha', 'Quién', 'Acción', 'Detalle']} rows={[
+        [mono('20/11 10:42'), 'Carlos Méndez', <Chip tone="warn">devolución</Chip>, 'Venta #1040 · $2,60 · producto equivocado'],
+        [mono('20/11 10:31'), 'Ana Pérez', <Chip>venta</Chip>, 'Venta #1041 · descuento 10 % tercera edad'],
+        [mono('20/11 10:05'), 'José Ávila', <Chip>precios masivo</Chip>, 'Leti +5 % · 38 productos'],
+        [mono('20/11 09:58'), 'José Ávila', <Chip tone="warn">venta anulada</Chip>, 'Venta #1039'],
+        [mono('20/11 08:01'), 'Ana Pérez', <Chip>caja abierta</Chip>, 'Fondo $20 + Bs 500'],
+      ]} />
+    </div>
+  );
+}

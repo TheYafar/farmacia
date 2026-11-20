@@ -108,6 +108,12 @@ Agrega esta línea:
 
 Para copiar los respaldos fuera del VPS (recomendado), configura un destino con `rclone config` (por ejemplo Backblaze B2) y agrega `RCLONE_DESTINO=nombre:carpeta` al inicio de la línea del cron.
 
+**Probar que el respaldo sirve** (una vez al mes): `./probar-restauracion.sh` lo restaura en una base de prueba aparte, muestra cuántas ventas, productos y clientes tiene, y la borra. No toca los datos reales.
+
+**Aviso si el sistema se cae:** crea un monitor gratuito en [UptimeRobot](https://uptimerobot.com) (tipo HTTP(s)) a `https://TU-DOMINIO/api/v1/salud` cada 5 minutos, con aviso por correo o Telegram.
+
+**Clave de dos pasos del dueño:** en la app, *Usuarios → Clave de dos pasos → Activar*, y escanear el código con Google Authenticator o Authy.
+
 Restaurar (reemplaza los datos actuales):
 
 ```bash

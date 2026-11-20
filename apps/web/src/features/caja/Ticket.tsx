@@ -36,6 +36,9 @@ export default function Ticket({ venta, onCerrar }: { venta: Venta | null; onCer
             </div>
           ))}
           <div className="my-2 border-t border-dashed border-black" />
+          {Number(v2(venta).descuentoUsd) > 0 && <div className="flex justify-between"><span>Descuento {Number(v2(venta).descuentoPct)} %{v2(venta).descuentoMotivo ? ` (${v2(venta).descuentoMotivo})` : ''}</span><span>-{num2(v2(venta).descuentoUsd!)} $</span></div>}
+          {Number(v2(venta).ivaUsd) > 0 && <div className="flex justify-between"><span>IVA</span><span>{num2(v2(venta).ivaUsd!)} $</span></div>}
+          {Number(v2(venta).igtfUsd) > 0 && <div className="flex justify-between"><span>IGTF</span><span>{num2(v2(venta).igtfUsd!)} $</span></div>}
           <div className="flex justify-between text-[14px] font-bold"><span>TOTAL</span><span>{num2(venta.totalUsd)} $</span></div>
           <div className="flex justify-between"><span>Total Bs</span><span>{num2(venta.totalBs)}</span></div>
           <div className="flex justify-between"><span>Tasa</span><span>{num2(venta.tasa)} Bs/$</span></div>
@@ -54,3 +57,6 @@ export default function Ticket({ venta, onCerrar }: { venta: Venta | null; onCer
     </Sheet>
   );
 }
+
+/** Campos que agregó el servidor después (descuento, IVA, IGTF); pueden faltar en ventas antiguas. */
+const v2 = (v: Venta) => v as Venta & { descuentoUsd?: string; descuentoPct?: string; descuentoMotivo?: string | null; ivaUsd?: string; igtfUsd?: string };

@@ -12,6 +12,8 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [usuario, setUsuario] = useState('');
   const [clave, setClave] = useState('');
+  const [codigo, setCodigo] = useState('');
+  const [pideCodigo, setPideCodigo] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
 
@@ -34,10 +36,11 @@ export default function LoginPage() {
             setEnviando(true);
             setError(null);
             try {
-              await entrar(usuario, clave);
+              await entrar(usuario, clave, codigo);
               const rol = useSesion.getState().usuario!.rol;
               navigate(INICIO[rol], { replace: true });
             } catch (err) {
+              if (err instanceof ApiError && err.codigo === 'REQUIERE_2FA') { setPideCodigo(true); setError(codigo ? err.message : null); return; }
               setError(err instanceof ApiError ? err.message : 'No se pudo entrar');
             } finally {
               setEnviando(false);
@@ -50,6 +53,11 @@ export default function LoginPage() {
           <Campo etiqueta="Clave">
             <input id="clave" type="password" value={clave} onChange={(e) => setClave(e.target.value)} autoComplete="current-password" required className={claseInput} />
           </Campo>
+          {pideCodigo && (
+            <label className="flex flex-col gap-1.5 text-sm font-semibold">Código de 6 números de tu app
+              <input autoFocus inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={codigo} onChange={(e) => setCodigo(e.target.value.replace(/\D/g, ''))} className={claseInput + ' text-center font-mono text-xl tracking-[0.4em]'} required />
+            </label>
+          )}
           {error && <Alert tone="bad">{error}</Alert>}
           <Button type="submit" variant="primary" size="lg" disabled={enviando}>{enviando ? 'Entrando…' : 'Entrar'}</Button>
         </form>

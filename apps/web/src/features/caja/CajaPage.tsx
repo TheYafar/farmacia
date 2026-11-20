@@ -1,15 +1,16 @@
 import { clsx } from 'clsx';
-import { CheckCircle2, Wallet } from 'lucide-react';
+import { CheckCircle2, Printer, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { METODOS_PAGO, type MetodoPago } from '@farmacia/shared';
-import { Alert, Button, Campo, Card, Cargando, Chip, ErrorCarga, PageHeader, claseInput } from '@/components/ui';
+import { Alert, Button, Campo, Card, Cargando, Chip, ErrorCarga, PageHeader, Sheet, claseInput } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
 import { fecha, hora, num2, usd } from '@/lib/format';
 import type { Montos, Turno } from '@/lib/tipos';
 import { useCargar } from '@/lib/useCargar';
 import { avisar } from '@/store/avisos';
 import { useCaja } from '@/store/caja';
-import { useRol } from '@/store/sesion';
+import { useRol, useSesion } from '@/store/sesion';
+import { useConfig } from '@/store/config';
 import AbrirCaja, { leerMonto } from './AbrirCaja';
 import { NOMBRE_METODO } from './Ticket';
 
@@ -39,6 +40,55 @@ function TablaCierre({ t }: { t: Turno }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** Hoja del cierre (reporte de caja) para imprimir y firmar. Sale en la impresora de tickets. */
+function HojaCierre({ t, onCerrar }: { t: (Turno & { ventas?: number; totalUsd?: string }) | null; onCerrar: () => void }) {
+  const cfg = useConfig((s) => s.config);
+  const farmacia = useCaja((s) => s.farmacia);
+  const yo = useSesion((s) => s.usuario);
+  if (!t || !t.esperado || !t.contado || !t.diferencia) return null;
+  const ancho = cfg?.ticketAncho ?? 80;
+  const linea = (a: string, b: string, negrita?: boolean) => <div className={clsx('flex justify-between gap-2', negrita && 'font-bold')}><span>{a}</span><span>{b}</span></div>;
+  return (
+    <Sheet open onClose={onCerrar} title="Cierre de caja">
+      <style>{`@media print { @page { size: ${ancho}mm auto; margin: 0; } #ticket { width: ${ancho - 6}mm !important; font-size: ${cfg?.ticketLetra ?? 12}px !important; } }`}</style>
+      <div className="flex flex-col gap-4">
+        <div id="ticket" className="mx-auto w-full rounded-lg border border-line bg-white p-4 font-mono text-[12px] leading-snug text-black" style={{ maxWidth: ancho === 58 ? 240 : 320 }}>
+          <div className="text-center">
+            <div className="text-[14px] font-bold">{cfg?.farmacia.nombre ?? farmacia.nombre}</div>
+            <div className="mt-1 font-bold">CIERRE DE CAJA</div>
+            <div>Cajero: {t.cajero?.nombre ?? yo?.nombre}</div>
+            <div>Abrió: {fecha(t.abiertoEn)} {hora(t.abiertoEn)}</div>
+            {t.cerradoEn && <div>Cerró: {fecha(t.cerradoEn)} {hora(t.cerradoEn)}</div>}
+          </div>
+          <div className="my-2 border-t border-dashed border-black" />
+          {linea('Fondo inicial', `${num2(t.fondoUsd)} $ / ${num2(t.fondoBs)} Bs`)}
+          {(t.ventas ?? t._count?.ventas) !== undefined && linea('Ventas', String(t.ventas ?? t._count?.ventas))}
+          {t.totalUsd !== undefined && linea('Total vendido', `${num2(t.totalUsd)} $`, true)}
+          {METODOS_PAGO.map((m) => (
+            <div key={m}>
+              <div className="my-1 border-t border-dashed border-black" />
+              <div className="font-bold">{NOMBRE_METODO[m]} ({moneda(m)})</div>
+              {linea('Esperado', num2(t.esperado![m]))}
+              {linea('Contado', num2(t.contado![m]))}
+              {linea('Diferencia', `${t.diferencia![m] > 0 ? '+' : ''}${num2(t.diferencia![m])}`, Math.abs(t.diferencia![m]) >= 0.005)}
+            </div>
+          ))}
+          <div className="my-2 border-t border-dashed border-black" />
+          <div className="text-center font-bold">{cuadra(t.diferencia) ? 'LA CAJA CUADRA' : 'CAJA CON DIFERENCIA'}</div>
+          {t.nota && <div className="mt-1">Nota: {t.nota}</div>}
+          <div className="mt-8 border-t border-black pt-1 text-center">Firma del cajero</div>
+          <div className="mt-8 border-t border-black pt-1 text-center">Firma de quien recibe</div>
+          <div className="mt-2 text-center text-[10px]">Impreso {new Date().toLocaleString('es-VE')}</div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Button size="lg" icon={<Printer className="h-5 w-5" />} onClick={() => window.print()}>Imprimir</Button>
+          <Button size="lg" variant="primary" onClick={onCerrar}>Listo</Button>
+        </div>
+      </div>
+    </Sheet>
   );
 }
 
@@ -95,8 +145,10 @@ function Cierres() {
   const rol = useRol();
   const { datos, error, cargando, recargar } = useCargar(() => api<Turno[]>('/caja/turnos'), [], 30_000);
   const [abierto, setAbierto] = useState<string | null>(null);
+  const [hoja, setHoja] = useState<Turno | null>(null);
   return (
     <Card>
+      <HojaCierre t={hoja} onCerrar={() => setHoja(null)} />
       <h2 className="text-lg font-bold">Cierres de caja (últimos 14 días)</h2>
       {error && <ErrorCarga mensaje={error} reintentar={recargar} />}
       {cargando ? <Cargando /> : !datos?.length ? <p className="text-sm text-muted">Todavía no hay turnos.</p> : (
@@ -117,6 +169,7 @@ function Cierres() {
                 <div className="flex flex-col gap-2 rounded-lg bg-surface2 p-3">
                   <TablaCierre t={t} />
                   {t.nota && <p className="text-sm"><b>Nota:</b> {t.nota}</p>}
+                  <Button size="sm" className="self-start" icon={<Printer className="h-4 w-4" />} onClick={() => setHoja(t)}>Imprimir cierre</Button>
                   {rol === 'ADMIN' && !t.revisadoEn && (
                     <Button size="sm" className="self-start" onClick={async () => {
                       try { await api(`/caja/turnos/${t.id}/revisar`, { method: 'POST' }); avisar('Cierre marcado como revisado', 'ok'); recargar(); }
@@ -137,6 +190,7 @@ export default function CajaPage() {
   const rol = useRol();
   const { turno, cargada, cargar } = useCaja();
   const [ultimo, setUltimo] = useState<Turno | null>(null);
+  const [hoja, setHoja] = useState(false);
   useEffect(() => { void cargar(); }, [cargar]);
 
   return (
@@ -150,10 +204,12 @@ export default function CajaPage() {
           </div>
           <TablaCierre t={ultimo} />
           {!cuadra(ultimo.diferencia) && <p className="text-sm text-muted">Diferencia en verde: sobra. En rojo: falta. El dueño ve este cierre.</p>}
+          <Button className="self-start" icon={<Printer className="h-4 w-4" />} onClick={() => setHoja(true)}>Imprimir cierre para firmar</Button>
         </Card>
       )}
       {!cargada ? <Cargando /> : turno ? <CerrarCaja onCerrada={setUltimo} /> : <AbrirCaja />}
       {rol !== 'CAJERO' && <Cierres />}
+      {hoja && <HojaCierre t={ultimo} onCerrar={() => setHoja(false)} />}
     </div>
   );
 }

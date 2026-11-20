@@ -1,10 +1,13 @@
+import { redondearBs } from '@farmacia/shared';
+import { useConfig } from '@/store/config';
 export { formatearCedula as cedula } from '@farmacia/shared';
 
 const nf2 = new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export const num2 = (v: number | string) => nf2.format(Number(v));
 export const usd = (v: number | string) => `$${nf2.format(Number(v))}`;
-export const bs = (v: number | string, tasa: number | null) => (tasa ? `Bs ${nf2.format(Number(v) * tasa)}` : 'Bs —');
+/** Precio en bolívares con el redondeo de la farmacia (Configuración: 0, 1, 5 o 10 Bs). */
+export const bs = (v: number | string, tasa: number | null) => (tasa ? `Bs ${nf2.format(redondearBs(Number(v) * tasa, useConfig.getState().config?.redondeoBs ?? 0))}` : 'Bs —');
 
 export const normalizar = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
 

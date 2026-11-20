@@ -8,7 +8,7 @@ import { descargarPlantilla, leerArchivo, type ArchivoLeido } from './excel';
 
 interface Reporte {
   filas: number; productosNuevos: number; productosActualizados: number; preciosCambiados: number;
-  principiosNuevos: number; lotes: number; errores: { fila: number; campo?: string; mensaje: string }[];
+  principiosNuevos: number; lotes: number; controladosDeducidos?: string[]; errores: { fila: number; campo?: string; mensaje: string }[];
   guardado: boolean; clientesAvisados?: number;
 }
 
@@ -78,6 +78,9 @@ export default function ImportarExcel({ abierto, onCerrar, onListo }: { abierto:
               <dt className="text-muted">Principios activos nuevos</dt><dd className="text-right font-mono">{reporte.principiosNuevos}</dd>
               <dt className="text-muted">Lotes con existencia</dt><dd className="text-right font-mono">{reporte.lotes}</dd>
             </dl>
+            {!!reporte.controladosDeducidos?.length && (
+              <Alert tone="warn">Se marcarán como controlados (la columna Riesgo venía vacía): {reporte.controladosDeducidos.join(', ')}. Pedirán récipe y permiso del farmacéutico. Si alguno no lo es, cámbialo en Catálogo.</Alert>
+            )}
             {reporte.errores.length > 0 ? (
               <Alert tone="bad">
                 <div className="flex flex-col gap-1">

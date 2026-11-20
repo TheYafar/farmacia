@@ -1,5 +1,5 @@
 import { clsx } from 'clsx';
-import { Camera, Pencil, Plus } from 'lucide-react';
+import { Camera, Pencil, Plus, Printer } from 'lucide-react';
 import { useEffect, useRef, useState, type InputHTMLAttributes, type ReactNode } from 'react';
 import { Alert, Button, Campo, Card, Cargando, Chip, ErrorCarga, PageHeader, SearchInput, Sheet, claseInput } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
@@ -7,7 +7,9 @@ import { useCargar } from '@/lib/useCargar';
 import type { Paciente, Principio, Venta } from '@/lib/tipos';
 import { CATEGORIAS } from '@farmacia/shared';
 import { avisar } from '@/store/avisos';
-import { useRol } from '@/store/sesion';
+import { useRol, useSesion } from '@/store/sesion';
+import { bs } from '@/lib/format';
+import { RevisarControlados } from '@/features/panel/PanelPage';
 import Ticket from '@/features/caja/Ticket';
 import { useConfig } from '@/store/config';
 
@@ -25,12 +27,12 @@ function Tabs<T extends string>({ tabs, value, onChange }: { tabs: T[]; value: T
   );
 }
 
-function Tabla({ head, rows, vacio }: { head: string[]; rows: ReactNode[][]; vacio: string }) {
+function Tabla({ head, rows, vacio }: { head: ReactNode[]; rows: ReactNode[][]; vacio: string }) {
   if (!rows.length) return <Card className="p-6 text-center text-sm text-muted">{vacio}</Card>;
   return (
     <Card className="overflow-x-auto p-0">
       <table className="w-full min-w-[560px] text-sm">
-        <thead><tr className="border-b border-line text-left text-xs text-muted">{head.map((h) => <th key={h} className="px-4 py-2.5 font-semibold">{h}</th>)}</tr></thead>
+        <thead><tr className="border-b border-line text-left text-xs text-muted">{head.map((h, i) => <th key={i} className="px-4 py-2.5 font-semibold">{h}</th>)}</tr></thead>
         <tbody>{rows.map((r, i) => <tr key={i} className="border-b border-line last:border-0">{r.map((c, j) => <td key={j} className="px-4 py-2.5 align-middle">{c}</td>)}</tr>)}</tbody>
       </table>
     </Card>
@@ -407,7 +409,28 @@ function CambiarPrecios({ abierto, onCerrar, onListo }: { abierto: boolean; onCe
   );
 }
 
+/** Etiquetas de precio para los estantes (hoja A4, 3 por fila). El precio en Bs usa la tasa y el redondeo de hoy. */
+function imprimirEtiquetas(lista: ProductoAdm[], tasa: number | null) {
+  const esc = (t: string) => t.replace(/[&<>"]/g, (x) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[x]!));
+  const hoy = new Date().toLocaleDateString('es-VE');
+  const celdas = lista.map((p) => `<div class="e"><div class="n">${esc(p.nombreComercial)} ${esc(p.concentracion)}</div>
+    <div class="s">${esc(p.principioActivo.nombre)} · ${esc(p.laboratorio)}</div>
+    <div class="p">${usd(p.precioUsd)}</div><div class="b">${tasa ? esc(bs(p.precioUsd, tasa)) : ''}</div>
+    <div class="f">${p.codigoBarras ? esc(p.codigoBarras) + ' · ' : ''}${hoy}</div></div>`).join('');
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Etiquetas de precio</title><style>
+    @page{size:A4;margin:8mm}body{font-family:system-ui,sans-serif;margin:0;color:#111}
+    .g{display:grid;grid-template-columns:repeat(3,1fr);gap:3mm}.e{border:1px dashed #999;padding:3mm;height:34mm;box-sizing:border-box;display:flex;flex-direction:column;break-inside:avoid}
+    .n{font-weight:700;font-size:13px;line-height:1.15;max-height:30px;overflow:hidden}.s{font-size:10px;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .p{font-size:24px;font-weight:800;margin-top:auto}.b{font-size:14px;font-weight:600}.f{font-size:9px;color:#666}</style></head><body>
+    <div class="g">${celdas}</div><script>window.onload=()=>window.print()</script></body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { avisar('Permite las ventanas emergentes para imprimir', 'bad'); return; }
+  w.document.write(html); w.document.close();
+}
+
 export function CatalogoPage() {
+  const tasa = useSesion((s) => s.tasa);
+  const [sel, setSel] = useState<string[]>([]);
   const rol = useRol();
   const [tab, setTab] = useState<'Productos' | 'Principios activos' | 'Ajustes'>('Productos');
   const [q, setQ] = useState('');
@@ -426,11 +449,18 @@ export function CatalogoPage() {
     <div className="flex flex-col gap-4">
       <PageHeader title="Catálogo" subtitle="Productos, principios activos y ajustes de inventario"
         actions={<>
+          {tab === 'Productos' && <Button icon={<Printer className="h-4 w-4" />} onClick={() => {
+            const d = prods.datos ?? [];
+            const lista = sel.length ? d.filter((p) => sel.includes(p.id)) : d.filter((p) => p.activo);
+            if (!lista.length) { avisar('No hay productos para imprimir', 'bad'); return; }
+            imprimirEtiquetas(lista, tasa);
+          }}>{sel.length ? `Etiquetas (${sel.length})` : 'Etiquetas de precio'}</Button>}
           {tab === 'Productos' && admin && <Button onClick={() => setPrecios(true)}>Cambiar precios</Button>}
           {tab === 'Productos' && admin && <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setEditP('nuevo')}>Nuevo producto</Button>}
           {tab === 'Principios activos' && <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setEditPa('nuevo')}>Nuevo principio</Button>}
           {tab === 'Ajustes' && <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setAjuste(true)}>Nuevo ajuste</Button>}
         </>} />
+      <RevisarControlados />
       <Tabs tabs={['Productos', 'Principios activos', 'Ajustes']} value={tab} onChange={setTab} />
       {tab === 'Productos' && (
         <>
@@ -440,10 +470,11 @@ export function CatalogoPage() {
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={soloBajo} onChange={(e) => setSoloBajo(e.target.checked)} className="h-4 w-4" /> Solo stock bajo</label>
           </div>
           <Estado c={prods}>{(d) => (
-            <Tabla vacio="No hay productos con esa búsqueda." head={['Producto', 'Principio', 'Precio', 'Costo · margen', 'Existencia', 'Estado', '']} rows={d.map((p) => [
+            <Tabla vacio="No hay productos con esa búsqueda." head={[<input key="t" type="checkbox" aria-label="Elegir todos para etiquetas" className="h-4 w-4" checked={!!d.length && d.every((p) => sel.includes(p.id))} onChange={(e) => setSel(e.target.checked ? d.map((p) => p.id) : [])} />, 'Producto', 'Principio', 'Precio', 'Costo · margen', 'Existencia', 'Estado', '']} rows={d.map((p) => [
+              <input type="checkbox" aria-label={`Elegir ${p.nombreComercial} para etiqueta`} className="h-4 w-4" checked={sel.includes(p.id)} onChange={(e) => setSel((x) => e.target.checked ? [...x, p.id] : x.filter((i) => i !== p.id))} />,
               <div><div className="font-semibold">{p.nombreComercial} {p.concentracion}</div><div className="text-xs text-muted">{p.laboratorio} · {p.categoria}{p.ivaPct ? ` · IVA ${p.ivaPct} %` : ''}{p.codigoBarras ? ` · ${p.codigoBarras}` : ''}</div></div>,
               <span>{p.principioActivo.nombre} {p.principioActivo.riesgo !== 'NORMAL' && <Chip tone={RIESGO[p.principioActivo.riesgo][1]}>{RIESGO[p.principioActivo.riesgo][0]}</Chip>}</span>,
-              mono(usd(p.precioUsd)),
+              <span className="font-mono tabular">{usd(p.precioUsd)}<span className="block text-xs text-muted">{bs(p.precioUsd, tasa)}</span></span>,
               p.costoUsd ? <span className="font-mono tabular">{usd(p.costoUsd)} · <span className={p.margenPct != null && p.margenPct < 15 ? 'text-bad' : 'text-ok'}>{p.margenPct} %</span></span> : <span className="text-xs text-muted">Sin costo</span>,
               p.bajo ? <Chip tone="bad">{p.stock} · mín. {p.stockMinimo}</Chip> : mono(p.stock),
               p.activo ? <Chip tone="ok">Activo</Chip> : <Chip>Inactivo</Chip>,

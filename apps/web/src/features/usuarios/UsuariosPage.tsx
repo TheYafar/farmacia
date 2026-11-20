@@ -52,11 +52,41 @@ function CambiarClave({ u, onCerrar }: { u: Usuario | null; onCerrar: () => void
   );
 }
 
+function EditarUsuario({ u, onCerrar, onListo }: { u: Usuario | null; onCerrar: () => void; onListo: () => void }) {
+  const [f, setF] = useState<{ nombre: string; rol: Rol }>({ nombre: '', rol: 'CAJERO' });
+  const [error, setError] = useState<string | null>(null);
+  const [visto, setVisto] = useState<string | null>(null);
+  if (u && visto !== u.id) { setVisto(u.id); setF({ nombre: u.nombre, rol: u.rol }); setError(null); }
+  return (
+    <Sheet open={!!u} onClose={onCerrar} title={`Editar a ${u?.nombre ?? ''}`}>
+      <form className="flex flex-col gap-3" onSubmit={async (e) => {
+        e.preventDefault();
+        setError(null);
+        try {
+          await api(`/usuarios/${u!.id}`, { method: 'PATCH', body: f });
+          avisar(f.rol !== u!.rol ? `Rol cambiado a ${ROLE_LABEL[f.rol]}. Debe entrar de nuevo` : 'Datos guardados', 'ok');
+          onListo();
+        } catch (err) { setError(err instanceof ApiError ? err.message : 'No se pudo guardar'); }
+      }}>
+        <Campo etiqueta="Nombre"><input required value={f.nombre} onChange={(e) => setF({ ...f, nombre: e.target.value })} className={claseInput} /></Campo>
+        <Campo etiqueta="Rol" ayuda="Cajero: vende. Farmacéutico: además revisa récipes y da permisos. Dueño: todo.">
+          <select value={f.rol} onChange={(e) => setF({ ...f, rol: e.target.value as Rol })} className={claseInput}>
+            {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+          </select>
+        </Campo>
+        {error && <Alert tone="bad">{error}</Alert>}
+        <Button type="submit" variant="primary" size="lg">Guardar</Button>
+      </form>
+    </Sheet>
+  );
+}
+
 export default function UsuariosPage() {
   const yo = useSesion((s) => s.usuario)!;
   const { datos, error, cargando, recargar } = useCargar(() => api<Usuario[]>('/usuarios'), []);
   const [nuevo, setNuevo] = useState(false);
   const [clave, setClave] = useState<Usuario | null>(null);
+  const [editar, setEditar] = useState<Usuario | null>(null);
   const alternar = async (u: Usuario) => {
     try { await api(`/usuarios/${u.id}/${u.activo ? 'desactivar' : 'activar'}`, { method: 'POST' }); avisar(u.activo ? `${u.nombre} ya no puede entrar` : `${u.nombre} puede entrar de nuevo`, 'ok'); recargar(); }
     catch (e) { avisar(e instanceof ApiError ? e.message : 'No se pudo cambiar', 'bad'); }
@@ -82,6 +112,7 @@ export default function UsuariosPage() {
                     <Chip tone={u.rol === 'ADMIN' ? 'accent' : u.rol === 'REGENTE' ? 'info' : 'neutral'}>{ROLE_LABEL[u.rol]}</Chip>
                     {!u.activo && <Chip tone="bad">Desactivado</Chip>}
                     {bloqueado && <Chip tone="warn">Bloqueado por intentos</Chip>}
+                    <Button size="sm" onClick={() => setEditar(u)}>Editar</Button>
                     <Button size="sm" onClick={() => setClave(u)}>Cambiar clave</Button>
                     {u.id !== yo.id && <Button size="sm" variant={u.activo ? 'ghost' : 'secondary'} onClick={() => alternar(u)}>{u.activo ? 'Desactivar' : 'Activar'}</Button>}
                     {u.activo && bloqueado && u.id !== yo.id && <Button size="sm" onClick={() => api(`/usuarios/${u.id}/activar`, { method: 'POST' }).then(recargar)}>Desbloquear</Button>}
@@ -94,6 +125,7 @@ export default function UsuariosPage() {
       )}
       <NuevoUsuario abierto={nuevo} onCerrar={() => setNuevo(false)} onListo={() => { setNuevo(false); recargar(); }} />
       <CambiarClave u={clave} onCerrar={() => setClave(null)} />
+      <EditarUsuario u={editar} onCerrar={() => setEditar(null)} onListo={() => { setEditar(null); recargar(); }} />
     </div>
   );
 }

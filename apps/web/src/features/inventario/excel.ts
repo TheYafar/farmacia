@@ -14,13 +14,17 @@ const SINONIMOS: Record<string, keyof FilaImportacion> = {
   preciousd: 'precioUsd', precio: 'precioUsd', precio$: 'precioUsd', preciodolares: 'precioUsd',
   nivel: 'nivel', tipo: 'nivel',
   requiererecipe: 'requiereRecipe', recipe: 'requiereRecipe', conrecipe: 'requiereRecipe',
-  riesgo: 'riesgo', categoria: 'riesgo',
+  riesgo: 'riesgo', controlado: 'riesgo',
+  iva: 'ivaPct', 'iva%': 'ivaPct', ivapct: 'ivaPct', alicuota: 'ivaPct',
+  categoria: 'categoria', rubro: 'categoria', departamento: 'categoria',
+  costousd: 'costoUsd', costo: 'costoUsd', 'costo$': 'costoUsd', preciocompra: 'costoUsd',
+  stockminimo: 'stockMinimo', minimo: 'stockMinimo', puntodepedido: 'stockMinimo',
   familiaalergia: 'familia', familia: 'familia', alergia: 'familia',
   lote: 'lote', numerolote: 'lote',
   vence: 'vence', vencimiento: 'vence', fechavencimiento: 'vence', expira: 'vence',
   cantidad: 'cantidad', existencia: 'cantidad', stock: 'cantidad', cajas: 'cantidad',
 };
-const clave = (titulo: string) => SINONIMOS[normalizar(titulo).replace(/[^a-z0-9$]/g, '')];
+const clave = (titulo: string) => SINONIMOS[normalizar(titulo).replace(/[^a-z0-9$%]/g, '')];
 
 type Celda = string | number | boolean | Date | null | undefined;
 
@@ -51,7 +55,7 @@ function convertir(titulos: (keyof FilaImportacion | undefined)[], fila: Celda[]
     if (!k) return;
     const v = fila[i];
     switch (k) {
-      case 'unidadesPorCaja': case 'precioUsd': case 'cantidad': o[k] = numero(v); break;
+      case 'unidadesPorCaja': case 'precioUsd': case 'cantidad': case 'ivaPct': case 'costoUsd': case 'stockMinimo': o[k] = numero(v); break;
       case 'vence': o[k] = fecha(v); break;
       case 'requiereRecipe': o[k] = v === undefined || v === null || v === '' ? undefined : SI.includes(normalizar(String(v))); break;
       case 'nivel': case 'riesgo': o[k] = textoO(v) ? normalizar(String(v)).toUpperCase() : undefined; break;

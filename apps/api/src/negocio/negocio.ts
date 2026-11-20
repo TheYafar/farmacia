@@ -279,22 +279,29 @@ export class WhatsappController {
   @Get('recompra')
   async recompra() {
     const hace180 = new Date(Date.now() - 180 * dia);
-    const filas = await this.prisma.$queryRaw<{ cedula: string; nombre: string; telefono: string; productoId: string; producto: string; precio: Prisma.Decimal; veces: bigint; primera: Date; ultima: Date }[]>`
+    const filas = await this.prisma.$queryRaw<{ cedula: string; nombre: string; telefono: string; productoId: string; producto: string; precio: Prisma.Decimal; veces: bigint; primera: Date; ultima: Date; cajas: bigint; uxc: number; riesgo: string }[]>`
       SELECT v.cedula, pa.nombre, pa.telefono, vl."productoId", p."nombreComercial" || ' ' || p.concentracion AS producto, p."precioUsd" AS precio,
-        count(DISTINCT v.id) AS veces, min(v."creadaEn") AS primera, max(v."creadaEn") AS ultima
-      FROM "VentaLinea" vl JOIN "Venta" v ON v.id = vl."ventaId" JOIN "Paciente" pa ON pa.cedula = v.cedula JOIN "Producto" p ON p.id = vl."productoId"
+        count(DISTINCT v.id) AS veces, min(v."creadaEn") AS primera, max(v."creadaEn") AS ultima,
+        sum(vl.cantidad - vl.devuelto) FILTER (WHERE v."creadaEn" = (SELECT max(v2."creadaEn") FROM "VentaLinea" vl2 JOIN "Venta" v2 ON v2.id = vl2."ventaId" WHERE v2.cedula = v.cedula AND vl2."productoId" = vl."productoId" AND v2.estado = 'COMPLETADA')) AS cajas,
+        p."unidadesPorCaja" AS uxc, pr.riesgo::text AS riesgo
+      FROM "VentaLinea" vl JOIN "Venta" v ON v.id = vl."ventaId" JOIN "Paciente" pa ON pa.cedula = v.cedula JOIN "Producto" p ON p.id = vl."productoId" JOIN "PrincipioActivo" pr ON pr.id = p."principioActivoId"
       WHERE v.estado = 'COMPLETADA' AND v."creadaEn" >= ${hace180}
-      GROUP BY 1, 2, 3, 4, 5, 6 HAVING count(DISTINCT v.id) >= 2`;
+      GROUP BY 1, 2, 3, 4, 5, 6, p."unidadesPorCaja", pr.riesgo`;
     const enviados = await this.prisma.mensajeWhatsapp.findMany({ where: { tipo: 'RECOMPRA', creadoEn: { gte: new Date(Date.now() - 10 * dia) } }, select: { cedula: true, productoId: true } });
     return filas
       .map((f) => {
-        const intervalo = (f.ultima.getTime() - f.primera.getTime()) / (Number(f.veces) - 1);
+        // Con 2 o más compras: el intervalo promedio. Con una sola: se estima 1 unidad al día (cajas × unidades por caja),
+        // solo para tabletas/cápsulas de tratamiento (10 o más por caja) y nunca antibióticos (son tratamientos cortos).
+        const veces = Number(f.veces);
+        const intervalo = veces >= 2
+          ? (f.ultima.getTime() - f.primera.getTime()) / (veces - 1)
+          : f.uxc >= 10 && f.riesgo === 'NORMAL' ? Math.min(90, Math.max(10, Number(f.cajas ?? 1) * f.uxc)) * dia : NaN;
         const proxima = new Date(f.ultima.getTime() + intervalo);
         const dias = Math.round((proxima.getTime() - Date.now()) / dia);
         const texto = `¡Hola ${f.nombre.split(' ')[0]}! Tu ${f.producto} ${dias > 0 ? `se termina en ${dias} día${dias === 1 ? '' : 's'}` : 'ya se debe haber terminado'}. ¿Te lo apartamos? Precio: ${D(f.precio).toFixed(2)} $. Responde SÍ y te lo tenemos listo.`;
-        return { cedula: f.cedula, nombre: f.nombre, telefono: f.telefono, productoId: f.productoId, producto: f.producto, dias, texto, enviado: enviados.some((e) => e.cedula === f.cedula && e.productoId === f.productoId) };
+        return { cedula: f.cedula, nombre: f.nombre, telefono: f.telefono, productoId: f.productoId, producto: f.producto, dias, texto, estimado: veces < 2, enviado: enviados.some((e) => e.cedula === f.cedula && e.productoId === f.productoId) };
       })
-      .filter((f) => intervaloValido(f.dias))
+      .filter((f) => Number.isFinite(f.dias) && intervaloValido(f.dias))
       .sort((a, b) => a.dias - b.dias);
   }
 
@@ -379,8 +386,8 @@ export class ReportesNegocioController {
     const { d, h } = rango(desde, hasta);
     const filas = await this.prisma.$queryRaw<{ laboratorio: string; producto: string; unidades: bigint; venta: Prisma.Decimal; costo: Prisma.Decimal | null }[]>`
       SELECT p.laboratorio, p."nombreComercial" || ' ' || p.concentracion AS producto, sum(vl.cantidad - vl.devuelto) AS unidades, sum((vl.cantidad - vl.devuelto) * vl."precioUsd" * (100 - v."descuentoPct") / 100) AS venta,
-        sum((vl.cantidad - vl.devuelto) * (SELECT cl."costoUsd" / GREATEST(cl."factorVenta", 1) FROM "CompraLinea" cl JOIN "Compra" c ON c.id = cl."compraId"
-          WHERE cl."productoId" = p.id AND cl."costoUsd" > 0 ORDER BY c."creadaEn" DESC LIMIT 1)) AS costo
+        sum((vl.cantidad - vl.devuelto) * COALESCE((SELECT cl."costoUsd" / GREATEST(cl."factorVenta", 1) FROM "CompraLinea" cl JOIN "Compra" c ON c.id = cl."compraId"
+          WHERE cl."productoId" = p.id AND cl."costoUsd" > 0 ORDER BY c."creadaEn" DESC LIMIT 1), p."costoRefUsd")) AS costo
       FROM "VentaLinea" vl JOIN "Venta" v ON v.id = vl."ventaId" JOIN "Producto" p ON p.id = vl."productoId"
       WHERE v.estado = 'COMPLETADA' AND v."creadaEn" >= ${d} AND v."creadaEn" < ${h}
       GROUP BY 1, 2 ORDER BY venta DESC`;
@@ -428,6 +435,59 @@ export class ReportesNegocioController {
       porMetodo: metodos.map((m) => ({ metodo: m.metodo, pagos: m._count, usd: D(m._sum.montoUsd).minus(devs.find((x) => x.metodo === m.metodo)?._sum.montoUsd ?? 0).toFixed(2), monto: D(m._sum.monto).toFixed(2) })),
       devueltoUsd: devs.reduce((a, x) => a.plus(D(x._sum.montoUsd)), D(0)).toFixed(2),
     };
+  }
+
+  /** ¿Cuánto vale la mercancía? A costo (último costo de compra o el del Excel) y a precio de venta. Lo vencido aparte. */
+  @Get('inventario')
+  async inventario() {
+    const filas = await this.prisma.$queryRaw<{ id: string; producto: string; laboratorio: string; categoria: string; precio: Prisma.Decimal; costo: Prisma.Decimal | null; unidades: bigint; vencidas: bigint }[]>`
+      SELECT p.id, p."nombreComercial" || ' ' || p.concentracion AS producto, p.laboratorio, p.categoria, p."precioUsd" AS precio,
+        COALESCE((SELECT cl."costoUsd" / GREATEST(cl."factorVenta", 1) FROM "CompraLinea" cl JOIN "Compra" c ON c.id = cl."compraId"
+          WHERE cl."productoId" = p.id AND cl."costoUsd" > 0 ORDER BY c."creadaEn" DESC LIMIT 1), p."costoRefUsd") AS costo,
+        COALESCE(sum(l."stockLibre" + l."stockReservado") FILTER (WHERE l.vence >= current_date), 0) AS unidades,
+        COALESCE(sum(l."stockLibre" + l."stockReservado") FILTER (WHERE l.vence < current_date), 0) AS vencidas
+      FROM "Producto" p JOIN "Lote" l ON l."productoId" = p.id
+      GROUP BY p.id HAVING sum(l."stockLibre" + l."stockReservado") > 0`;
+    let costo = D(0), venta = D(0), vencido = D(0), unidades = 0, sinCosto = 0;
+    const porCategoria = new Map<string, { costo: Prisma.Decimal; venta: Prisma.Decimal; unidades: number }>();
+    const productos = filas.map((f) => {
+      const u = Number(f.unidades), c = f.costo === null ? null : D(f.costo);
+      const vCosto = c ? c.mul(u) : null, vVenta = D(f.precio).mul(u);
+      if (u > 0) { unidades += u; venta = venta.plus(vVenta); if (vCosto) costo = costo.plus(vCosto); else sinCosto++; }
+      if (Number(f.vencidas) && c) vencido = vencido.plus(c.mul(Number(f.vencidas)));
+      const g = porCategoria.get(f.categoria) ?? { costo: D(0), venta: D(0), unidades: 0 };
+      porCategoria.set(f.categoria, { costo: g.costo.plus(vCosto ?? 0), venta: g.venta.plus(vVenta), unidades: g.unidades + u });
+      return { producto: f.producto, laboratorio: f.laboratorio, unidades: u, costoUsd: vCosto?.toFixed(2) ?? null, ventaUsd: vVenta.toFixed(2) };
+    });
+    return {
+      unidades, costoUsd: costo.toFixed(2), ventaUsd: venta.toFixed(2), gananciaPotencialUsd: venta.minus(costo).toFixed(2), vencidoCostoUsd: vencido.toFixed(2), sinCosto,
+      porCategoria: [...porCategoria].map(([categoria, g]) => ({ categoria, unidades: g.unidades, costoUsd: g.costo.toFixed(2), ventaUsd: g.venta.toFixed(2) })).sort((a, b) => Number(b.ventaUsd) - Number(a.ventaUsd)),
+      productos: productos.filter((p) => p.unidades > 0).sort((a, b) => Number(b.ventaUsd) - Number(a.ventaUsd)).slice(0, 50),
+    };
+  }
+
+  /** Compara el período elegido con el anterior del mismo largo (por ejemplo, este mes contra el mes pasado). */
+  @Get('comparar')
+  async comparar(@Query('desde') desde?: string, @Query('hasta') hasta?: string) {
+    const { d, h } = rango(desde, hasta);
+    const largo = h.getTime() - d.getTime();
+    const medir = async (a: Date, b: Date) => {
+      const [v, dev, cli] = await Promise.all([
+        this.prisma.venta.aggregate({ where: { estado: 'COMPLETADA', creadaEn: { gte: a, lt: b } }, _sum: { totalUsd: true }, _count: true }),
+        this.prisma.devolucion.aggregate({ where: { creadoEn: { gte: a, lt: b } }, _sum: { montoUsd: true } }),
+        this.prisma.venta.findMany({ where: { estado: 'COMPLETADA', creadaEn: { gte: a, lt: b }, cedula: { not: null } }, distinct: ['cedula'], select: { cedula: true } }),
+      ]);
+      const usd = D(v._sum.totalUsd).minus(D(dev._sum.montoUsd));
+      return { ventas: v._count, usd: usd.toFixed(2), ticketPromedio: v._count ? usd.div(v._count).toFixed(2) : '0.00', clientes: cli.length };
+    };
+    // Si empieza el día 1 («este mes»), se compara con el mes pasado hasta el mismo día.
+    let ad = new Date(d.getTime() - largo), ah = d;
+    if (d.getUTCDate() === 1) {
+      ad = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1));
+      ah = new Date(Math.min(ad.getTime() + largo, d.getTime()));
+    }
+    const [actual, anterior] = await Promise.all([medir(d, h), medir(ad, ah)]);
+    return { desde: d, hasta: h, anteriorDesde: ad, anteriorHasta: ah, actual, anterior };
   }
 
   /** Ventas por cajero y diferencias de sus cierres de caja. */

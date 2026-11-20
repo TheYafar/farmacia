@@ -1,16 +1,65 @@
 import { Body, ConflictException, Controller, Get, HttpCode, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { configuracionSchema, preciosMasivoSchema, principioSchema, productoSchema, type ConfiguracionInput, type PreciosMasivoInput, type PrincipioInput, type ProductoInput } from '@farmacia/shared';
+import { configuracionSchema, riesgoSugerido, preciosMasivoSchema, principioSchema, productoSchema, type ConfiguracionInput, type PreciosMasivoInput, type PrincipioInput, type ProductoInput } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
 import { Roles, Usuario, type UsuarioActual } from '../common/seguridad';
 import { Validar } from '../common/validacion';
 
 const hoy = () => new Date(new Date().toISOString().slice(0, 10));
+const sinTildes = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+/** Distancia de edición (cuántas letras hay que cambiar, quitar o poner). */
+export function distancia(a: string, b: string) {
+  const d = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = d[0]!; d[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const t = d[j]!;
+      d[j] = Math.min(d[j]! + 1, d[j - 1]! + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = t;
+    }
+  }
+  return d[b.length]!;
+}
 
 @Injectable()
 export class CatalogoService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private vocabulario: { palabras: string[]; hasta: number } | null = null;
+
+  /** Palabras del catálogo (marcas, principios, laboratorios) para corregir errores de escritura. Se renueva cada 5 minutos. */
+  private async palabras() {
+    if (this.vocabulario && this.vocabulario.hasta > Date.now()) return this.vocabulario.palabras;
+    const filas = await this.prisma.$queryRaw<{ t: string }[]>`
+      SELECT p."nombreComercial" || ' ' || pa.nombre || ' ' || p.laboratorio AS t FROM "Producto" p JOIN "PrincipioActivo" pa ON pa.id = p."principioActivoId" WHERE p.activo`;
+    const set = new Set<string>();
+    for (const f of filas) for (const w of sinTildes(f.t).split(/[^a-z0-9ñ]+/)) if (w.length >= 4) set.add(w);
+    this.vocabulario = { palabras: [...set], hasta: Date.now() + 5 * 60_000 };
+    return this.vocabulario.palabras;
+  }
+
+  /** «ibuprofemo» → «ibuprofeno». Devuelve null si ninguna palabra cambia. */
+  async corregir(q: string) {
+    const vocab = await this.palabras();
+    let cambio = false;
+    const salida = q.trim().split(/\s+/).map((orig) => {
+      const w = sinTildes(orig);
+      if (w.length < 4 || /\d/.test(w) || vocab.includes(w)) return orig;
+      const max = w.length >= 7 ? 2 : 1;
+      let mejor: string | null = null, md = max + 1;
+      for (const v of vocab) {
+        if (Math.abs(v.length - w.length) > max) continue;
+        // También vale si lo escrito es el comienzo con un error («ibuprof» no, pero «ibuprpfeno» sí).
+        const dd = distancia(w, v);
+        if (dd < md) { md = dd; mejor = v; }
+      }
+      if (mejor) { cambio = true; return mejor; }
+      return orig;
+    });
+    return cambio ? salida.join(' ') : null;
+  }
 
   /**
    * Búsqueda por marca, principio activo, concentración, laboratorio o código de barras.
@@ -62,8 +111,20 @@ export class CatalogoController {
   constructor(private readonly catalogo: CatalogoService, private readonly prisma: PrismaService, private readonly auditoria: AuditoriaService) {}
 
   @Get('buscar')
-  buscar(@Query('q') q = '') {
-    return this.catalogo.buscar(q.slice(0, 100));
+  async buscar(@Query('q') q = '') {
+    const r = await this.catalogo.buscar(q.slice(0, 100));
+    if (r.grupos.length || q.trim().length < 4) return r;
+    // Nada encontrado: se intenta corregir la escritura y se dice qué se buscó.
+    const corregido = await this.catalogo.corregir(q.slice(0, 100));
+    return corregido ? { ...(await this.catalogo.buscar(corregido)), corregido } : r;
+  }
+
+  /** Principios marcados «Normal» cuyo nombre corresponde a un psicotrópico o antibiótico conocido. */
+  @Get('principios/revisar-riesgo')
+  @Roles('REGENTE', 'ADMIN')
+  async revisarRiesgo() {
+    const normales = await this.prisma.principioActivo.findMany({ where: { riesgo: 'NORMAL', productos: { some: { activo: true } } }, select: { id: true, nombre: true } });
+    return normales.map((p) => ({ ...p, sugerido: riesgoSugerido(p.nombre) })).filter((p) => p.sugerido);
   }
 
   /** Catálogo completo para vender sin internet (la app lo guarda en el equipo cada pocos minutos). */
@@ -153,8 +214,8 @@ export class CatalogoController {
   async productos(@Query('q') q = '', @Query('bajo') bajo?: string) {
     const filas = await this.prisma.$queryRaw<{ id: string; stock: bigint; costo: Prisma.Decimal | null }[]>`
       SELECT p.id, COALESCE(sum(l."stockLibre") FILTER (WHERE l.vence >= current_date), 0) AS stock,
-        (SELECT cl."costoUsd" / GREATEST(cl."factorVenta", 1) FROM "CompraLinea" cl JOIN "Compra" c ON c.id = cl."compraId"
-          WHERE cl."productoId" = p.id AND cl."costoUsd" > 0 ORDER BY c."creadaEn" DESC LIMIT 1) AS costo
+        COALESCE((SELECT cl."costoUsd" / GREATEST(cl."factorVenta", 1) FROM "CompraLinea" cl JOIN "Compra" c ON c.id = cl."compraId"
+          WHERE cl."productoId" = p.id AND cl."costoUsd" > 0 ORDER BY c."creadaEn" DESC LIMIT 1), p."costoRefUsd") AS costo
       FROM "Producto" p LEFT JOIN "Lote" l ON l."productoId" = p.id GROUP BY p.id`;
     const stock = new Map(filas.map((f) => [f.id, Number(f.stock)]));
     const costo = new Map(filas.map((f) => [f.id, f.costo === null ? null : new Prisma.Decimal(f.costo)]));

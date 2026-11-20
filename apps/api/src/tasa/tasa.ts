@@ -90,6 +90,9 @@ export class TasaService {
     if (!r) return null;
     const vigente = await this.prisma.tasaCambio.findFirst({ orderBy: { creadaEn: 'desc' } });
     if (vigente && vigente.valor.equals(r.valor) && vigente.fuente === r.fuente) return { valor: r.valor.toFixed(4), fuente: r.fuente, cambio: false };
+    // El BCV publica en la tarde la tasa del día siguiente: se aplica a las 12 de la noche, no a mitad de la jornada
+    // (así los precios en bolívares no cambian mientras la farmacia está abierta). Si no hay ninguna tasa, se usa ya.
+    if (vigente && c.bcvFecha && c.bcvFecha.getTime() > Date.now()) return { valor: r.valor.toFixed(4), fuente: r.fuente, cambio: false, desde: c.bcvFecha };
     const quien = usuarioId ?? (await this.prisma.usuario.findFirst({ where: { rol: 'ADMIN', activo: true }, orderBy: { creadoEn: 'asc' } }))?.id;
     if (!quien) return null;
     const t = await this.prisma.tasaCambio.create({ data: { valor: r.valor, fuente: r.fuente, creadaPorId: quien } });
@@ -155,6 +158,25 @@ export class ConfiguracionController {
         nombre: c.farmaciaNombre || this.config.FARMACIA_NOMBRE, rif: c.farmaciaRif || this.config.FARMACIA_RIF,
         direccion: c.farmaciaDireccion || this.config.FARMACIA_DIRECCION, telefono: c.farmaciaTelefono || this.config.FARMACIA_TELEFONO,
       },
+    };
+  }
+
+  /** Lista de primeros pasos para una farmacia nueva (el panel la muestra hasta completarla). */
+  @Get('primeros-pasos')
+  @Roles('ADMIN')
+  async primerosPasos() {
+    const [c, tasa, productos, conStock, usuarios, turnos, ventas] = await Promise.all([
+      this.tasa.configuracion(), this.prisma.tasaCambio.count(), this.prisma.producto.count({ where: { activo: true } }),
+      this.prisma.lote.count({ where: { stockLibre: { gt: 0 } } }), this.prisma.usuario.count({ where: { activo: true } }),
+      this.prisma.turno.count(), this.prisma.venta.count(),
+    ]);
+    return {
+      datosFarmacia: !!(c.farmaciaNombre && c.farmaciaRif),
+      tasa: tasa > 0,
+      productos: productos > 0 && conStock > 0,
+      usuarios: usuarios > 1,
+      caja: turnos > 0,
+      venta: ventas > 0,
     };
   }
 

@@ -6,23 +6,63 @@ import { api, ApiError } from '@/lib/api';
 import { cedula, fecha, initials, usd } from '@/lib/format';
 import type { Paciente } from '@/lib/tipos';
 import { useVenta } from '@/store/venta';
+import { useCargar } from '@/lib/useCargar';
 import { EditarCliente } from '@/features/gestion/Gestion';
 import RegistrarCliente from './RegistrarCliente';
+
+interface Fila { cedula: string; nombre: string; telefono: string; alergias: string[]; compras: number }
+
+function ListaClientes({ titulo, filas, abrir }: { titulo: string; filas: Fila[]; abrir: (cedula: string) => void }) {
+  return (
+    <Card>
+      <h2 className="text-sm font-bold text-muted">{titulo}</h2>
+      <ul className="flex flex-col divide-y divide-line">
+        {filas.map((f) => (
+          <li key={f.cedula}>
+            <button type="button" onClick={() => abrir(f.cedula)} className="flex w-full items-center gap-3 py-2.5 text-left hover:bg-surface2">
+              <Avatar text={initials(f.nombre)} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-semibold">{f.nombre}</span>
+                <span className="block font-mono text-xs text-muted">{cedula(f.cedula)} · {f.telefono}</span>
+              </span>
+              {f.alergias.length > 0 && <Chip tone="bad" icon={<AlertTriangle className="h-3 w-3" />}>Alergias</Chip>}
+              <span className="hidden text-xs text-muted sm:inline">{f.compras} {f.compras === 1 ? 'compra' : 'compras'}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
 
 export default function PacientesPage() {
   const [q, setQ] = useState('');
   const [p, setP] = useState<Paciente | null>(null);
   const [editar, setEditar] = useState(false);
-  const [estado, setEstado] = useState<'inicio' | 'cargando' | 'no-existe' | 'error' | 'listo'>('inicio');
+  const [estado, setEstado] = useState<'inicio' | 'cargando' | 'no-existe' | 'error' | 'listo' | 'lista'>('inicio');
+  const [lista, setLista] = useState<Fila[]>([]);
+  const recientes = useCargar(() => api<Fila[]>('/pacientes'), []);
   const [error, setError] = useState('');
   const [registrar, setRegistrar] = useState(false);
   const ponerCliente = useVenta((s) => s.ponerCliente);
   const navigate = useNavigate();
 
+  const abrir = async (ced: string) => {
+    setEstado('cargando');
+    try { setP(await api<Paciente>(`/pacientes/${encodeURIComponent(ced)}`)); setEstado('listo'); }
+    catch (err) { setError(err instanceof ApiError ? err.message : 'No se pudo abrir'); setEstado('error'); }
+  };
+
   const buscar = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!q.trim()) return;
     setEstado('cargando');
+    // Con letras (o pocos números) se busca por nombre o teléfono; con una cédula, la ficha directa.
+    if (!/^[VEJvej]?[-.\s]?\d[\d.\s]{4,}$/.test(q.trim())) {
+      try { setLista(await api<Fila[]>(`/pacientes?q=${encodeURIComponent(q.trim())}`)); setEstado('lista'); }
+      catch (err) { setError(err instanceof ApiError ? err.message : 'No se pudo buscar'); setEstado('error'); }
+      return;
+    }
     try {
       setP(await api<Paciente>(`/pacientes/${encodeURIComponent(q)}`));
       setEstado('listo');
@@ -35,11 +75,16 @@ export default function PacientesPage() {
   return (
     <div className="flex flex-col gap-4">
       <form onSubmit={buscar} className="flex gap-2">
-        <SearchInput id="buscar-cedula" value={q} onChange={(e) => setQ(e.target.value)} onClear={() => setQ('')} inputMode="numeric" placeholder="Escribe la cédula y pulsa Enter" aria-label="Buscar por cédula" className="flex-1 font-mono" />
+        <SearchInput id="buscar-cedula" value={q} onChange={(e) => setQ(e.target.value)} onClear={() => setQ('')} placeholder="Cédula, nombre o teléfono y pulsa Enter" aria-label="Buscar cliente" className="flex-1" />
         <Button type="submit" variant="primary" size="lg">Buscar</Button>
       </form>
 
-      {estado === 'inicio' && <EmptyState icon={<UserSearch className="h-8 w-8" />} title="Busca al cliente por su cédula">Así ves sus alergias y lo que siempre compra.</EmptyState>}
+      {estado === 'inicio' && (recientes.datos?.length ? <ListaClientes titulo="Clientes registrados más recientes" filas={recientes.datos} abrir={abrir} /> : <EmptyState icon={<UserSearch className="h-8 w-8" />} title="Busca al cliente por cédula, nombre o teléfono">Así ves sus alergias y lo que siempre compra.</EmptyState>)}
+      {estado === 'lista' && (lista.length ? <ListaClientes titulo={`${lista.length === 100 ? 'Más de 100' : lista.length} ${lista.length === 1 ? 'cliente' : 'clientes'} con «${q.trim()}»`} filas={lista} abrir={abrir} /> : (
+        <EmptyState icon={<UserSearch className="h-8 w-8" />} title={`Ningún cliente con «${q.trim()}»`}>
+          <Button variant="primary" className="mt-2" icon={<Plus className="h-4 w-4" />} onClick={() => setRegistrar(true)}>Registrar cliente</Button>
+        </EmptyState>
+      ))}
       {estado === 'cargando' && <Cargando />}
       {estado === 'error' && <ErrorCarga mensaje={error} reintentar={() => buscar()} />}
       {estado === 'no-existe' && (
@@ -103,7 +148,7 @@ export default function PacientesPage() {
         </div>
       )}
       <EditarCliente p={editar ? p : null} onCerrar={() => setEditar(false)} onListo={setP} />
-      <RegistrarCliente abierto={registrar} cedulaInicial={q} onCerrar={() => setRegistrar(false)} onListo={(n) => { setRegistrar(false); setP({ ...n, habituales: [], recipes: [], esperas: [] }); setEstado('listo'); }} />
+      <RegistrarCliente abierto={registrar} cedulaInicial={/^[VEJvej]?[-.\s]?\d/.test(q.trim()) ? q : ''} onCerrar={() => setRegistrar(false)} onListo={(n) => { setRegistrar(false); setP({ ...n, habituales: [], recipes: [], esperas: [] }); setEstado('listo'); }} />
     </div>
   );
 }

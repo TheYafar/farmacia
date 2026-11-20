@@ -1,5 +1,5 @@
 import { clsx } from 'clsx';
-import { Check, Clock, Package } from 'lucide-react';
+import { Check, Clock, Package, X } from 'lucide-react';
 import { useState } from 'react';
 import type { EstadoEspera } from '@farmacia/shared';
 import { Button, Cargando, Chip, ErrorCarga, PageHeader } from '@/components/ui';
@@ -14,7 +14,7 @@ const COLS: { id: EstadoEspera[]; title: string; tone: 'neutral' | 'warn' | 'ok'
   { id: ['EN_ESPERA'], title: 'Esperando que llegue', tone: 'neutral', hint: 'Se avisa por WhatsApp en el orden en que se anotaron' },
   { id: ['NOTIFICADO'], title: 'Ya llegó, falta pagar', tone: 'warn', hint: 'Se le envió el precio y los datos de Pago Móvil' },
   { id: ['PAGADO_CUSTODIA'], title: 'Pagado, en la gaveta', tone: 'ok', hint: 'Guardado con su nombre hasta que lo busque' },
-  { id: ['ENTREGADO', 'EXPIRADO'], title: 'Terminados', tone: 'neutral', hint: 'Entregados o que no pagaron a tiempo' },
+  { id: ['ENTREGADO', 'EXPIRADO', 'CANCELADO'], title: 'Terminados', tone: 'neutral', hint: 'Entregados, cancelados o que no pagaron a tiempo' },
 ];
 
 function restante(iso: string | null) {
@@ -32,11 +32,12 @@ function Tarjeta({ w, recargar }: { w: Solicitud; recargar: () => void }) {
     catch (e) { avisar(e instanceof ApiError ? e.message : 'No se pudo guardar', 'bad'); }
   };
   return (
-    <li className={clsx('flex flex-col gap-1.5 rounded-lg border border-line bg-surface p-3 text-sm', (w.estado === 'ENTREGADO' || w.estado === 'EXPIRADO') && 'opacity-70')}>
+    <li className={clsx('flex flex-col gap-1.5 rounded-lg border border-line bg-surface p-3 text-sm', (w.estado === 'ENTREGADO' || w.estado === 'EXPIRADO' || w.estado === 'CANCELADO') && 'opacity-70')}>
       <div className="flex items-start justify-between gap-2">
         <b className="min-w-0">{w.producto.nombreComercial} {w.producto.concentracion}</b>
         {w.estado === 'EXPIRADO' && <Chip>No pagó a tiempo</Chip>}
         {w.estado === 'ENTREGADO' && <Chip tone="ok">Entregado</Chip>}
+        {w.estado === 'CANCELADO' && <Chip>Cancelado</Chip>}
       </div>
       <span className="text-xs text-muted">{w.paciente.nombre} · {cedula(w.cedula)}</span>
       {w.estado === 'EN_ESPERA' && <span className="text-xs text-muted">Lo pidió el {fecha(w.solicitadaEn)}</span>}
@@ -50,6 +51,12 @@ function Tarjeta({ w, recargar }: { w: Solicitud; recargar: () => void }) {
           </div>
           <Button size="sm" variant="primary" disabled={ref.length < 4} onClick={() => accion(`/espera/${w.id}/confirmar-pago`, { referenciaPagoMovil: ref, gaveta: gaveta || undefined }, 'Pago confirmado. Guárdalo en la gaveta')}>Ya pagó</Button>
         </>
+      )}
+      {(w.estado === 'EN_ESPERA' || w.estado === 'NOTIFICADO') && (
+        <button type="button" className="flex items-center gap-1 self-start text-xs font-semibold text-muted underline hover:text-bad"
+          onClick={() => { if (confirm(`¿Cancelar el encargo de ${w.paciente.nombre}?${w.estado === 'NOTIFICADO' ? ' La caja apartada pasa al siguiente de la fila.' : ''}`)) void accion(`/espera/${w.id}/cancelar`, undefined, 'Encargo cancelado'); }}>
+          <X className="h-3.5 w-3.5" />Ya no lo quiere
+        </button>
       )}
       {w.estado === 'PAGADO_CUSTODIA' && (
         <>

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { filaImportacionSchema, type FilaImportacion } from '@farmacia/shared';
+import { filaImportacionSchema, riesgoSugerido, type FilaImportacion } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
 import { EsperaService } from '../espera/espera';
@@ -18,6 +18,8 @@ export interface Reporte {
   errores: ErrorFila[];
   guardado: boolean;
   clientesAvisados?: number;
+  /** Principios nuevos marcados como controlados porque la columna Riesgo venía vacía y la molécula es conocida. */
+  controladosDeducidos: string[];
 }
 
 const claveProducto = (f: FilaImportacion) => [f.nombreComercial, f.laboratorio, f.concentracion, f.forma].map(normalizar).join('|');
@@ -58,7 +60,12 @@ export class ImportacionService {
 
     let productosNuevos = 0, productosActualizados = 0, preciosCambiados = 0, lotes = 0;
     const principiosNuevos = new Set<string>();
+    const controladosDeducidos = new Set<string>();
     for (const { n, f } of filas) {
+      if (!f.riesgo && !principios.has(normalizar(f.principioActivo))) {
+        const r = riesgoSugerido(f.principioActivo);
+        if (r) controladosDeducidos.add(`${f.principioActivo} (${r === 'PSICOTROPICO' ? 'psicotrópico' : 'antibiótico'})`);
+      }
       const existente = (f.codigoBarras && porCodigo.get(f.codigoBarras)) || porClave.get(claveProducto(f));
       if (existente) {
         productosActualizados++;
@@ -73,7 +80,7 @@ export class ImportacionService {
 
     const reporte: Reporte = {
       filas: entrada.length, productosNuevos, productosActualizados, preciosCambiados,
-      principiosNuevos: principiosNuevos.size, lotes, errores: errores.slice(0, 200), guardado: false,
+      principiosNuevos: principiosNuevos.size, lotes, errores: errores.slice(0, 200), guardado: false, controladosDeducidos: [...controladosDeducidos],
     };
     if (!confirmar || errores.length) return reporte;
 
@@ -85,7 +92,7 @@ export class ImportacionService {
         const kp = normalizar(f.principioActivo);
         let paId = idsPrincipio.get(kp) ?? principios.get(kp)?.id;
         if (!paId) {
-          paId = (await tx.principioActivo.create({ data: { nombre: f.principioActivo, riesgo: f.riesgo, familia: f.familia || null } })).id;
+          paId = (await tx.principioActivo.create({ data: { nombre: f.principioActivo, riesgo: f.riesgo ?? riesgoSugerido(f.principioActivo) ?? 'NORMAL', familia: f.familia || null } })).id;
         }
         idsPrincipio.set(kp, paId);
 
@@ -93,6 +100,8 @@ export class ImportacionService {
           nombreComercial: f.nombreComercial, laboratorio: f.laboratorio, principioActivoId: paId,
           concentracion: f.concentracion, forma: f.forma, unidadesPorCaja: f.unidadesPorCaja,
           precioUsd: f.precioUsd, nivel: f.nivel, requiereRecipe: f.requiereRecipe, activo: true,
+          ...(f.ivaPct !== undefined && { ivaPct: f.ivaPct }), ...(f.categoria && { categoria: f.categoria }),
+          ...(f.stockMinimo !== undefined && { stockMinimo: f.stockMinimo }), ...(f.costoUsd !== undefined && { costoRefUsd: f.costoUsd }),
         };
         const existente = (f.codigoBarras && porCodigo.get(f.codigoBarras)) || porClave.get(claveProducto(f));
         const producto = existente

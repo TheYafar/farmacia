@@ -49,7 +49,7 @@ export type CategoriaRiesgo = (typeof CATEGORIAS_RIESGO)[number];
 export const METODOS_PAGO = ['PAGO_MOVIL', 'PUNTO_DE_VENTA', 'EFECTIVO_USD', 'EFECTIVO_BS'] as const;
 export type MetodoPago = (typeof METODOS_PAGO)[number];
 
-export const ESTADOS_ESPERA = ['EN_ESPERA', 'NOTIFICADO', 'PAGADO_CUSTODIA', 'ENTREGADO', 'EXPIRADO'] as const;
+export const ESTADOS_ESPERA = ['EN_ESPERA', 'NOTIFICADO', 'PAGADO_CUSTODIA', 'ENTREGADO', 'EXPIRADO', 'CANCELADO'] as const;
 export type EstadoEspera = (typeof ESTADOS_ESPERA)[number];
 
 export const ESTADOS_RECIPE = ['PENDIENTE', 'VALIDADO', 'RECHAZADO'] as const;
@@ -321,8 +321,13 @@ export const filaImportacionSchema = z
     precioUsd: z.number().positive().max(100_000),
     nivel: z.enum(NIVELES_PRECIO).default('GENERICO'),
     requiereRecipe: z.boolean().default(false),
-    riesgo: z.enum(CATEGORIAS_RIESGO).default('NORMAL'),
+    /** Si viene vacío, se deduce del principio activo (psicotrópicos y antibióticos conocidos). */
+    riesgo: z.enum(CATEGORIAS_RIESGO).optional(),
     familia: z.string().trim().max(60).optional(),
+    ivaPct: z.number().min(0).max(100).optional(),
+    categoria: z.string().trim().max(60).optional(),
+    costoUsd: z.number().min(0).max(100_000).optional(),
+    stockMinimo: z.number().int().min(0).max(100_000).optional(),
     lote: z.string().trim().max(40).optional(),
     vence: z.coerce.date().optional(),
     cantidad: z.number().int().min(0).max(1_000_000).optional(),
@@ -352,6 +357,10 @@ export const COLUMNAS_IMPORTACION: { clave: keyof FilaImportacion; titulo: strin
   { clave: 'requiereRecipe', titulo: 'Requiere récipe', ejemplo: 'NO' },
   { clave: 'riesgo', titulo: 'Riesgo', ejemplo: 'NORMAL' },
   { clave: 'familia', titulo: 'Familia alergia', ejemplo: '' },
+  { clave: 'ivaPct', titulo: 'IVA %', ejemplo: 0 },
+  { clave: 'categoria', titulo: 'Categoría', ejemplo: 'Medicamentos' },
+  { clave: 'costoUsd', titulo: 'Costo USD', ejemplo: 1.6 },
+  { clave: 'stockMinimo', titulo: 'Stock mínimo', ejemplo: 5 },
   { clave: 'lote', titulo: 'Lote', ejemplo: 'L2405F' },
   { clave: 'vence', titulo: 'Vence', ejemplo: '2027-08-21' },
   { clave: 'cantidad', titulo: 'Cantidad', ejemplo: 18 },
@@ -449,6 +458,7 @@ export const configuracionGeneralSchema = z.object({
   ticketMostrarBs: z.boolean().optional(),
   ticketMostrarTasa: z.boolean().optional(),
   recipeRetencionDias: z.number().int().min(30).max(3650).optional(),
+  redondeoBs: z.union([z.literal(0), z.literal(1), z.literal(5), z.literal(10)]).optional(),
 });
 export type ConfiguracionGeneralInput = z.infer<typeof configuracionGeneralSchema>;
 
@@ -479,3 +489,29 @@ export const devolucionProveedorSchema = z.object({
   motivo: texto(120),
 });
 export type DevolucionProveedorInput = z.infer<typeof devolucionProveedorSchema>;
+
+// ---------- Redondeo en bolívares ----------
+
+/** Redondea un monto en Bs al múltiplo más cercano (0 = céntimos). Lo usan la app y el servidor. */
+export function redondearBs(v: number, paso: number) {
+  return paso > 0 ? Math.round(v / paso) * paso : Math.round(v * 100) / 100;
+}
+
+// ---------- Usuarios ----------
+
+export const editarUsuarioSchema = z.object({ nombre: texto(80).optional(), rol: z.enum(ROLES).optional() });
+export type EditarUsuarioInput = z.infer<typeof editarUsuarioSchema>;
+
+// ---------- Controlados conocidos ----------
+
+const sinTildes = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+/** Moléculas que en Venezuela se venden con récipe (psicotrópicos/estupefacientes) o son antibióticos. Sirve para avisar si alguien las cargó como «Normal». */
+export const PSICOTROPICOS_CONOCIDOS = ['alprazolam', 'bromazepam', 'clonazepam', 'clobazam', 'diazepam', 'lorazepam', 'midazolam', 'flunitrazepam', 'triazolam', 'zolpidem', 'zopiclona', 'eszopiclona', 'tramadol', 'codeina', 'morfina', 'oxicodona', 'hidrocodona', 'fentanilo', 'metadona', 'buprenorfina', 'tapentadol', 'petidina', 'meperidina', 'metilfenidato', 'fenobarbital', 'ketamina', 'fentermina'];
+export const ANTIBIOTICOS_CONOCIDOS = ['amoxicilina', 'ampicilina', 'penicilina', 'dicloxacilina', 'oxacilina', 'azitromicina', 'claritromicina', 'eritromicina', 'ciprofloxacina', 'levofloxacina', 'moxifloxacina', 'norfloxacina', 'ofloxacina', 'cefalexina', 'cefadroxilo', 'cefuroxima', 'cefixima', 'ceftriaxona', 'cefotaxima', 'cefepime', 'cefaclor', 'cefdinir', 'doxiciclina', 'tetraciclina', 'minociclina', 'clindamicina', 'lincomicina', 'metronidazol', 'secnidazol', 'tinidazol', 'trimetoprim', 'sulfametoxazol', 'nitrofurantoina', 'fosfomicina', 'gentamicina', 'amikacina', 'vancomicina', 'linezolid', 'rifampicina', 'isoniazida', 'cloranfenicol'];
+/** Riesgo que corresponde por el nombre del principio activo, o null si no es una molécula conocida. */
+export function riesgoSugerido(principio: string): CategoriaRiesgo | null {
+  const n = sinTildes(principio);
+  if (PSICOTROPICOS_CONOCIDOS.some((m) => n.includes(m))) return 'PSICOTROPICO';
+  if (ANTIBIOTICOS_CONOCIDOS.some((m) => n.includes(m))) return 'ANTIBIOTICO';
+  return null;
+}

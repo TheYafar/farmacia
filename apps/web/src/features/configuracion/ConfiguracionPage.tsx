@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Alert, Button, Campo, Card, Cargando, PageHeader, claseInput } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
 import { num2 } from '@/lib/format';
+import { redondearBs } from '@farmacia/shared';
 import type { Venta } from '@/lib/tipos';
 import { avisar } from '@/store/avisos';
 import { useConfig, type Configuracion } from '@/store/config';
@@ -12,6 +13,7 @@ import Ticket from '@/features/caja/Ticket';
 
 const msg = (e: unknown) => (e instanceof ApiError ? [e.message, ...e.errores.map((x) => x.mensaje)].join('. ') : 'No se pudo guardar');
 const fechaHora = (d: string | null) => (d ? new Date(d).toLocaleString('es-VE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
+const fechaCorta = (d: string) => new Date(d).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', timeZone: 'America/Caracas' });
 
 function Opcion({ activa, onClick, titulo, detalle }: { activa: boolean; onClick: () => void; titulo: string; detalle: ReactNode }) {
   return (
@@ -66,17 +68,17 @@ export default function ConfiguracionPage() {
   const guardar = async (parte: Partial<Configuracion>, aviso = 'Configuración guardada') => {
     setError(null);
     try {
-      const r = await api<Configuracion & { tasaAplicada: { valor: string; cambio: boolean } | null }>('/configuracion', { body: parte });
+      const r = await api<Configuracion & { tasaAplicada: { valor: string; cambio: boolean; desde?: string } | null }>('/configuracion', { body: parte });
       await cargar(); await cargarTasa();
-      avisar(r.tasaAplicada?.cambio ? `${aviso}. Tasa nueva: ${num2(r.tasaAplicada.valor)} Bs` : aviso, 'ok');
+      avisar(r.tasaAplicada?.cambio ? `${aviso}. Tasa nueva: ${num2(r.tasaAplicada.valor)} Bs` : r.tasaAplicada?.desde ? `${aviso}. La tasa ${num2(r.tasaAplicada.valor)} Bs es la del ${fechaCorta(r.tasaAplicada.desde)}: se aplicará sola a las 12 de la noche` : aviso, 'ok');
     } catch (e) { setError(msg(e)); }
   };
   const leerBcv = async () => {
     setLeyendo(true); setError(null);
     try {
-      const r = await api<{ bcvUsd: number; bcvEur: number; origen: string }>('/tasa/bcv', { body: {} });
+      const r = await api<{ bcvUsd: number; bcvEur: number; origen: string; tasa: { desde?: string } | null }>('/tasa/bcv', { body: {} });
       await cargar(); await cargarTasa();
-      avisar(`BCV: dólar ${num2(r.bcvUsd)} · euro ${num2(r.bcvEur)}`, 'ok');
+      avisar(`BCV: dólar ${num2(r.bcvUsd)} · euro ${num2(r.bcvEur)}${r.tasa?.desde ? ` (vigente desde el ${fechaCorta(r.tasa.desde)}: se aplica sola a las 12 de la noche)` : ''}`, 'ok');
     } catch (e) { setError(msg(e)); } finally { setLeyendo(false); }
   };
 
@@ -95,7 +97,7 @@ export default function ConfiguracionPage() {
         {f.tasaModo !== 'MANUAL' ? (
           <>
             <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
-              <span>Última lectura: {fechaHora(f.bcvConsultado)}{f.bcvOrigen ? ` · ${f.bcvOrigen}` : ''}. Se revisa sola cada 30 minutos.</span>
+              <span>Última lectura: {fechaHora(f.bcvConsultado)}{f.bcvOrigen ? ` · ${f.bcvOrigen}` : ''}. Se revisa sola cada 30 minutos. La tasa que el BCV publica en la tarde para el día siguiente se aplica a las 12 de la noche, así los precios no cambian con la farmacia abierta.</span>
               <Button size="sm" icon={<RefreshCw className={clsx('h-4 w-4', leyendo && 'animate-spin')} />} disabled={leyendo} onClick={() => void leerBcv()}>Leer BCV ahora</Button>
             </div>
             <div className="flex flex-col gap-2">
@@ -123,10 +125,20 @@ export default function ConfiguracionPage() {
             if (!(v > 0)) { setError('Escribe la tasa'); return; }
             try { await api('/tasa', { body: { valor: v, fuente: 'Manual' } }); await cargar(); await cargarTasa(); setManual(''); avisar('Tasa guardada', 'ok'); } catch (err) { setError(msg(err)); }
           }}>
-            <Campo etiqueta="Bs por dólar"><input inputMode="decimal" value={manual} onChange={(e) => setManual(e.target.value)} placeholder={tasa ? num2(tasa) : '0,00'} className={claseInput + ' w-40 font-mono'} /></Campo>
+            <Campo etiqueta="Bs por dólar (o por euro, si así cobras)"><input inputMode="decimal" value={manual} onChange={(e) => setManual(e.target.value)} placeholder={tasa ? num2(tasa) : '0,00'} className={claseInput + ' w-40 font-mono'} /></Campo>
             <Button type="submit" variant="primary" className="h-11">Guardar tasa</Button>
           </form>
         )}
+      </Seccion>
+
+      <Seccion titulo="Redondeo de precios en bolívares" sub="Para no cobrar céntimos: el total en Bs se redondea al múltiplo más cercano. Se acepta cualquier pago entre el monto exacto y el redondeado.">
+        <div className="flex flex-wrap items-center gap-2">
+          {([[0, 'Sin redondeo'], [1, 'A 1 Bs'], [5, 'A 5 Bs'], [10, 'A 10 Bs']] as const).map(([k, t]) => (
+            <button key={k} type="button" onClick={() => cambiar({ redondeoBs: k })} className={clsx('rounded-lg border px-3 py-1.5 text-sm font-semibold', (f.redondeoBs ?? 0) === k ? 'border-accent bg-accent-soft text-accent' : 'border-line')}>{t}</button>
+          ))}
+          <Button size="sm" onClick={() => void guardar({ redondeoBs: f.redondeoBs ?? 0 }, 'Redondeo guardado')}>Guardar</Button>
+        </div>
+        {tasa ? <p className="font-mono text-sm text-muted">Ejemplo: $8,51 × {num2(tasa)} = Bs {num2(8.51 * tasa)} → <b className="text-fg">Bs {num2(redondearBs(8.51 * tasa, f.redondeoBs ?? 0))}</b></p> : null}
       </Seccion>
 
       <Seccion titulo="IGTF" sub="Impuesto a los pagos en divisas. Pregúntale a tu contador si te toca cobrarlo.">
@@ -165,7 +177,7 @@ export default function ConfiguracionPage() {
                 ticketPie: f.ticketPie ?? '', ticketAncho: f.ticketAncho, ticketLetra: f.ticketLetra, ticketCopias: f.ticketCopias,
                 ticketAuto: f.ticketAuto, ticketMostrarBs: f.ticketMostrarBs, ticketMostrarTasa: f.ticketMostrarTasa,
               }, 'Ticket guardado')}>Guardar ticket</Button>
-              <Button icon={<Printer className="h-4 w-4" />} onClick={() => setPrueba(true)}>Imprimir prueba</Button>
+              <Button icon={<Printer className="h-4 w-4" />} onClick={() => { setPrueba(true); try { localStorage.setItem('impresoraProbada', '1'); } catch { /* sin almacenamiento */ } }}>Imprimir prueba</Button>
             </div>
           </div>
           <div className="flex flex-col gap-2">

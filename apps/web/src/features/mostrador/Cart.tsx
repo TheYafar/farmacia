@@ -1,7 +1,7 @@
 import { AlertTriangle, Banknote, Camera, CheckCircle2, Clock, CreditCard, Minus, Plus, ShoppingCart, Smartphone, Trash2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useEffect, useRef, useState } from 'react';
-import { ES_EFECTIVO, monedaDe, type MetodoPago, type Moneda } from '@farmacia/shared';
+import { ES_EFECTIVO, monedaDe, redondearBs, type MetodoPago, type Moneda } from '@farmacia/shared';
 import { Alert, Button, Chip, EmptyState, Kbd, Sheet } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
 import { alergiaQueChoca, bs, num2, usd } from '@/lib/format';
@@ -11,6 +11,7 @@ import { avisar } from '@/store/avisos';
 import { useRol, useSesion } from '@/store/sesion';
 import { useVenta, type Linea } from '@/store/venta';
 import { encolar } from '@/lib/sinConexion';
+import { useConfig } from '@/store/config';
 import PacienteBar from './PacienteBar';
 
 export function useResumenVenta() {
@@ -200,6 +201,7 @@ export function CobroSheet({ open, onClose, onVendida }: { open: boolean; onClos
   const vaciar = useVenta((s) => s.vaciar);
   const ponerBloqueos = useVenta((s) => s.ponerBloqueos);
   const tasa = useSesion((s) => s.tasa) ?? 0;
+  const paso = useConfig((s) => s.config?.redondeoBs ?? 0);
   const cargarCaja = useCaja((s) => s.cargar);
   const [pagos, setPagos] = useState<PagoUI[]>([]);
   const [metodo, setMetodo] = useState<MetodoPago>('EFECTIVO_USD');
@@ -216,10 +218,13 @@ export function CobroSheet({ open, onClose, onVendida }: { open: boolean; onClos
   const enDivisas = pagos.filter((p) => p.metodo === 'EFECTIVO_USD').reduce((a, p) => a + p.monto, 0);
   const igtfUsd = r2(Math.min(enDivisas, base) * pIgtf);
   const total = r2(base + igtfUsd);
-  const totalBs = r2(total * tasa);
+  // Redondeo de Bs (Configuración): se cobra el monto redondeado, pero se acepta cualquier pago entre el exacto y el redondeado (igual que el servidor).
+  const exactoBs = r2(total * tasa);
+  const totalBs = r2(redondearBs(exactoBs, paso));
   const pagadoBs = r2(pagos.reduce((a, p) => a + enBs(p), 0));
-  const faltaBs = r2(totalBs - pagadoBs);
-  const vueltoBs = faltaBs < -0.01 ? -faltaBs : 0;
+  const faltaBs = r2(Math.min(exactoBs, totalBs) - pagadoBs) > 0.01 ? r2(totalBs - pagadoBs) : 0;
+  const sobraBs = r2(pagadoBs - Math.max(exactoBs, totalBs));
+  const vueltoBs = sobraBs > 0.01 ? sobraBs : 0;
   const efectivoBs = pagos.filter((p) => ES_EFECTIVO(p.metodo)).reduce((a, p) => a + enBs(p), 0);
   const vueltoInvalido = vueltoBs > 0 && efectivoBs + 0.01 < vueltoBs;
   const enMoneda = (bs: number, m: MetodoPago) =>

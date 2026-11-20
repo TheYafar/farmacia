@@ -1,7 +1,9 @@
-import { Printer } from 'lucide-react';
+import { MessageCircle, Printer } from 'lucide-react';
 import type { MetodoPago } from '@farmacia/shared';
 import { Button, Sheet } from '@/components/ui';
 import { cedula, num2 } from '@/lib/format';
+import { api } from '@/lib/api';
+import { avisar } from '@/store/avisos';
 import type { Venta } from '@/lib/tipos';
 import { useEffect, useRef } from 'react';
 import { useCaja } from '@/store/caja';
@@ -71,7 +73,8 @@ export default function Ticket({ venta, onCerrar, auto }: { venta: Venta | null;
         </div>
         <div className="grid grid-cols-2 gap-2">
           <Button size="lg" icon={<Printer className="h-5 w-5" />} onClick={() => window.print()}>Imprimir</Button>
-          <Button size="lg" variant="primary" onClick={onCerrar}>Nueva venta</Button>
+          <Button size="lg" icon={<MessageCircle className="h-5 w-5" />} onClick={() => void porWhatsapp(venta, farmacia.nombre)}>WhatsApp</Button>
+          <Button size="lg" variant="primary" className="col-span-2" onClick={onCerrar}>Nueva venta</Button>
         </div>
       </div>
     </Sheet>
@@ -80,3 +83,21 @@ export default function Ticket({ venta, onCerrar, auto }: { venta: Venta | null;
 
 /** Campos que agregó el servidor después (descuento, IVA, IGTF); pueden faltar en ventas antiguas. */
 const v2 = (v: Venta) => v as Venta & { descuentoUsd?: string; descuentoPct?: string; descuentoMotivo?: string | null; ivaUsd?: string; igtfUsd?: string };
+
+/** Manda el comprobante como texto por WhatsApp (al teléfono del cliente si está registrado; si no, se pregunta). */
+async function porWhatsapp(venta: Venta, farmacia: string) {
+  let tel = '';
+  if (venta.cedula) { try { tel = (await api<{ telefono: string }>(`/pacientes/${venta.cedula}`)).telefono; } catch { /* se pregunta */ } }
+  if (!tel) tel = prompt('Número de WhatsApp del cliente (ej. 0414 1234567)') ?? '';
+  const digitos = tel.replace(/\D/g, '').replace(/^0/, '').replace(/^58/, '');
+  if (digitos.length < 10) { if (tel) avisar('Ese número no parece válido', 'bad'); return; }
+  const f = new Date(venta.creadaEn);
+  const texto = [
+    `*${farmacia}*`, `Comprobante N.º ${venta.numero} (no fiscal) · ${f.toLocaleDateString('es-VE')} ${f.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}`, '',
+    ...venta.lineas.map((l) => `${l.cantidad} x ${l.producto.nombreComercial} ${l.producto.concentracion ?? ''} — ${num2(Number(l.precioUsd) * l.cantidad)} $`),
+    '', `*Total: ${num2(venta.totalUsd)} $* (Bs ${num2(venta.totalBs)}, tasa ${num2(venta.tasa)})`,
+    ...venta.pagos.map((p) => `${NOMBRE_METODO[p.metodo]}: ${num2(p.monto)} ${p.moneda === 'USD' ? '$' : 'Bs'}`),
+    '', '¡Gracias por su compra!',
+  ].join('\n');
+  window.open(`https://wa.me/58${digitos}?text=${encodeURIComponent(texto)}`, '_blank', 'noopener');
+}

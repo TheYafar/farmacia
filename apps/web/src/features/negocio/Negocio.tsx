@@ -40,14 +40,25 @@ function Tabla({ head, rows, vacio }: { head: string[]; rows: ReactNode[][]; vac
   );
 }
 
-function Kpi({ k, v, tone }: { k: string; v: string; tone?: 'bad' | 'ok' }) {
+function Kpi({ k, v, tone, sub }: { k: string; v: string; tone?: 'bad' | 'ok'; sub?: ReactNode }) {
   return (
     <div className="rounded-xl border border-line bg-surface p-4">
       <div className="text-xs text-muted">{k}</div>
       <div className={clsx('font-mono text-2xl tabular', tone === 'bad' && 'text-bad', tone === 'ok' && 'text-ok')}>{v}</div>
+      {sub && <div className="text-xs">{sub}</div>}
     </div>
   );
 }
+
+/** «+12 % vs. período anterior» en verde o rojo. */
+function Cambio({ a, b, dinero }: { a: number; b: number; dinero?: boolean }) {
+  if (!b) return <span className="text-muted">{a ? 'Sin datos del período anterior' : '—'}</span>;
+  const pct = Math.round(((a - b) / b) * 100);
+  return <span className={pct >= 0 ? 'text-ok' : 'text-bad'}>{pct >= 0 ? '▲' : '▼'} {Math.abs(pct)} % <span className="text-muted">vs. anterior ({dinero ? usd(b) : b})</span></span>;
+}
+
+interface Comparacion { anteriorDesde: string; actual: { ventas: number; usd: string; ticketPromedio: string; clientes: number }; anterior: { ventas: number; usd: string; ticketPromedio: string; clientes: number } }
+interface ValorInventario { unidades: number; costoUsd: string; ventaUsd: string; gananciaPotencialUsd: string; vencidoCostoUsd: string; sinCosto: number; porCategoria: { categoria: string; unidades: number; costoUsd: string; ventaUsd: string }[]; productos: { producto: string; laboratorio: string; unidades: number; costoUsd: string | null; ventaUsd: string }[] }
 
 function Estado<T>({ c, children }: { c: { datos: T | null; error: string | null; cargando: boolean; recargar: () => void }; children: (d: T) => ReactNode }) {
   if (c.error) return <ErrorCarga mensaje={c.error} reintentar={c.recargar} />;
@@ -459,7 +470,7 @@ export function MayoristaPage() {
 }
 
 /* ───────── WhatsApp y recompra ───────── */
-interface Recompra { cedula: string; nombre: string; telefono: string; productoId: string; producto: string; dias: number; texto: string; enviado: boolean }
+interface Recompra { cedula: string; nombre: string; telefono: string; productoId: string; producto: string; dias: number; texto: string; enviado: boolean; estimado?: boolean }
 
 export function WhatsappPage() {
   const rec = useCargar(() => api<Recompra[]>('/whatsapp/recompra'), []);
@@ -483,7 +494,7 @@ export function WhatsappPage() {
           {d.map((r) => (
             <Card key={r.cedula + r.productoId} className="flex flex-wrap items-center justify-between gap-3 p-3">
               <div className="min-w-0"><div className="font-semibold">{r.nombre} <span className="font-mono text-xs text-muted">{r.telefono}</span></div>
-                <div className="text-sm text-muted">{r.producto} · {r.dias > 0 ? `se le acaba en ${r.dias} día${r.dias === 1 ? '' : 's'}` : r.dias === 0 ? 'se le acaba hoy' : `se le acabó hace ${-r.dias} días`}</div></div>
+                <div className="text-sm text-muted">{r.producto} · {r.dias > 0 ? `se le acaba en ${r.dias} día${r.dias === 1 ? '' : 's'}` : r.dias === 0 ? 'se le acaba hoy' : `se le acabó hace ${-r.dias} días`}{r.estimado ? ' (estimado: 1 al día, compró una vez)' : ''}</div></div>
               <Button size="sm" variant={r.enviado ? 'secondary' : 'primary'} onClick={() => enviar(r)}>{r.enviado ? 'Enviado ✓ · reenviar' : 'Enviar'}</Button>
             </Card>
           ))}
@@ -528,7 +539,7 @@ interface Rotacion { masVendidos: { producto: string; vendidos30: number; stock:
 interface Cajero { cajero: string; ventas: number; totalUsd: string; cierres: number; conDiferencia: number }
 
 export function ReportesPage() {
-  const [tab, setTab] = useState<'Ganancia' | 'Rotación' | 'Cajeros' | 'Horas y pagos'>('Ganancia');
+  const [tab, setTab] = useState<'Ganancia' | 'Rotación' | 'Cajeros' | 'Horas y pagos' | 'Inventario'>('Ganancia');
   const hoyS = new Date().toISOString().slice(0, 10);
   const [desde, setDesde] = useState(new Date(Date.now() - 29 * 86_400_000).toISOString().slice(0, 10));
   const [hasta, setHasta] = useState(hoyS);
@@ -537,6 +548,9 @@ export function ReportesPage() {
   const rot = useCargar(() => api<Rotacion>(`/reportes/rotacion${q}`), [q]);
   const caj = useCargar(() => api<Cajero[]>(`/reportes/cajeros${q}`), [q]);
   const det = useCargar(() => api<{ porHora: { hora: number; ventas: number; usd: string }[]; porMetodo: { metodo: string; pagos: number; usd: string; monto: string }[]; devueltoUsd: string }>(`/reportes/ventas-detalle${q}`), [q]);
+  const cmp = useCargar(() => api<Comparacion>(`/reportes/comparar${q}`), [q]);
+  const inv = useCargar(() => api<ValorInventario>('/reportes/inventario'), []);
+  const mesActual = () => { const h = new Date(); setDesde(new Date(h.getFullYear(), h.getMonth(), 1).toISOString().slice(0, 10)); setHasta(hoyS); };
   const atajo = (dias: number) => { setDesde(new Date(Date.now() - (dias - 1) * 86_400_000).toISOString().slice(0, 10)); setHasta(hoyS); };
   const porLab = Object.entries((gan.datos?.productos ?? []).reduce<Record<string, number>>((a, p) => ({ ...a, [p.laboratorio]: (a[p.laboratorio] ?? 0) + Number(p.ventaUsd) }), {})).sort((a, b) => b[1] - a[1]).slice(0, 8);
   const max = Math.max(1, ...porLab.map((l) => l[1]));
@@ -544,6 +558,7 @@ export function ReportesPage() {
     if (tab === 'Ganancia') descargarExcel('ganancia', ['Laboratorio', 'Producto', 'Unidades', 'Venta $', 'Costo $', 'Ganancia $'], (gan.datos?.productos ?? []).map((p) => [p.laboratorio, p.producto, p.unidades, p.ventaUsd, p.costoUsd, p.gananciaUsd]));
     if (tab === 'Rotación') descargarExcel('rotacion', ['Producto', 'Vendidos 30 días', 'Existencia', 'Días sin venta'], [...(rot.datos?.masVendidos ?? []).map((p) => [p.producto, p.vendidos30, p.stock, 0]), ...(rot.datos?.sinMovimiento ?? []).map((p) => [p.producto, 0, p.stock, p.diasSinVenta])]);
     if (tab === 'Horas y pagos') descargarExcel('ventas-por-hora-y-metodo', ['Tipo', 'Detalle', 'Cantidad', 'Monto $'], [...(det.datos?.porHora ?? []).map((h) => ['Hora', `${h.hora}:00`, h.ventas, h.usd]), ...(det.datos?.porMetodo ?? []).map((m) => ['Método', NOMBRE_METODO[m.metodo] ?? m.metodo, m.pagos, m.usd])]);
+    if (tab === 'Inventario') descargarExcel('valor-inventario', ['Producto', 'Laboratorio', 'Unidades', 'Valor a costo $', 'Valor a precio de venta $'], (inv.datos?.productos ?? []).map((p) => [p.producto, p.laboratorio, p.unidades, p.costoUsd, p.ventaUsd]));
     if (tab === 'Cajeros') descargarExcel('cajeros', ['Cajero', 'Ventas', 'Monto $', 'Cierres', 'Cierres con diferencia'], (caj.datos ?? []).map((c) => [c.cajero, c.ventas, c.totalUsd, c.cierres, c.conDiferencia]));
   };
   return (
@@ -553,15 +568,35 @@ export function ReportesPage() {
         <Campo etiqueta="Desde"><input type="date" value={desde} max={hasta} onChange={(e) => setDesde(e.target.value)} className={claseInput} /></Campo>
         <Campo etiqueta="Hasta"><input type="date" value={hasta} min={desde} max={hoyS} onChange={(e) => setHasta(e.target.value)} className={claseInput} /></Campo>
         {[['Hoy', 1], ['7 días', 7], ['30 días', 30], ['90 días', 90]].map(([t, n]) => <Button key={t} size="sm" className="h-11" onClick={() => atajo(n as number)}>{t}</Button>)}
+        <Button size="sm" className="h-11" onClick={mesActual}>Este mes</Button>
       </div>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi k="Ventas netas" v={gan.datos ? usd(gan.datos.totalVentaUsd) : '—'} />
+        <Kpi k="Ventas netas" v={gan.datos ? usd(gan.datos.totalVentaUsd) : '—'} sub={cmp.datos && <Cambio a={Number(cmp.datos.actual.usd)} b={Number(cmp.datos.anterior.usd)} dinero />} />
+        <Kpi k="Número de ventas" v={cmp.datos ? String(cmp.datos.actual.ventas) : '—'} sub={cmp.datos && <Cambio a={cmp.datos.actual.ventas} b={cmp.datos.anterior.ventas} />} />
+        <Kpi k="Ticket promedio" v={cmp.datos ? usd(cmp.datos.actual.ticketPromedio) : '—'} sub={cmp.datos && <Cambio a={Number(cmp.datos.actual.ticketPromedio)} b={Number(cmp.datos.anterior.ticketPromedio)} dinero />} />
+        <Kpi k="Clientes con cédula" v={cmp.datos ? String(cmp.datos.actual.clientes) : '—'} sub={cmp.datos && <Cambio a={cmp.datos.actual.clientes} b={cmp.datos.anterior.clientes} />} />
         <Kpi k="Ganancia" v={gan.datos ? usd(gan.datos.gananciaUsd) : '—'} tone="ok" />
         <Kpi k="Margen" v={gan.datos?.margenPct != null ? `${gan.datos.margenPct} %` : '—'} />
         <Kpi k="Productos sin costo" v={String(gan.datos?.sinCosto ?? '—')} tone={gan.datos?.sinCosto ? 'bad' : undefined} />
+        <Kpi k="Mercancía (a costo)" v={inv.datos ? usd(inv.datos.costoUsd) : '—'} sub={inv.datos && <span className="text-muted">a precio de venta {usd(inv.datos.ventaUsd)}</span>} />
       </div>
+      {cmp.datos && <p className="-mt-2 text-xs text-muted">Las flechas comparan con el período anterior del mismo largo (desde el {fecha(cmp.datos.anteriorDesde)}). Si empiezas el día 1 («Este mes»), se compara con el mes pasado hasta el mismo día.</p>}
       {!!gan.datos?.sinCosto && <Alert tone="warn">{gan.datos.sinCosto} {gan.datos.sinCosto === 1 ? "producto vendido no tiene" : "productos vendidos no tienen"} costo cargado: su ganancia no se cuenta. Carga el costo en la próxima compra.</Alert>}
-      <Tabs tabs={['Ganancia', 'Rotación', 'Cajeros', 'Horas y pagos']} value={tab} onChange={setTab} />
+      <Tabs tabs={['Ganancia', 'Rotación', 'Cajeros', 'Horas y pagos', 'Inventario']} value={tab} onChange={setTab} />
+      {tab === 'Inventario' && <Estado c={inv}>{(d) => (
+        <>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <Kpi k="Valor a costo" v={usd(d.costoUsd)} />
+            <Kpi k="Valor a precio de venta" v={usd(d.ventaUsd)} />
+            <Kpi k="Ganancia si se vende todo" v={usd(d.gananciaPotencialUsd)} tone="ok" />
+            <Kpi k="Vencido (a costo)" v={usd(d.vencidoCostoUsd)} tone={Number(d.vencidoCostoUsd) > 0 ? 'bad' : undefined} />
+          </div>
+          <p className="text-xs text-muted">{d.unidades.toLocaleString('es-VE')} unidades sin vencer. Es la existencia de hoy (no depende de las fechas de arriba).{d.sinCosto ? ` ${d.sinCosto} ${d.sinCosto === 1 ? "producto no tiene" : "productos no tienen"} costo y no suman al valor a costo.` : ''}</p>
+          <Tabla vacio="Sin existencia." head={['Categoría', 'Unidades', 'A costo', 'A precio de venta']} rows={d.porCategoria.map((c) => [<span className="font-semibold">{c.categoria}</span>, mono(c.unidades), mono(usd(c.costoUsd)), mono(usd(c.ventaUsd))])} />
+          <div className="text-sm font-semibold">Los 50 productos con más valor</div>
+          <Tabla vacio="Sin existencia." head={['Producto', 'Laboratorio', 'Unidades', 'A costo', 'A precio de venta']} rows={d.productos.map((p) => [<span className="font-semibold">{p.producto}</span>, p.laboratorio, mono(p.unidades), p.costoUsd ? mono(usd(p.costoUsd)) : <Chip>Sin costo</Chip>, mono(usd(p.ventaUsd))])} />
+        </>
+      )}</Estado>}
       {tab === 'Horas y pagos' && <Estado c={det}>{(d) => {
         const maxH = Math.max(1, ...d.porHora.map((h) => Number(h.usd)));
         return (

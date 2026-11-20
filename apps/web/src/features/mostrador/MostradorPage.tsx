@@ -19,6 +19,7 @@ import { CartBody, CobroSheet, MobileCartBar, useCobrarShortcut, useResumenVenta
 export default function MostradorPage() {
   const [q, setQ] = useState('');
   const [grupos, setGrupos] = useState<Grupo[] | null>(null);
+  const [corregido, setCorregido] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
@@ -40,8 +41,8 @@ export default function MostradorPage() {
     setCargando(true);
     const t = setTimeout(async () => {
       try {
-        const r = await api<{ grupos: Grupo[] }>(`/catalogo/buscar?q=${encodeURIComponent(q)}`);
-        if (vivo) { setGrupos(r.grupos); setError(null); }
+        const r = await api<{ grupos: Grupo[]; corregido?: string }>(`/catalogo/buscar?q=${encodeURIComponent(q)}`);
+        if (vivo) { setGrupos(r.grupos); setCorregido(r.corregido ?? null); setError(null); }
       } catch (e) {
         // Sin internet: se busca en la copia del catálogo guardada en este equipo.
         if (vivo && e instanceof ApiError && e.status === 0) { setGrupos(buscarLocal(q)); setError(null); }
@@ -120,7 +121,10 @@ export default function MostradorPage() {
             Revisa cómo está escrito o prueba con otro nombre.
           </EmptyState>
         ) : (
-          grupos?.map((g) => <ProductGroup key={`${g.principio.id}|${g.concentracion}|${g.forma}`} g={g} />)
+          <>
+            {corregido && grupos?.length ? <p className="text-sm text-muted">No hay «{q.trim()}». Mostrando resultados de <button type="button" className="font-semibold text-accent underline" onClick={() => setQ(corregido)}>{corregido}</button></p> : null}
+            {grupos?.map((g) => <ProductGroup key={`${g.principio.id}|${g.concentracion}|${g.forma}`} g={g} />)}
+          </>
         )}
       </div>
 

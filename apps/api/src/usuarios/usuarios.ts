@@ -1,5 +1,5 @@
-import { Body, Controller, Get, HttpCode, Module, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
-import { crearUsuarioSchema, type CrearUsuarioInput } from '@farmacia/shared';
+import { BadRequestException, Body, Controller, Get, HttpCode, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
+import { crearUsuarioSchema, editarUsuarioSchema, type CrearUsuarioInput, type EditarUsuarioInput } from '@farmacia/shared';
 import { z } from 'zod';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
@@ -28,6 +28,25 @@ export class UsuariosController {
       select: campos,
     });
     await this.auditoria.registrar({ usuarioId: yo.id, accion: 'USUARIO_CREADO', entidad: 'Usuario', entidadId: u.id, datos: { rol: u.rol } });
+    return u;
+  }
+
+  /** Cambia nombre o rol. Al cambiar el rol se cierran sus sesiones para que entre con los permisos nuevos. */
+  @Patch(':id')
+  async editar(@Param('id', ParseUUIDPipe) id: string, @Body(new Validar(editarUsuarioSchema)) b: EditarUsuarioInput, @Usuario() yo: UsuarioActual) {
+    const antes = await this.prisma.usuario.findUnique({ where: { id } });
+    if (!antes) throw new NotFoundException('El usuario no existe');
+    if (b.rol && b.rol !== 'ADMIN' && antes.rol === 'ADMIN') {
+      if (id === yo.id) throw new BadRequestException('No puedes quitarte el rol de dueño a ti mismo');
+      const otros = await this.prisma.usuario.count({ where: { rol: 'ADMIN', activo: true, id: { not: id } } });
+      if (!otros) throw new BadRequestException('Debe quedar al menos un dueño activo');
+    }
+    const cambiaRol = !!b.rol && b.rol !== antes.rol;
+    const [u] = await this.prisma.$transaction([
+      this.prisma.usuario.update({ where: { id }, data: b, select: campos }),
+      ...(cambiaRol ? [this.prisma.sesion.updateMany({ where: { usuarioId: id, revocadaEn: null }, data: { revocadaEn: new Date() } })] : []),
+    ]);
+    await this.auditoria.registrar({ usuarioId: yo.id, accion: 'USUARIO_EDITADO', entidad: 'Usuario', entidadId: id, datos: { antes: { nombre: antes.nombre, rol: antes.rol }, cambios: b } });
     return u;
   }
 

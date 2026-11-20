@@ -118,6 +118,8 @@ model Producto {
   /// IVA en % que se suma al precio (0 = exento, la mayoría de los medicamentos).
   ivaPct            Decimal         @default(0) @db.Decimal(5, 2)
   categoria         String          @default("Medicamentos")
+  /// Costo de referencia (del Excel inicial). Se usa mientras no haya facturas de compra con costo.
+  costoRefUsd       Decimal?        @db.Decimal(12, 4)
   activo            Boolean         @default(true)
   actualizadoEn     DateTime        @updatedAt
 
@@ -409,6 +411,7 @@ enum EstadoEspera {
   PAGADO_CUSTODIA
   ENTREGADO
   EXPIRADO
+  CANCELADO
 }
 
 model SolicitudEspera {
@@ -611,6 +614,8 @@ model Configuracion {
   ticketAuto        Boolean @default(false)
   ticketMostrarBs   Boolean @default(true)
   ticketMostrarTasa Boolean @default(true)
+  /// Redondeo de los precios en bolívares: 0 (céntimos), 1, 5 o 10 Bs.
+  redondeoBs        Int     @default(0)
   /// Días que se guardan las fotos de récipes; después se borran solas.
   recipeRetencionDias Int   @default(730)
 }

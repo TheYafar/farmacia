@@ -113,6 +113,24 @@ export class EsperaService {
     await this.auditoria.registrar({ usuarioId: u.id, accion: 'ESPERA_ENTREGADA', entidad: 'SolicitudEspera', entidadId: id });
   }
 
+  /** El cliente ya no lo quiere. Si tenía una caja apartada, se libera y pasa al siguiente de la fila. */
+  async cancelar(id: string, u: UsuarioActual) {
+    const avisos = await this.prisma.$transaction(async (tx) => {
+      const s = await tx.solicitudEspera.findUnique({ where: { id } });
+      if (!s) throw new NotFoundException('La solicitud no existe');
+      if (s.estado !== 'EN_ESPERA' && s.estado !== 'NOTIFICADO') throw new ConflictException(s.estado === 'PAGADO_CUSTODIA' ? 'Ya está pagado: haz una devolución desde Ventas' : 'Este encargo ya está cerrado');
+      const r = await tx.solicitudEspera.updateMany({ where: { id, estado: s.estado }, data: { estado: 'CANCELADO', cerradaEn: new Date() } });
+      if (!r.count) throw new ConflictException('El encargo cambió mientras tanto. Recarga');
+      await this.auditoria.registrar({ usuarioId: u.id, accion: 'ESPERA_CANCELADA', entidad: 'SolicitudEspera', entidadId: id }, tx);
+      if (s.estado === 'NOTIFICADO' && s.loteId) {
+        await tx.lote.update({ where: { id: s.loteId }, data: { stockReservado: { decrement: 1 }, stockLibre: { increment: 1 } } });
+        return this.asignar(tx, s.productoId);
+      }
+      return [];
+    });
+    await this.enviar(avisos);
+  }
+
   /** Cada 5 minutos: libera las reservas no pagadas y pasa la caja al siguiente de la fila. */
   @Cron(CronExpression.EVERY_5_MINUTES)
   async expirar() {
@@ -156,6 +174,12 @@ export class EsperaController {
   @Roles('REGENTE', 'ADMIN')
   confirmarPago(@Param('id', ParseUUIDPipe) id: string, @Body(new Validar(confirmarPagoSchema)) b: ConfirmarPagoInput, @Usuario() u: UsuarioActual) {
     return this.espera.confirmarPago(id, b, u);
+  }
+
+  @Post(':id/cancelar')
+  @HttpCode(204)
+  cancelar(@Param('id', ParseUUIDPipe) id: string, @Usuario() u: UsuarioActual) {
+    return this.espera.cancelar(id, u);
   }
 
   @Post(':id/entregar')

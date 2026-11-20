@@ -114,7 +114,7 @@ POST /api/v1/ventas
 <!-- rutas:inicio -->
 ## Todas las rutas
 
-Generada del código con `python3 infra/generar-api-doc.py`. 90 rutas.
+Generada del código con `python3 infra/generar-api-doc.py`. 97 rutas.
 
 | Método | Ruta | Quién | Qué hace |
 |---|---|---|---|
@@ -146,14 +146,17 @@ Generada del código con `python3 infra/generar-api-doc.py`. 90 rutas.
 | GET | `/catalogo/principios` | Todos |  |
 | POST | `/catalogo/principios` | R, A |  |
 | PATCH | `/catalogo/principios/:id` | R, A | Marcar un principio como psicotrópico o antibiótico cambia las reglas de venta: queda en la auditoría. |
+| GET | `/catalogo/principios/revisar-riesgo` | R, A | Principios marcados «Normal» cuyo nombre corresponde a un psicotrópico o antibiótico conocido. |
 | GET | `/catalogo/productos` | R, A | Lista para administrar el catálogo: incluye inactivos, existencia y aviso de stock bajo. |
 | POST | `/catalogo/productos` | A |  |
 | PATCH | `/catalogo/productos/:id` | A | Cambiar precio queda en la auditoría con el valor anterior. |
 | GET | `/catalogo/sin-conexion` | Todos | Catálogo completo para vender sin internet (la app lo guarda en el equipo cada pocos minutos). |
 | GET | `/configuracion` | Todos | Todos la leen (el cajero la necesita para imprimir); solo el dueño la cambia. |
 | POST | `/configuracion` | A |  |
+| GET | `/configuracion/primeros-pasos` | A | Lista de primeros pasos para una farmacia nueva (el panel la muestra hasta completarla). |
 | GET | `/espera` | Todos |  |
 | POST | `/espera` | Todos |  |
+| POST | `/espera/:id/cancelar` | Todos |  |
 | POST | `/espera/:id/confirmar-pago` | R, A |  |
 | POST | `/espera/:id/entregar` | Todos |  |
 | GET | `/inventario/ajustes` | R, A |  |
@@ -170,6 +173,7 @@ Generada del código con `python3 infra/generar-api-doc.py`. 90 rutas.
 | POST | `/mayorista/pedidos/:id/abonos` | A |  |
 | POST | `/mayorista/pedidos/:id/anular` | A |  |
 | POST | `/mayorista/pedidos/:id/avanzar` | A | Avanza el pedido. Al despachar descuenta el stock (FEFO) y revisa el límite de crédito. |
+| GET | `/pacientes` | Todos | Lista de clientes: busca por nombre, cédula o teléfono. Sin texto, los que compraron más recientemente. |
 | POST | `/pacientes` | Todos |  |
 | GET | `/pacientes/:cedula` | Todos |  |
 | PATCH | `/pacientes/:cedula` | Todos | Cambios en alergias quedan auditados: son datos clínicos. |
@@ -188,7 +192,9 @@ Generada del código con `python3 infra/generar-api-doc.py`. 90 rutas.
 | GET | `/recipes/medicos/lista` | R, A | Médicos ya registrados, para sugerirlos al escribir. |
 | GET | `/recipes/pendientes` | R, A |  |
 | GET | `/reportes/cajeros` | A | Ventas por cajero y diferencias de sus cierres de caja. |
+| GET | `/reportes/comparar` | A | Compara el período elegido con el anterior del mismo largo (por ejemplo, este mes contra el mes pasado). |
 | GET | `/reportes/ganancia` | A | Ventas, costo y ganancia por laboratorio. El costo es el último costo de compra por unidad. |
+| GET | `/reportes/inventario` | A | ¿Cuánto vale la mercancía? A costo (último costo de compra o el del Excel) y a precio de venta. Lo vencido aparte. |
 | GET | `/reportes/resumen` | A |  |
 | GET | `/reportes/rotacion` | A | Rotación: lo que más se vende y lo que tiene existencia pero no se ha movido. |
 | GET | `/reportes/ventas-detalle` | A | Ventas por hora del día y por método de pago (netas de devoluciones). |
@@ -197,6 +203,7 @@ Generada del código con `python3 infra/generar-api-doc.py`. 90 rutas.
 | POST | `/tasa/bcv` | A | Lee el BCV ahora mismo. |
 | GET | `/usuarios` | A |  |
 | POST | `/usuarios` | A |  |
+| PATCH | `/usuarios/:id` | A | Cambia nombre o rol. Al cambiar el rol se cierran sus sesiones para que entre con los permisos nuevos. |
 | POST | `/usuarios/:id/activar` | A |  |
 | PATCH | `/usuarios/:id/clave` | A | Cambia la clave y cierra las sesiones abiertas con la clave anterior. |
 | POST | `/usuarios/:id/desactivar` | A | Desactiva y cierra todas sus sesiones al instante. |

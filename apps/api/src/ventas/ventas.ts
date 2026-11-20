@@ -133,18 +133,23 @@ export class VentasService {
       }
 
       // 4. Pagos y vuelto. Todo se compara en bolívares con 2 decimales para no perder céntimos al convertir.
-      const totalBs = total.mul(tasa.valor).toDecimalPlaces(2);
+      // Con redondeo (1, 5 o 10 Bs) se acepta cualquier pago entre el monto exacto y el redondeado, sin vuelto.
+      const exactoBs = total.mul(tasa.valor).toDecimalPlaces(2);
+      const paso = conf?.redondeoBs ?? 0;
+      const totalBs = paso > 0 ? exactoBs.div(paso).toDecimalPlaces(0, Prisma.Decimal.ROUND_HALF_UP).mul(paso) : exactoBs;
+      const minimoBs = Prisma.Decimal.min(exactoBs, totalBs), maximoBs = Prisma.Decimal.max(exactoBs, totalBs);
       const pagos = b.pagos?.length
         ? b.pagos
         : [{ metodo: b.metodoPago!, monto: (monedaDe(b.metodoPago!) === 'USD' ? total : totalBs).toNumber(), referencia: b.referenciaPago }];
       const enBs = (p: { metodo: typeof pagos[number]['metodo']; monto: number }) =>
         monedaDe(p.metodo) === 'USD' ? new Prisma.Decimal(p.monto).mul(tasa.valor).toDecimalPlaces(2) : new Prisma.Decimal(p.monto);
       const pagadoBs = pagos.reduce((a, p) => a.add(enBs(p)), new Prisma.Decimal(0));
-      const faltaBs = totalBs.sub(pagadoBs);
+      const faltaBs = minimoBs.sub(pagadoBs);
       if (faltaBs.gt(0.01)) {
         throw new UnprocessableEntityException({ mensaje: `Falta por pagar Bs ${faltaBs.toFixed(2)} (${faltaBs.div(tasa.valor).toFixed(2)} $)`, codigo: 'PAGO_INCOMPLETO' });
       }
-      const excesoBs = faltaBs.neg().gt(0.01) ? faltaBs.neg() : new Prisma.Decimal(0);
+      const sobraBs = pagadoBs.sub(maximoBs);
+      const excesoBs = sobraBs.gt(0.01) ? sobraBs : new Prisma.Decimal(0);
       if (excesoBs.gt(0)) {
         const efectivoBs = pagos.filter((p) => ES_EFECTIVO(p.metodo)).reduce((a, p) => a.add(enBs(p)), new Prisma.Decimal(0));
         if (efectivoBs.lt(excesoBs)) {

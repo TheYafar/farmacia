@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Get, Module, NotFoundException, Param, Patch, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Module, NotFoundException, Param, Patch, Post, Query } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { normalizarCedula, pacienteSchema, type PacienteInput } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
@@ -11,6 +12,25 @@ const editarSchema = pacienteSchema.omit({ cedula: true, consentimiento: true })
 @Controller('pacientes')
 export class PacientesController {
   constructor(private readonly prisma: PrismaService, private readonly auditoria: AuditoriaService) {}
+
+  /** Lista de clientes: busca por nombre, cédula o teléfono. Sin texto, los que compraron más recientemente. */
+  @Get()
+  async listar(@Query('q') q = '') {
+    const t = q.trim().slice(0, 60);
+    const digitos = t.replace(/\D/g, '');
+    const palabras = t.split(/\s+/).filter((w) => w && !/^\d+$/.test(w)).slice(0, 4);
+    // Sin importar tildes ni mayúsculas: «maria» encuentra a «María».
+    const porNombre = palabras.length
+      ? Prisma.join(palabras.map((w) => Prisma.sql`unaccent(lower(p.nombre)) LIKE '%' || unaccent(lower(${w})) || '%'`), ' AND ')
+      : Prisma.sql`FALSE`;
+    const porNumero = digitos.length >= 3 ? Prisma.sql`(p.cedula LIKE '%' || ${digitos} || '%' OR regexp_replace(p.telefono, '[^0-9]', '', 'g') LIKE '%' || ${digitos} || '%')` : Prisma.sql`FALSE`;
+    const filas = await this.prisma.$queryRaw<{ cedula: string; nombre: string; telefono: string; alergias: string[]; compras: bigint }[]>`
+      SELECT p.cedula, p.nombre, p.telefono, p.alergias, (SELECT count(*) FROM "Venta" v WHERE v.cedula = p.cedula) AS compras
+      FROM "Paciente" p
+      WHERE ${t ? Prisma.sql`(${porNombre}) OR ${porNumero}` : Prisma.sql`TRUE`}
+      ORDER BY ${t ? Prisma.sql`p.nombre` : Prisma.sql`p."creadoEn" DESC`} LIMIT 100`;
+    return filas.map((f) => ({ ...f, compras: Number(f.compras) }));
+  }
 
   @Get(':cedula')
   async ficha(@Param('cedula') entrada: string) {

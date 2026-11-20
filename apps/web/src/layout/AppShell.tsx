@@ -1,8 +1,8 @@
 import { clsx } from 'clsx';
-import { LogOut, Moon, MoreHorizontal, Sun } from 'lucide-react';
+import { ChevronDown, LogOut, Moon, MoreHorizontal, Sun } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { NAV, ROLE_LABEL, type NavItem } from '@/config/nav';
+import { GRUPOS, NAV, ROLE_LABEL, type Grupo, type NavItem } from '@/config/nav';
 import { api } from '@/lib/api';
 import { num2 } from '@/lib/format';
 import { useCargar } from '@/lib/useCargar';
@@ -69,6 +69,7 @@ export default function AppShell() {
   const rol = useRol();
   const usuario = useSesion((s) => s.usuario)!;
   const tasa = useSesion((s) => s.tasa);
+  const tasaModo = useConfig((s) => s.config?.tasaModo);
   const salir = useSesion((s) => s.salir);
   const badges = useBadges(rol);
   const nav = NAV.filter((n) => n.roles.includes(rol));
@@ -77,6 +78,17 @@ export default function AppShell() {
   const current = nav.find((n) => pathname.startsWith(n.to));
   const [moreOpen, setMoreOpen] = useState(false);
   const cerrar = async () => { await salir(); navigate('/'); };
+
+  // Grupos del menú: abiertos el de «Vender» y el de la página actual; el resto se abre con un toque y se recuerda.
+  const grupos = GRUPOS.map((grupo) => ({ grupo, items: nav.filter((n) => n.grupo === grupo) })).filter((g) => g.items.length);
+  const [abiertos, setAbiertos] = useState<Grupo[]>(() => {
+    try { return JSON.parse(localStorage.getItem('menuAbierto') ?? '["Vender"]') as Grupo[]; } catch { return ['Vender']; }
+  });
+  const alternar = (g: Grupo) => setAbiertos((a) => {
+    const n = a.includes(g) ? a.filter((x) => x !== g) : [...a, g];
+    try { localStorage.setItem('menuAbierto', JSON.stringify(n)); } catch { /* sin almacenamiento */ }
+    return n;
+  });
 
   const bottom = nav.length <= 5 ? nav : nav.slice(0, 4);
   const extra = nav.length <= 5 ? [] : nav.slice(4);
@@ -108,7 +120,22 @@ export default function AppShell() {
           <span className="xl:hidden"><Brand /></span>
           <span className="hidden xl:block"><Brand full /></span>
         </div>
-        {nav.map(railItem)}
+        <div className="-mx-1 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-1">
+          {grupos.length <= 1 ? nav.map(railItem) : grupos.map(({ grupo, items }) => {
+            const abierto = abiertos.includes(grupo) || items.includes(current!);
+            const pendientes = items.reduce((a, n) => a + (badges[n.to] ?? 0), 0);
+            return (
+              <div key={grupo} className="flex flex-col gap-1">
+                <button type="button" onClick={() => alternar(grupo)} aria-expanded={abierto} className="relative mt-1 flex items-center justify-center gap-1 rounded-md px-1 py-1 text-[10px] font-bold uppercase tracking-wide text-muted hover:text-fg xl:justify-between xl:px-3 xl:text-[11px]">
+                  <span className="truncate">{grupo}</span>
+                  <ChevronDown className={clsx('hidden h-3.5 w-3.5 transition-transform xl:block', !abierto && '-rotate-90')} aria-hidden />
+                  {!abierto && <Badge n={pendientes} />}
+                </button>
+                {abierto && items.map(railItem)}
+              </div>
+            );
+          })}
+        </div>
         <div className="mt-auto flex flex-col items-center gap-2 border-t border-line pt-3 xl:items-stretch xl:px-2">
           <div className="hidden text-xs text-muted xl:block">
             <div className="font-semibold text-fg">{usuario.nombre}</div>
@@ -131,8 +158,8 @@ export default function AppShell() {
             <span className="truncate font-display text-lg font-bold">{current?.label ?? 'Farmacia'}</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className={clsx('whitespace-nowrap rounded-md px-2 py-1 font-mono text-xs', tasa ? 'bg-surface2 text-muted' : 'bg-warn-soft text-warn')} title="Tasa del dólar">
-              {tasa ? `Dólar: ${num2(tasa)} Bs` : 'Falta la tasa'}
+            <span className={clsx('whitespace-nowrap rounded-md px-2 py-1 font-mono text-xs', tasa ? 'bg-surface2 text-muted' : 'bg-warn-soft text-warn')} title={tasaModo === 'BCV_EUR' ? 'Los precios en $ se convierten con la tasa del euro del BCV' : 'Tasa con la que se cobra'}>
+              {tasa ? `${tasaModo === 'BCV_EUR' ? 'Euro BCV' : tasaModo === 'BCV_USD' ? 'Dólar BCV' : 'Tasa'}: ${num2(tasa)} Bs` : 'Falta la tasa'}
             </span>
             <span className="md:hidden"><ThemeToggle /></span>
           </div>
@@ -166,11 +193,22 @@ export default function AppShell() {
 
       <Sheet open={moreOpen} onClose={() => setMoreOpen(false)} title="Más opciones">
         <div className="flex flex-col gap-1">
-          {extra.map((n) => (
-            <NavLink key={n.to} to={n.to} onClick={() => setMoreOpen(false)} className={({ isActive }) => clsx('flex items-center gap-3 rounded-xl px-3 py-3 font-semibold', isActive ? 'bg-accent-soft text-accent' : 'hover:bg-surface2')}>
-              <n.icon className="h-5 w-5" /> {n.label} <Badge n={badges[n.to]} inline />
-            </NavLink>
-          ))}
+          {GRUPOS.map((g) => {
+            const items = extra.filter((n) => n.grupo === g);
+            if (!items.length) return null;
+            return (
+              <div key={g}>
+                <div className="px-3 pb-1 pt-2 text-[11px] font-bold uppercase tracking-wide text-muted">{g}</div>
+                <div className="grid grid-cols-2 gap-1">
+                  {items.map((n) => (
+                    <NavLink key={n.to} to={n.to} onClick={() => setMoreOpen(false)} className={({ isActive }) => clsx('flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold', isActive ? 'bg-accent-soft text-accent' : 'hover:bg-surface2')}>
+                      <n.icon className="h-5 w-5 shrink-0" /> <span className="truncate">{n.label}</span> <Badge n={badges[n.to]} inline />
+                    </NavLink>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
           <div className="mt-2 flex items-center justify-between border-t border-line px-3 pt-3 text-sm text-muted">
             <span>{usuario.nombre} · {ROLE_LABEL[rol]}</span>
             <button onClick={cerrar} className="flex items-center gap-1.5 font-semibold text-fg"><LogOut className="h-4 w-4" />Salir</button>

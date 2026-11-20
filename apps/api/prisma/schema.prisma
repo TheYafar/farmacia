@@ -157,6 +157,10 @@ model Compra {
   /// Cuentas por pagar: total de la factura, pagado y fecha de vencimiento del crédito.
   totalUsd      Decimal       @default(0) @db.Decimal(12, 2)
   pagadoUsd     Decimal       @default(0) @db.Decimal(12, 2)
+  /// Mercancía devuelta a la droguería: se descuenta de lo que se le debe.
+  devueltoUsd   Decimal       @default(0) @db.Decimal(12, 2)
+  /// Compra anulada (cargada por error): su mercancía salió del inventario y no se debe.
+  anulada       Boolean       @default(false)
   venceEn       DateTime?
   pagos         PagoProveedor[]
   creadaPorId   String        @db.Uuid
@@ -189,6 +193,8 @@ model Paciente {
   telefono    String
   alergias    String[]
   condiciones String[]
+  /// Cuándo aceptó el aviso de privacidad (datos de salud).
+  consentimientoEn DateTime?
   creadoEn    DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
@@ -221,6 +227,8 @@ model Recipe {
   /// Ruta del archivo dentro del volumen privado. Nunca se sirve de forma pública.
   archivo        String
   tipoArchivo    String
+  /// La foto se borró al cumplirse el plazo de retención (los datos del récipe se conservan).
+  fotoBorradaEn  DateTime?
   /// Lectura de la IA: [{ texto, confianza, candidatos: [principioActivoId] }]
   lecturaIa      Json?
   estado         EstadoRecipe @default(PENDIENTE)
@@ -498,6 +506,10 @@ model PedidoMayor {
   totalUsd  Decimal            @db.Decimal(12, 2)
   pagadoUsd Decimal            @default(0) @db.Decimal(12, 2)
   venceEn   DateTime?
+  /// La cotización vale hasta esta fecha; después hay que cotizar de nuevo.
+  validaHasta DateTime?
+  /// Convenio: empleado de la empresa que retira (se le cobra a la empresa).
+  empleado  String?
   creadoPorId String           @db.Uuid
   creadoEn  DateTime           @default(now())
   lineas    PedidoMayorLinea[]
@@ -599,4 +611,45 @@ model Configuracion {
   ticketAuto        Boolean @default(false)
   ticketMostrarBs   Boolean @default(true)
   ticketMostrarTasa Boolean @default(true)
+  /// Días que se guardan las fotos de récipes; después se borran solas.
+  recipeRetencionDias Int   @default(730)
+}
+
+enum EstadoOrdenCompra {
+  ABIERTA
+  RECIBIDA
+  ANULADA
+}
+
+/// Pedido a una droguería. Al recibirlo se compara con lo que llegó y se carga la compra.
+model OrdenCompra {
+  id          String             @id @default(uuid()) @db.Uuid
+  numero      Int                @default(autoincrement()) @unique
+  proveedor   String
+  estado      EstadoOrdenCompra  @default(ABIERTA)
+  compraId    String?            @db.Uuid
+  creadoPorId String             @db.Uuid
+  creadaEn    DateTime           @default(now())
+  lineas      OrdenCompraLinea[]
+}
+
+model OrdenCompraLinea {
+  id         String      @id @default(uuid()) @db.Uuid
+  ordenId    String      @db.Uuid
+  orden      OrdenCompra @relation(fields: [ordenId], references: [id], onDelete: Cascade)
+  productoId String      @db.Uuid
+  cantidad   Int
+  recibido   Int?
+}
+
+/// Mercancía devuelta a la droguería (vencida, dañada o equivocada).
+model DevolucionProveedor {
+  id        String   @id @default(uuid()) @db.Uuid
+  compraId  String   @db.Uuid
+  loteId    String   @db.Uuid
+  cantidad  Int
+  montoUsd  Decimal  @db.Decimal(12, 2)
+  motivo    String
+  usuarioId String   @db.Uuid
+  creadoEn  DateTime @default(now())
 }

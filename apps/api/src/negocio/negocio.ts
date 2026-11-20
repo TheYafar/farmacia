@@ -1,9 +1,9 @@
-import { BadRequestException, Body, ConflictException, Controller, Get, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, Get, HttpCode, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import {
-  clienteEmpresaSchema, abonoSchema, pedidoMayorSchema,
-  type ClienteEmpresaInput, type AbonoInput, type PedidoMayorInput,
+  clienteEmpresaSchema, abonoSchema, ordenCompraSchema, pedidoMayorSchema,
+  type ClienteEmpresaInput, type AbonoInput, type OrdenCompraInput, type PedidoMayorInput,
 } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
@@ -65,12 +65,13 @@ export class ProveedoresController {
   /** Cuentas por pagar: compras con saldo, de la que vence antes a la que vence después. */
   @Get('cuentas')
   async cuentas() {
-    const compras = await this.prisma.compra.findMany({ orderBy: { venceEn: 'asc' }, take: 300, include: { pagos: { orderBy: { creadoEn: 'desc' } } } });
+    const compras = await this.prisma.compra.findMany({ where: { anulada: false }, orderBy: { venceEn: 'asc' }, take: 300, include: { pagos: { orderBy: { creadoEn: 'desc' } } } });
+    const saldo = (c: { totalUsd: Prisma.Decimal; pagadoUsd: Prisma.Decimal; devueltoUsd: Prisma.Decimal }) => D(c.totalUsd).minus(c.pagadoUsd).minus(c.devueltoUsd);
     const lista = compras
-      .filter((c) => D(c.totalUsd).gt(c.pagadoUsd))
+      .filter((c) => saldo(c).gt(0))
       .map((c) => ({
         id: c.id, proveedor: c.proveedor, numeroFactura: c.numeroFactura, creadaEn: c.creadaEn, venceEn: c.venceEn,
-        totalUsd: D(c.totalUsd).toFixed(2), pagadoUsd: D(c.pagadoUsd).toFixed(2), saldoUsd: D(c.totalUsd).minus(c.pagadoUsd).toFixed(2),
+        totalUsd: D(c.totalUsd).toFixed(2), pagadoUsd: D(c.pagadoUsd).toFixed(2), devueltoUsd: D(c.devueltoUsd).toFixed(2), saldoUsd: saldo(c).toFixed(2),
         vencida: !!c.venceEn && c.venceEn < hoy0(),
       }));
     const porProveedor = Object.entries(lista.reduce<Record<string, number>>((a, c) => ({ ...a, [c.proveedor]: (a[c.proveedor] ?? 0) + Number(c.saldoUsd) }), {}))
@@ -82,14 +83,39 @@ export class ProveedoresController {
   async pagar(@Param('id', ParseUUIDPipe) id: string, @Body(new Validar(abonoSchema)) b: AbonoInput, @Usuario() u: UsuarioActual) {
     return this.prisma.$transaction(async (tx) => {
       const c = await tx.compra.findUnique({ where: { id } });
-      if (!c) throw new NotFoundException('Compra no encontrada');
-      const saldo = D(c.totalUsd).minus(c.pagadoUsd);
+      if (!c || c.anulada) throw new NotFoundException('Compra no encontrada');
+      const saldo = D(c.totalUsd).minus(c.pagadoUsd).minus(c.devueltoUsd);
       if (D(b.montoUsd).gt(saldo)) throw new ConflictException(`El pago es mayor que el saldo (${saldo.toFixed(2)} $)`);
       await tx.pagoProveedor.create({ data: { compraId: id, montoUsd: b.montoUsd, metodo: b.metodo, referencia: b.referencia, usuarioId: u.id } });
       const act = await tx.compra.update({ where: { id }, data: { pagadoUsd: { increment: b.montoUsd } } });
       await this.auditoria.registrar({ usuarioId: u.id, accion: 'PAGO_PROVEEDOR', entidad: 'Compra', entidadId: id, datos: { montoUsd: b.montoUsd, metodo: b.metodo } }, tx);
-      return { saldoUsd: D(act.totalUsd).minus(act.pagadoUsd).toFixed(2) };
+      return { saldoUsd: D(act.totalUsd).minus(act.pagadoUsd).minus(act.devueltoUsd).toFixed(2) };
     });
+  }
+
+  /** Órdenes de compra: lo que se le pidió a cada droguería y todavía no llega. */
+  @Get('ordenes')
+  async ordenes() {
+    const lista = await this.prisma.ordenCompra.findMany({ orderBy: { creadaEn: 'desc' }, take: 60, include: { lineas: true } });
+    const productos = await this.prisma.producto.findMany({ where: { id: { in: [...new Set(lista.flatMap((o) => o.lineas.map((l) => l.productoId)))] } }, select: { id: true, nombreComercial: true, concentracion: true, unidadesPorCaja: true } });
+    const p = new Map(productos.map((x) => [x.id, x]));
+    return lista.map((o) => ({ ...o, lineas: o.lineas.map((l) => ({ ...l, nombre: `${p.get(l.productoId)?.nombreComercial ?? '—'} ${p.get(l.productoId)?.concentracion ?? ''}` })) }));
+  }
+
+  @Post('ordenes')
+  async crearOrden(@Body(new Validar(ordenCompraSchema)) b: OrdenCompraInput, @Usuario() u: UsuarioActual) {
+    const o = await this.prisma.ordenCompra.create({ data: { proveedor: b.proveedor, creadoPorId: u.id, lineas: { create: b.lineas } } });
+    await this.auditoria.registrar({ usuarioId: u.id, accion: 'ORDEN_COMPRA', entidad: 'OrdenCompra', entidadId: o.id, datos: { proveedor: b.proveedor, productos: b.lineas.length } });
+    return o;
+  }
+
+  @Post('ordenes/:id/anular')
+  @HttpCode(200)
+  async anularOrden(@Param('id', ParseUUIDPipe) id: string, @Usuario() u: UsuarioActual) {
+    const r = await this.prisma.ordenCompra.updateMany({ where: { id, estado: 'ABIERTA' }, data: { estado: 'ANULADA' } });
+    if (!r.count) throw new ConflictException('Solo se anulan órdenes abiertas');
+    await this.auditoria.registrar({ usuarioId: u.id, accion: 'ORDEN_COMPRA_ANULADA', entidad: 'OrdenCompra', entidadId: id });
+    return { estado: 'ANULADA' };
   }
 }
 
@@ -168,7 +194,9 @@ export class MayoristaController {
       return { productoId: p.id, cantidad: l.cantidad, precioUsd: D(p.precioUsd).times(factor).toDecimalPlaces(2) };
     });
     const total = lineas.reduce((a, l) => a.plus(l.precioUsd.times(l.cantidad)), D(0));
-    const p = await this.prisma.pedidoMayor.create({ data: { clienteId: cliente.id, totalUsd: total, creadoPorId: u.id, lineas: { create: lineas } } });
+    const p = await this.prisma.pedidoMayor.create({
+      data: { clienteId: cliente.id, totalUsd: total, creadoPorId: u.id, lineas: { create: lineas }, empleado: b.empleado || null, validaHasta: new Date(Date.now() + b.validezDias * dia) },
+    });
     await this.auditoria.registrar({ usuarioId: u.id, accion: 'COTIZACION_MAYOR', entidad: 'PedidoMayor', entidadId: p.id, datos: { totalUsd: total.toFixed(2) } });
     return { id: p.id, numero: p.numero, totalUsd: total.toFixed(2) };
   }
@@ -182,6 +210,21 @@ export class MayoristaController {
       const sig = SIGUIENTE[p.estado];
       if (!sig) throw new ConflictException('Este pedido ya no se puede avanzar');
       const data: Prisma.PedidoMayorUpdateInput = { estado: sig };
+      if (sig === 'PEDIDO') {
+        if (p.validaHasta && p.validaHasta < new Date()) throw new ConflictException('La cotización venció: haz una nueva con los precios de hoy');
+        // Stock apartado: lo libre menos lo que ya está comprometido en otros pedidos sin despachar.
+        for (const l of p.lineas) {
+          const [r] = await tx.$queryRaw<{ libre: bigint; comprometido: bigint }[]>`
+            SELECT COALESCE((SELECT sum("stockLibre") FROM "Lote" WHERE "productoId" = ${l.productoId}::uuid AND vence >= current_date), 0) AS libre,
+                   COALESCE((SELECT sum(pl.cantidad) FROM "PedidoMayorLinea" pl JOIN "PedidoMayor" pm ON pm.id = pl."pedidoId"
+                             WHERE pl."productoId" = ${l.productoId}::uuid AND pm.estado = 'PEDIDO' AND pm.id <> ${p.id}::uuid), 0) AS comprometido`;
+          const disponible = Number(r!.libre) - Number(r!.comprometido);
+          if (disponible < l.cantidad) {
+            const prod = await tx.producto.findUnique({ where: { id: l.productoId }, select: { nombreComercial: true } });
+            throw new ConflictException(`No alcanza ${prod?.nombreComercial ?? 'un producto'}: hay ${Math.max(disponible, 0)} disponibles (el resto está apartado para otros pedidos)`);
+          }
+        }
+      }
       if (sig === 'DESPACHADO') {
         const deuda = (await this.deudas()).get(p.clienteId) ?? D(0);
         if (deuda.plus(p.totalUsd).gt(p.cliente.limiteUsd)) {
@@ -354,8 +397,8 @@ export class ReportesNegocioController {
 
   /** Rotación: lo que más se vende y lo que tiene existencia pero no se ha movido. */
   @Get('rotacion')
-  async rotacion() {
-    const hace30 = new Date(hoy0().getTime() - 30 * dia);
+  async rotacion(@Query('desde') desde?: string, @Query('hasta') hasta?: string) {
+    const hace30 = rango(desde, hasta).d;
     const filas = await this.prisma.$queryRaw<{ producto: string; vendidos: bigint; stock: bigint; ultima: Date | null }[]>`
       SELECT p."nombreComercial" || ' ' || p.concentracion AS producto,
         COALESCE((SELECT sum(vl.cantidad - vl.devuelto) FROM "VentaLinea" vl JOIN "Venta" v ON v.id = vl."ventaId" WHERE vl."productoId" = p.id AND v.estado = 'COMPLETADA' AND v."creadaEn" >= ${hace30}), 0) AS vendidos,
@@ -369,6 +412,24 @@ export class ReportesNegocioController {
     };
   }
 
+  /** Ventas por hora del día y por método de pago (netas de devoluciones). */
+  @Get('ventas-detalle')
+  async ventasDetalle(@Query('desde') desde?: string, @Query('hasta') hasta?: string) {
+    const { d, h } = rango(desde, hasta);
+    const [horas, metodos, devs] = await Promise.all([
+      this.prisma.$queryRaw<{ hora: number; ventas: bigint; usd: Prisma.Decimal }[]>`
+        SELECT extract(hour FROM "creadaEn" AT TIME ZONE 'America/Caracas')::int AS hora, count(*) AS ventas, sum("totalUsd") AS usd
+        FROM "Venta" WHERE estado = 'COMPLETADA' AND "creadaEn" >= ${d} AND "creadaEn" < ${h} GROUP BY 1 ORDER BY 1`,
+      this.prisma.pago.groupBy({ by: ['metodo'], where: { venta: { estado: 'COMPLETADA', creadaEn: { gte: d, lt: h } } }, _sum: { montoUsd: true, monto: true }, _count: true }),
+      this.prisma.devolucion.groupBy({ by: ['metodo'], where: { creadoEn: { gte: d, lt: h } }, _sum: { montoUsd: true } }),
+    ]);
+    return {
+      porHora: horas.map((x) => ({ hora: x.hora, ventas: Number(x.ventas), usd: D(x.usd).toFixed(2) })),
+      porMetodo: metodos.map((m) => ({ metodo: m.metodo, pagos: m._count, usd: D(m._sum.montoUsd).minus(devs.find((x) => x.metodo === m.metodo)?._sum.montoUsd ?? 0).toFixed(2), monto: D(m._sum.monto).toFixed(2) })),
+      devueltoUsd: devs.reduce((a, x) => a.plus(D(x._sum.montoUsd)), D(0)).toFixed(2),
+    };
+  }
+
   /** Ventas por cajero y diferencias de sus cierres de caja. */
   @Get('cajeros')
   async cajeros(@Query('desde') desde?: string, @Query('hasta') hasta?: string) {
@@ -377,9 +438,13 @@ export class ReportesNegocioController {
       this.prisma.venta.groupBy({ by: ['cajeroId'], where: { estado: 'COMPLETADA', creadaEn: { gte: d, lt: h } }, _sum: { totalUsd: true }, _count: true }),
       this.prisma.usuario.findMany({ select: { id: true, nombre: true } }),
     ]);
+    const devs = await this.prisma.$queryRaw<{ cajeroId: string; usd: Prisma.Decimal }[]>`
+      SELECT v."cajeroId", sum(d."montoUsd") AS usd FROM "Devolucion" d JOIN "Venta" v ON v.id = d."ventaId"
+      WHERE v."creadaEn" >= ${d} AND v."creadaEn" < ${h} GROUP BY 1`;
     const turnos = await this.prisma.turno.findMany({ where: { abiertoEn: { gte: d, lt: h }, estado: { not: 'ABIERTO' } }, select: { cajeroId: true, diferencia: true } });
     return ventas.map((v) => ({
-      cajero: usuarios.find((u) => u.id === v.cajeroId)?.nombre ?? '—', ventas: v._count, totalUsd: D(v._sum.totalUsd).toFixed(2),
+      cajero: usuarios.find((u) => u.id === v.cajeroId)?.nombre ?? '—', ventas: v._count,
+      totalUsd: D(v._sum.totalUsd).minus(devs.find((x) => x.cajeroId === v.cajeroId)?.usd ?? 0).toFixed(2),
       cierres: turnos.filter((t) => t.cajeroId === v.cajeroId).length,
       conDiferencia: turnos.filter((t) => t.cajeroId === v.cajeroId && conDif(t.diferencia)).length,
     })).sort((a, b) => Number(b.totalUsd) - Number(a.totalUsd));

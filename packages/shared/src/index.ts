@@ -130,6 +130,8 @@ export const pacienteSchema = z.object({
   telefono: z.string().trim().regex(/^0(4\d{2}|2\d{2})-?\d{7}$/, 'Teléfono inválido. Ejemplo: 0414-5550192'),
   alergias: z.array(texto(60)).max(30).default([]),
   condiciones: z.array(texto(60)).max(30).default([]),
+  /** El cliente aceptó el aviso de privacidad (sus datos de salud solo se usan para atenderlo). */
+  consentimiento: z.boolean().optional(),
 });
 export type PacienteInput = z.infer<typeof pacienteSchema>;
 
@@ -199,6 +201,10 @@ export type ClienteEmpresaInput = z.infer<typeof clienteEmpresaSchema>;
 export const pedidoMayorSchema = z.object({
   clienteId: z.string().uuid(),
   lineas: z.array(z.object({ productoId: z.string().uuid(), cantidad: z.number().int().positive().max(100_000) })).min(1).max(200),
+  /** Días que vale la cotización (precio y stock). */
+  validezDias: z.number().int().min(1).max(60).default(7),
+  /** Convenio: empleado de la empresa que retira. */
+  empleado: z.string().trim().max(120).optional(),
 });
 export type PedidoMayorInput = z.infer<typeof pedidoMayorSchema>;
 
@@ -440,5 +446,34 @@ export const configuracionGeneralSchema = z.object({
   ticketAuto: z.boolean().optional(),
   ticketMostrarBs: z.boolean().optional(),
   ticketMostrarTasa: z.boolean().optional(),
+  recipeRetencionDias: z.number().int().min(30).max(3650).optional(),
 });
 export type ConfiguracionGeneralInput = z.infer<typeof configuracionGeneralSchema>;
+
+export const ordenCompraSchema = z.object({
+  proveedor: texto(120),
+  lineas: z.array(z.object({ productoId: z.string().uuid(), cantidad: z.number().int().positive().max(100_000) })).min(1).max(300),
+});
+export type OrdenCompraInput = z.infer<typeof ordenCompraSchema>;
+
+export const recibirOrdenSchema = z.object({
+  numeroFactura: texto(40),
+  diasCredito: z.number().int().min(0).max(180).default(0),
+  lineas: z.array(z.object({
+    lineaId: z.string().uuid(),
+    recibido: z.number().int().min(0).max(100_000),
+    numeroLote: z.string().trim().max(40).optional(),
+    vence: z.coerce.date().optional(),
+    costoUsd: z.number().nonnegative().max(1_000_000).default(0),
+    factorVenta: z.number().int().positive().max(1000).default(1),
+  })).min(1).max(300),
+});
+export type RecibirOrdenInput = z.infer<typeof recibirOrdenSchema>;
+
+export const devolucionProveedorSchema = z.object({
+  compraId: z.string().uuid(),
+  compraLineaId: z.string().uuid(),
+  cantidad: z.number().int().positive().max(100_000),
+  motivo: texto(120),
+});
+export type DevolucionProveedorInput = z.infer<typeof devolucionProveedorSchema>;

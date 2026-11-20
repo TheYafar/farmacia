@@ -1,5 +1,6 @@
-import { Body, ConflictException, Controller, Get, HttpCode, Module, NotFoundException, Post, Query } from '@nestjs/common';
-import { ajusteSchema, compraSchema, importacionSchema, type AjusteInput, type CompraInput, type ImportacionInput } from '@farmacia/shared';
+import { BadRequestException, Body, ConflictException, Controller, Get, HttpCode, Module, NotFoundException, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { ajusteSchema, compraSchema, devolucionProveedorSchema, importacionSchema, recibirOrdenSchema, type AjusteInput, type CompraInput, type DevolucionProveedorInput, type ImportacionInput, type RecibirOrdenInput } from '@farmacia/shared';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
 import { EsperaModule, EsperaService } from '../espera/espera';
@@ -97,6 +98,92 @@ export class InventarioController {
     });
     await this.espera.enviar(avisos);
     return { ...compra, clientesAvisados: avisos.length };
+  }
+
+  /** Compras recientes con sus líneas y lotes (para devolver a la droguería o anular). */
+  @Get('compras')
+  @Roles('ADMIN')
+  async compras() {
+    const lista = await this.prisma.compra.findMany({
+      orderBy: { creadaEn: 'desc' }, take: 60,
+      include: { lineas: { include: { producto: { select: { nombreComercial: true, concentracion: true } } } }, creadaPor: { select: { nombre: true } } },
+    });
+    return lista.map((c) => ({
+      ...c, totalUsd: c.totalUsd.toFixed(2), pagadoUsd: c.pagadoUsd.toFixed(2), devueltoUsd: c.devueltoUsd.toFixed(2),
+      lineas: c.lineas.map((l) => ({ ...l, costoUsd: l.costoUsd.toFixed(2) })),
+    }));
+  }
+
+  /** Recibe una orden de compra: compara lo pedido con lo que llegó y carga la compra (con sus lotes) en una sola operación. */
+  @Post('ordenes/:id/recibir')
+  @Roles('ADMIN')
+  async recibir(@Param('id', ParseUUIDPipe) id: string, @Body(new Validar(recibirOrdenSchema)) b: RecibirOrdenInput, @Usuario() u: UsuarioActual) {
+    const o = await this.prisma.ordenCompra.findUnique({ where: { id }, include: { lineas: true } });
+    if (!o) throw new NotFoundException('Orden no encontrada');
+    if (o.estado !== 'ABIERTA') throw new ConflictException('Esta orden ya fue recibida o anulada');
+    const llegaron = b.lineas.filter((l) => l.recibido > 0);
+    if (!llegaron.length) throw new BadRequestException('No llegó nada: si la droguería no la mandó, anula la orden');
+    const lineas = llegaron.map((l) => {
+      const ol = o.lineas.find((x) => x.id === l.lineaId);
+      if (!ol) throw new NotFoundException('Esa línea no es de la orden');
+      if (!l.numeroLote || !l.vence) throw new BadRequestException('Cada producto recibido necesita lote y vencimiento');
+      return { productoId: ol.productoId, numeroLote: l.numeroLote, vence: l.vence, cantidad: l.recibido, factorVenta: l.factorVenta, costoUsd: l.costoUsd };
+    });
+    const compra = await this.compra({ proveedor: o.proveedor, numeroFactura: b.numeroFactura, diasCredito: b.diasCredito, lineas }, u);
+    for (const l of b.lineas) await this.prisma.ordenCompraLinea.update({ where: { id: l.lineaId }, data: { recibido: l.recibido } });
+    await this.prisma.ordenCompra.update({ where: { id }, data: { estado: 'RECIBIDA', compraId: compra.id } });
+    const faltas = o.lineas.map((ol) => ({ productoId: ol.productoId, pedido: ol.cantidad, llego: b.lineas.find((x) => x.lineaId === ol.id)?.recibido ?? 0 })).filter((x) => x.llego !== x.pedido);
+    return { compraId: compra.id, clientesAvisados: compra.clientesAvisados, diferencias: faltas.length };
+  }
+
+  /** Devolver mercancía a la droguería: sale del lote y se descuenta de lo que se le debe. */
+  @Post('devoluciones-proveedor')
+  @Roles('ADMIN')
+  async devolverProveedor(@Body(new Validar(devolucionProveedorSchema)) b: DevolucionProveedorInput, @Usuario() u: UsuarioActual) {
+    return this.prisma.$transaction(async (tx) => {
+      const c = await tx.compra.findUnique({ where: { id: b.compraId }, include: { lineas: true } });
+      const l = c?.lineas.find((x) => x.id === b.compraLineaId);
+      if (!c || !l) throw new NotFoundException('Compra no encontrada');
+      if (c.anulada) throw new ConflictException('Esa compra está anulada');
+      const lote = await tx.lote.findUnique({ where: { productoId_numero: { productoId: l.productoId, numero: l.numeroLote } } });
+      if (!lote) throw new NotFoundException('No se encontró el lote');
+      const [bloq] = await tx.$queryRaw<{ stockLibre: number }[]>`SELECT "stockLibre" FROM "Lote" WHERE id = ${lote.id}::uuid FOR UPDATE`;
+      if (bloq!.stockLibre < b.cantidad) throw new ConflictException(`Solo quedan ${bloq!.stockLibre} libres de ese lote`);
+      const ya = await tx.devolucionProveedor.aggregate({ where: { compraId: c.id, loteId: lote.id }, _sum: { cantidad: true } });
+      const maximo = l.cantidad * l.factorVenta - (ya._sum.cantidad ?? 0);
+      if (b.cantidad > maximo) throw new ConflictException(`De esa compra solo se pueden devolver ${maximo}`);
+      // Costo por unidad de venta (la línea guarda el costo por caja de compra).
+      const montoUsd = l.costoUsd.div(l.factorVenta).mul(b.cantidad).toDecimalPlaces(2);
+      await tx.lote.update({ where: { id: lote.id }, data: { stockLibre: { decrement: b.cantidad } } });
+      await tx.compra.update({ where: { id: c.id }, data: { devueltoUsd: { increment: montoUsd } } });
+      const d = await tx.devolucionProveedor.create({ data: { compraId: c.id, loteId: lote.id, cantidad: b.cantidad, montoUsd, motivo: b.motivo, usuarioId: u.id } });
+      await this.auditoria.registrar({ usuarioId: u.id, accion: 'DEVOLUCION_PROVEEDOR', entidad: 'Compra', entidadId: c.id, datos: { cantidad: b.cantidad, montoUsd: montoUsd.toFixed(2), motivo: b.motivo } }, tx);
+      return { ...d, montoUsd: montoUsd.toFixed(2) };
+    });
+  }
+
+  /** Anula una compra cargada por error: saca su mercancía (si no se ha vendido) y deja de deberse. */
+  @Post('compras/:id/anular')
+  @Roles('ADMIN')
+  async anularCompra(@Param('id', ParseUUIDPipe) id: string, @Usuario() u: UsuarioActual) {
+    return this.prisma.$transaction(async (tx) => {
+      const c = await tx.compra.findUnique({ where: { id }, include: { lineas: true } });
+      if (!c) throw new NotFoundException('Compra no encontrada');
+      if (c.anulada) throw new ConflictException('Ya estaba anulada');
+      if (c.pagadoUsd.gt(0)) throw new ConflictException('Ya tiene pagos registrados: haz una devolución a la droguería en vez de anular');
+      if (!c.devueltoUsd.isZero()) throw new ConflictException('Ya tiene devoluciones: no se puede anular');
+      for (const l of c.lineas) {
+        const unidades = l.cantidad * l.factorVenta;
+        const [lote] = await tx.$queryRaw<{ id: string; stockLibre: number }[]>`
+          SELECT id, "stockLibre" FROM "Lote" WHERE "productoId" = ${l.productoId}::uuid AND numero = ${l.numeroLote} FOR UPDATE`;
+        if (!lote || lote.stockLibre < unidades) throw new ConflictException(`Ya se vendió o apartó parte del lote ${l.numeroLote}: corrige con un ajuste de inventario`);
+        await tx.lote.update({ where: { id: lote.id }, data: { stockLibre: { decrement: unidades } } });
+      }
+      await tx.compra.update({ where: { id }, data: { anulada: true } });
+      await tx.ordenCompra.updateMany({ where: { compraId: id }, data: { estado: 'ABIERTA', compraId: null } });
+      await this.auditoria.registrar({ usuarioId: u.id, accion: 'COMPRA_ANULADA', entidad: 'Compra', entidadId: id, datos: { proveedor: c.proveedor, factura: c.numeroFactura } }, tx);
+      return { anulada: true };
+    });
   }
 }
 

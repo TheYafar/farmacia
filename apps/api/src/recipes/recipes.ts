@@ -2,7 +2,8 @@ import { BadRequestException, Body, ConflictException, Controller, Get, Inject, 
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Prisma } from '@prisma/client';
 import { createReadStream } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { Cron } from '@nestjs/schedule';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Response } from 'express';
@@ -73,6 +74,24 @@ export class RecipesService {
     return r;
   }
 
+  /** Privacidad: cada noche borra las fotos de récipes más viejas que el plazo de retención (los datos se conservan). */
+  @Cron('30 3 * * *')
+  async borrarVencidas() {
+    const c = await this.prisma.configuracion.findUnique({ where: { id: 1 } });
+    const dias = c?.recipeRetencionDias ?? 730;
+    const limite = new Date(Date.now() - dias * 86_400_000);
+    const viejas = await this.prisma.recipe.findMany({ where: { creadoEn: { lt: limite }, fotoBorradaEn: null }, select: { id: true, archivo: true }, take: 500 });
+    for (const r of viejas) {
+      await unlink(this.rutaArchivo(r.archivo)).catch(() => {});
+      await this.prisma.recipe.update({ where: { id: r.id }, data: { fotoBorradaEn: new Date() } });
+    }
+    if (viejas.length) {
+      this.log.log(`Privacidad: ${viejas.length} fotos de récipes borradas (más de ${dias} días)`);
+      await this.auditoria.registrar({ accion: 'FOTOS_RECIPE_BORRADAS', entidad: 'Recipe', datos: { cantidad: viejas.length, dias } });
+    }
+    return viejas.length;
+  }
+
   rutaArchivo(relativa: string) {
     const base = resolve(this.config.UPLOAD_DIR);
     const ruta = resolve(base, relativa);
@@ -111,8 +130,9 @@ export class RecipesController {
   /** La foto solo se entrega a usuarios con sesión, nunca queda en caché ni en una dirección pública. */
   @Get(':id/foto')
   async foto(@Param('id', ParseUUIDPipe) id: string, @Res({ passthrough: true }) res: Response) {
-    const r = await this.prisma.recipe.findUnique({ where: { id }, select: { archivo: true, tipoArchivo: true } });
+    const r = await this.prisma.recipe.findUnique({ where: { id }, select: { archivo: true, tipoArchivo: true, fotoBorradaEn: true } });
     if (!r) throw new NotFoundException('El récipe no existe');
+    if (r.fotoBorradaEn) throw new NotFoundException('La foto se borró al cumplir el plazo de privacidad');
     res.set({ 'Content-Type': r.tipoArchivo, 'Cache-Control': 'private, no-store' });
     return new StreamableFile(createReadStream(this.recipes.rutaArchivo(r.archivo)));
   }

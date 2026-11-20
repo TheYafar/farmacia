@@ -189,3 +189,49 @@ function calcular(secreto: string) {
   const o = h[19]! & 15;
   return ((h.readUInt32BE(o) & 0x7fffffff) % 1e6).toString().padStart(6, '0');
 }
+
+describe('Órdenes de compra, devolución a droguería, anular compra y cotizaciones', () => {
+  let app: INestApplication;
+  let d: Awaited<ReturnType<typeof escenario>>;
+  let admin: ReturnType<typeof como>;
+  before(async () => { app = await levantar(); });
+  after(async () => { await app.close(); await prisma.$disconnect(); });
+  beforeEach(async () => {
+    d = await escenario();
+    admin = como(app, (await entrar(app, 'admin')).token);
+  });
+
+  it('orden de compra → recibir con diferencia → devolver a la droguería → baja la deuda', async () => {
+    const o = await admin.post('/proveedores/ordenes', { proveedor: 'Drolanca', lineas: [{ productoId: d.generico.id, cantidad: 10 }] });
+    assert.equal(o.status, 201, JSON.stringify(o.body));
+    const linea = (await admin.get('/proveedores/ordenes')).body[0].lineas[0];
+    const r = await admin.post(`/inventario/ordenes/${o.body.id}/recibir`, { numeroFactura: 'F-9', diasCredito: 15, lineas: [{ lineaId: linea.id, recibido: 8, numeroLote: 'OC1', vence: '2030-01-01', costoUsd: 0.5 }] });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    assert.equal(r.body.diferencias, 1);
+    const compra = (await admin.get('/inventario/compras')).body[0];
+    assert.equal(compra.totalUsd, '4.00');
+    const dev = await admin.post('/inventario/devoluciones-proveedor', { compraId: compra.id, compraLineaId: compra.lineas[0].id, cantidad: 2, motivo: 'Dañado' });
+    assert.equal(dev.status, 201, JSON.stringify(dev.body));
+    assert.equal((await admin.get('/proveedores/cuentas')).body.facturas[0].saldoUsd, '3.00');
+    assert.equal((await admin.post(`/inventario/compras/${compra.id}/anular`, {})).status, 409); // ya tiene devoluciones
+  });
+
+  it('anular una compra mal cargada saca su mercancía y deja de deberse', async () => {
+    const c = await admin.post('/inventario/compras', { proveedor: 'Cobeca', numeroFactura: 'X1', diasCredito: 10, lineas: [{ productoId: d.generico.id, numeroLote: 'MAL', vence: '2030-01-01', cantidad: 5, costoUsd: 1 }] });
+    assert.equal((await admin.post(`/inventario/compras/${c.body.id}/anular`, {})).status, 201);
+    assert.equal((await prisma.lote.findFirstOrThrow({ where: { numero: 'MAL' } })).stockLibre, 0);
+    assert.equal((await admin.get('/proveedores/cuentas')).body.facturas.length, 0);
+  });
+
+  it('la cotización vencida no pasa a pedido y el stock apartado no se vende dos veces', async () => {
+    const cli = await admin.post('/mayorista/clientes', { rif: 'J-30512874-1', nombre: 'Clínica', limiteUsd: 1000 });
+    const a = await admin.post('/mayorista/pedidos', { clienteId: cli.body.id, lineas: [{ productoId: d.generico.id, cantidad: 10 }] });
+    const b = await admin.post('/mayorista/pedidos', { clienteId: cli.body.id, lineas: [{ productoId: d.generico.id, cantidad: 5 }], empleado: 'Juan Pérez' });
+    assert.equal((await admin.post(`/mayorista/pedidos/${a.body.id}/avanzar`, {})).status, 201);
+    const r = await admin.post(`/mayorista/pedidos/${b.body.id}/avanzar`, {}); // quedan 12 − 10 apartadas = 2
+    assert.equal(r.status, 409);
+    assert.match(r.body.mensaje, /apartado/);
+    await prisma.pedidoMayor.update({ where: { id: b.body.id }, data: { validaHasta: new Date(Date.now() - 1000) } });
+    assert.match((await admin.post(`/mayorista/pedidos/${b.body.id}/avanzar`, {})).body.mensaje, /venció/);
+  });
+});

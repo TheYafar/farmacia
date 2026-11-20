@@ -5,7 +5,7 @@ import { AuditoriaService } from '../auditoria/auditoria';
 import { Usuario, type UsuarioActual } from '../common/seguridad';
 import { Validar } from '../common/validacion';
 
-const editarSchema = pacienteSchema.omit({ cedula: true }).partial();
+const editarSchema = pacienteSchema.omit({ cedula: true, consentimiento: true }).partial();
 
 /** Ficha rápida por cédula (sección 5 del documento). */
 @Controller('pacientes')
@@ -50,7 +50,8 @@ export class PacientesController {
 
   @Post()
   async crear(@Body(new Validar(pacienteSchema)) b: PacienteInput, @Usuario() yo: UsuarioActual) {
-    const p = await this.prisma.paciente.create({ data: b });
+    const { consentimiento, ...datos } = b;
+    const p = await this.prisma.paciente.create({ data: { ...datos, consentimientoEn: consentimiento ? new Date() : null } });
     await this.auditoria.registrar({ usuarioId: yo.id, accion: 'PACIENTE_CREADO', entidad: 'Paciente', entidadId: p.cedula });
     return p;
   }

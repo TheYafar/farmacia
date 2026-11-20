@@ -124,7 +124,7 @@ export default function MostradorPage() {
         <CartBody onCobrar={abrirCobro} />
       </Sheet>
       <CobroSheet open={cobroOpen} onClose={() => setCobroOpen(false)} onVendida={setTicket} />
-      <Ticket venta={ticket} onCerrar={() => setTicket(null)} />
+      <Ticket venta={ticket} auto onCerrar={() => setTicket(null)} />
     </div>
   );
 }

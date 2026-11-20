@@ -92,7 +92,7 @@ export class VentasService {
       // 2. Precio y tasa del momento: la venta guarda ambos para siempre.
       const tasa = await this.tasa.actual(tx);
       const venta = await tx.venta.create({
-        data: { clave: b.clave, cajeroId: cajero.id, cedula: b.cedula, metodoPago: b.pagos?.[0]?.metodo ?? b.metodoPago!, totalUsd: 0, tasa: tasa.valor, totalBs: 0, turnoId: turno.id },
+        data: { clave: b.clave, tasaFuente: tasa.fuente, cajeroId: cajero.id, cedula: b.cedula, metodoPago: b.pagos?.[0]?.metodo ?? b.metodoPago!, totalUsd: 0, tasa: tasa.valor, totalBs: 0, turnoId: turno.id },
       });
 
       // 3. Descontar stock (FEFO) con los lotes bloqueados.

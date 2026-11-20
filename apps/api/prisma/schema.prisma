@@ -310,6 +310,8 @@ model Venta {
   descuentoPct   Decimal     @default(0) @db.Decimal(5, 2)
   descuentoUsd   Decimal     @default(0) @db.Decimal(12, 2)
   descuentoMotivo String?
+  /// De dónde salió la tasa usada (ej. «BCV dólar 918,77 + 2 %»).
+  tasaFuente     String?
   ivaUsd         Decimal     @default(0) @db.Decimal(12, 2)
   igtfUsd        Decimal     @default(0) @db.Decimal(12, 2)
   /// Clave que manda la app para no registrar dos veces la misma venta si se cae el internet al cobrar.
@@ -571,4 +573,30 @@ model Configuracion {
   /// IGTF sobre lo pagado en divisas.
   igtfActivo Boolean @default(false)
   igtfPct    Decimal @default(3) @db.Decimal(5, 2)
+
+  /// Tasa del dólar: BCV_USD, BCV_EUR (automáticas) o MANUAL.
+  tasaModo        String    @default("MANUAL")
+  /// Ajuste sobre la tasa del BCV: NINGUNO, BS (suma bolívares) o PCT (suma un porcentaje).
+  tasaAjusteTipo  String    @default("NINGUNO")
+  tasaAjusteValor Decimal   @default(0) @db.Decimal(10, 4)
+  /// Última lectura del BCV.
+  bcvUsd          Decimal?  @db.Decimal(14, 4)
+  bcvEur          Decimal?  @db.Decimal(14, 4)
+  bcvFecha        DateTime?
+  bcvConsultado   DateTime?
+  bcvOrigen       String?
+
+  /// Datos del ticket (si están vacíos se usan los de la instalación).
+  farmaciaNombre    String?
+  farmaciaRif       String?
+  farmaciaDireccion String?
+  farmaciaTelefono  String?
+  ticketPie         String?
+  /// Impresora: ancho del papel en mm (58 u 80), tamaño de letra, copias, imprimir solo al cobrar, mostrar Bs.
+  ticketAncho       Int     @default(80)
+  ticketLetra       Int     @default(12)
+  ticketCopias      Int     @default(1)
+  ticketAuto        Boolean @default(false)
+  ticketMostrarBs   Boolean @default(true)
+  ticketMostrarTasa Boolean @default(true)
 }

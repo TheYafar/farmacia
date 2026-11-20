@@ -70,7 +70,6 @@ export default function PanelPage() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader title="Resumen de hoy" subtitle="Cómo va la farmacia" />
-      <Igtf />
       {error && <ErrorCarga mensaje={error} reintentar={recargar} />}
       {cargando || !datos ? <Cargando /> : (
         <>
@@ -110,7 +109,7 @@ export default function PanelPage() {
       <Card className="max-w-xl">
         <h2 className="text-base font-bold">Precio del dólar hoy</h2>
         <div className="flex items-baseline gap-2"><span className="font-mono text-3xl tabular">{tasa ? num2(tasa) : '—'}</span><span className="text-muted">Bs por dólar</span></div>
-        <p className="text-xs text-muted">Al guardar, los precios en bolívares se actualizan en todas las cajas. Las ventas ya hechas conservan su tasa.</p>
+        <p className="text-xs text-muted">Al guardar, los precios en bolívares se actualizan en todas las cajas. Para usar la tasa automática del BCV (dólar o euro, con ajuste), ve a <Link to="/configuracion" className="font-semibold text-accent underline">Configuración</Link>.</p>
         <form className="flex gap-2" onSubmit={async (e) => {
           e.preventDefault();
           const v = parseFloat(nueva.replace(/\./g, '').replace(',', '.'));
@@ -125,25 +124,5 @@ export default function PanelPage() {
         <p className="text-xs text-muted">Referencia: {bs(1, tasa)} por cada dólar.</p>
       </Card>
     </div>
-  );
-}
-
-/** Interruptor del IGTF (impuesto a pagos en divisas). Lo decide el dueño con su contador. */
-function Igtf() {
-  const c = useCargar(() => api<{ igtfActivo: boolean; igtfPct: number }>('/catalogo/configuracion'), []);
-  if (!c.datos) return null;
-  const guardar = async (igtfActivo: boolean, igtfPct: number) => {
-    try { await api('/catalogo/configuracion', { body: { igtfActivo, igtfPct } }); avisar(igtfActivo ? `IGTF ${igtfPct} % activado en pagos en $ efectivo` : 'IGTF desactivado', 'ok'); c.recargar(); }
-    catch { avisar('No se pudo guardar', 'bad'); }
-  };
-  return (
-    <label className="flex flex-wrap items-center gap-2 text-sm text-muted">
-      <input type="checkbox" checked={c.datos.igtfActivo} onChange={(e) => guardar(e.target.checked, c.datos!.igtfPct)} className="h-4 w-4" />
-      Cobrar IGTF de
-      <select value={c.datos.igtfPct} onChange={(e) => guardar(c.datos!.igtfActivo, Number(e.target.value))} className="h-8 rounded-lg border border-line bg-surface px-2">
-        {[1, 2, 3].map((p) => <option key={p} value={p}>{p} %</option>)}
-      </select>
-      a los pagos en $ efectivo
-    </label>
   );
 }

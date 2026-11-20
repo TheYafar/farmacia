@@ -10,6 +10,7 @@ import { useRol, useSesion } from '@/store/sesion';
 import { Sheet, Toaster } from '@/components/ui';
 import { useCaja } from '@/store/caja';
 import { useConexion } from '@/lib/api';
+import { useConfig } from '@/store/config';
 
 /** Números rojos del menú: lo que espera al farmacéutico o al dueño. Se actualiza cada 20 segundos. */
 function useBadges(rol: string): Record<string, number> {
@@ -60,6 +61,8 @@ function Badge({ n, inline }: { n?: number; inline?: boolean }) {
 }
 
 export default function AppShell() {
+  const cargarConfig = useConfig((s) => s.cargar);
+  useEffect(() => { void cargarConfig(); }, [cargarConfig]);
   const rol = useRol();
   const usuario = useSesion((s) => s.usuario)!;
   const tasa = useSesion((s) => s.tasa);

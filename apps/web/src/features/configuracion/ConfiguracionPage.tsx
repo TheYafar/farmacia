@@ -1,0 +1,195 @@
+import { clsx } from 'clsx';
+import { Printer, RefreshCw } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Alert, Button, Campo, Card, Cargando, PageHeader, claseInput } from '@/components/ui';
+import { api, ApiError } from '@/lib/api';
+import { num2 } from '@/lib/format';
+import type { Venta } from '@/lib/tipos';
+import { avisar } from '@/store/avisos';
+import { useConfig, type Configuracion } from '@/store/config';
+import { useSesion } from '@/store/sesion';
+import Ticket from '@/features/caja/Ticket';
+
+const msg = (e: unknown) => (e instanceof ApiError ? [e.message, ...e.errores.map((x) => x.mensaje)].join('. ') : 'No se pudo guardar');
+const fechaHora = (d: string | null) => (d ? new Date(d).toLocaleString('es-VE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
+
+function Opcion({ activa, onClick, titulo, detalle }: { activa: boolean; onClick: () => void; titulo: string; detalle: ReactNode }) {
+  return (
+    <button type="button" onClick={onClick} className={clsx('flex flex-col items-start gap-0.5 rounded-xl border p-3 text-left transition', activa ? 'border-accent bg-accent-soft/60' : 'border-line hover:bg-surface2')}>
+      <span className="font-semibold">{titulo}</span><span className="text-sm text-muted">{detalle}</span>
+    </button>
+  );
+}
+
+function Seccion({ titulo, sub, children }: { titulo: string; sub?: string; children: ReactNode }) {
+  return (
+    <Card as="section" className="flex flex-col gap-4 p-4 md:p-5">
+      <div><h2 className="text-lg font-bold">{titulo}</h2>{sub && <p className="text-sm text-muted">{sub}</p>}</div>
+      {children}
+    </Card>
+  );
+}
+
+const Interruptor = ({ v, onChange, children }: { v: boolean; onChange: (v: boolean) => void; children: ReactNode }) => (
+  <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={v} onChange={(e) => onChange(e.target.checked)} className="h-4 w-4" />{children}</label>
+);
+
+/** Venta de ejemplo para la vista previa y la página de prueba de la impresora. */
+const PRUEBA = {
+  id: 'prueba', numero: 0, creadaEn: new Date().toISOString(), cedula: null, totalUsd: '9.86', totalBs: '0', tasa: '0', vueltoMoneda: null, vueltoMonto: '0',
+  cajero: { nombre: 'Prueba' }, lineas: [{ cantidad: 2, precioUsd: '1.80', producto: { nombreComercial: 'Atamel', concentracion: '500 mg' } }, { cantidad: 1, precioUsd: '6.26', producto: { nombreComercial: 'Losartán', concentracion: '50 mg' } }],
+  pagos: [{ id: 'p', metodo: 'EFECTIVO_USD', moneda: 'USD', monto: '9.86', referencia: null }],
+} as unknown as Venta;
+
+export default function ConfiguracionPage() {
+  const { config, cargar } = useConfig();
+  const cargarTasa = useSesion((s) => s.cargarTasa);
+  const tasa = useSesion((s) => s.tasa);
+  const [f, setF] = useState<Configuracion | null>(null);
+  const [manual, setManual] = useState('');
+  const [leyendo, setLeyendo] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [prueba, setPrueba] = useState(false);
+  useEffect(() => { void cargar(); }, [cargar]);
+  // Al recargar (ej. después de leer el BCV) se actualizan las lecturas, sin borrar lo que se está editando.
+  useEffect(() => {
+    if (!config) return;
+    setF((prev) => prev ? { ...prev, bcvUsd: config.bcvUsd, bcvEur: config.bcvEur, bcvFecha: config.bcvFecha, bcvConsultado: config.bcvConsultado, bcvOrigen: config.bcvOrigen, tasaCalculada: config.tasaCalculada, farmacia: config.farmacia } : config);
+  }, [config]);
+  if (!f) return <Cargando />;
+  const cambiar = (c: Partial<Configuracion>) => setF({ ...f, ...c });
+
+  // Vista previa de la tasa con el ajuste, antes de guardar.
+  const base = f.tasaModo === 'BCV_EUR' ? f.bcvEur : f.bcvUsd;
+  const final = base == null ? null : f.tasaAjusteTipo === 'BS' ? base + f.tasaAjusteValor : f.tasaAjusteTipo === 'PCT' ? base * (1 + f.tasaAjusteValor / 100) : base;
+
+  const guardar = async (parte: Partial<Configuracion>, aviso = 'Configuración guardada') => {
+    setError(null);
+    try {
+      const r = await api<Configuracion & { tasaAplicada: { valor: string; cambio: boolean } | null }>('/configuracion', { body: parte });
+      await cargar(); await cargarTasa();
+      avisar(r.tasaAplicada?.cambio ? `${aviso}. Tasa nueva: ${num2(r.tasaAplicada.valor)} Bs` : aviso, 'ok');
+    } catch (e) { setError(msg(e)); }
+  };
+  const leerBcv = async () => {
+    setLeyendo(true); setError(null);
+    try {
+      const r = await api<{ bcvUsd: number; bcvEur: number; origen: string }>('/tasa/bcv', { body: {} });
+      await cargar(); await cargarTasa();
+      avisar(`BCV: dólar ${num2(r.bcvUsd)} · euro ${num2(r.bcvEur)}`, 'ok');
+    } catch (e) { setError(msg(e)); } finally { setLeyendo(false); }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <PageHeader title="Configuración" subtitle="Tasa del dólar, impuestos, datos del ticket e impresora" />
+      {error && <Alert tone="bad">{error}</Alert>}
+
+      <Seccion titulo="Tasa del día" sub={`Vigente: ${tasa ? num2(tasa) : '—'} Bs. Las ventas ya hechas conservan la tasa con la que se cobraron.`}>
+        <div className="grid gap-2 md:grid-cols-3">
+          <Opcion activa={f.tasaModo === 'BCV_USD'} onClick={() => cambiar({ tasaModo: 'BCV_USD' })} titulo="BCV dólar (automática)" detalle={f.bcvUsd ? `${num2(f.bcvUsd)} Bs` : 'Se lee del BCV'} />
+          <Opcion activa={f.tasaModo === 'BCV_EUR'} onClick={() => cambiar({ tasaModo: 'BCV_EUR' })} titulo="BCV euro (automática)" detalle={f.bcvEur ? `${num2(f.bcvEur)} Bs` : 'Se lee del BCV'} />
+          <Opcion activa={f.tasaModo === 'MANUAL'} onClick={() => cambiar({ tasaModo: 'MANUAL' })} titulo="Personalizada" detalle="La escribes tú" />
+        </div>
+
+        {f.tasaModo !== 'MANUAL' ? (
+          <>
+            <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
+              <span>Última lectura: {fechaHora(f.bcvConsultado)}{f.bcvOrigen ? ` · ${f.bcvOrigen}` : ''}. Se revisa sola cada 30 minutos.</span>
+              <Button size="sm" icon={<RefreshCw className={clsx('h-4 w-4', leyendo && 'animate-spin')} />} disabled={leyendo} onClick={() => void leerBcv()}>Leer BCV ahora</Button>
+            </div>
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-semibold">Ajuste sobre la tasa del BCV</span>
+              <div className="flex flex-wrap items-center gap-2">
+                {([['NINGUNO', 'Sin ajuste'], ['BS', 'Sumar Bs'], ['PCT', 'Sumar %']] as const).map(([k, t]) => (
+                  <button key={k} type="button" onClick={() => cambiar({ tasaAjusteTipo: k })} className={clsx('rounded-lg border px-3 py-1.5 text-sm font-semibold', f.tasaAjusteTipo === k ? 'border-accent bg-accent-soft text-accent' : 'border-line')}>{t}</button>
+                ))}
+                {f.tasaAjusteTipo !== 'NINGUNO' && (
+                  <input inputMode="decimal" value={String(f.tasaAjusteValor)} onChange={(e) => cambiar({ tasaAjusteValor: Number(e.target.value.replace(',', '.')) || 0 })} className={claseInput + ' w-28 font-mono'} aria-label="Valor del ajuste" />
+                )}
+                {f.tasaAjusteTipo !== 'NINGUNO' && <span className="text-sm text-muted">{f.tasaAjusteTipo === 'BS' ? 'Bs' : '%'}</span>}
+              </div>
+            </div>
+            <div className="rounded-xl bg-surface2 p-3 font-mono text-sm">
+              {base == null ? 'Toca «Leer BCV ahora» para ver la tasa.' : <>BCV {num2(base)}{f.tasaAjusteTipo === 'BS' ? ` + ${num2(f.tasaAjusteValor)} Bs` : f.tasaAjusteTipo === 'PCT' ? ` + ${num2(f.tasaAjusteValor)} %` : ''} = <b className="text-base">{num2(final!)} Bs</b> por {f.tasaModo === 'BCV_EUR' ? 'euro' : 'dólar'}</>}
+            </div>
+            {f.tasaModo === 'BCV_EUR' && <Alert tone="info">Los precios siguen en $: se convierten a bolívares con la tasa del euro.</Alert>}
+            <Button variant="primary" onClick={() => void guardar({ tasaModo: f.tasaModo, tasaAjusteTipo: f.tasaAjusteTipo, tasaAjusteValor: f.tasaAjusteValor }, 'Tasa automática activada')}>Guardar y usar esta tasa</Button>
+          </>
+        ) : (
+          <form className="flex flex-wrap items-end gap-2" onSubmit={async (e) => {
+            e.preventDefault();
+            const v = Number(manual.replace(/\./g, '').replace(',', '.'));
+            if (!(v > 0)) { setError('Escribe la tasa'); return; }
+            try { await api('/tasa', { body: { valor: v, fuente: 'Manual' } }); await cargar(); await cargarTasa(); setManual(''); avisar('Tasa guardada', 'ok'); } catch (err) { setError(msg(err)); }
+          }}>
+            <Campo etiqueta="Bs por dólar"><input inputMode="decimal" value={manual} onChange={(e) => setManual(e.target.value)} placeholder={tasa ? num2(tasa) : '0,00'} className={claseInput + ' w-40 font-mono'} /></Campo>
+            <Button type="submit" variant="primary" className="h-11">Guardar tasa</Button>
+          </form>
+        )}
+      </Seccion>
+
+      <Seccion titulo="IGTF" sub="Impuesto a los pagos en divisas. Pregúntale a tu contador si te toca cobrarlo.">
+        <div className="flex flex-wrap items-center gap-3">
+          <Interruptor v={f.igtfActivo} onChange={(v) => cambiar({ igtfActivo: v })}>Cobrar IGTF a los pagos en $ efectivo</Interruptor>
+          <select value={f.igtfPct} onChange={(e) => cambiar({ igtfPct: Number(e.target.value) })} className="h-9 rounded-lg border border-line bg-surface px-2">{[1, 2, 3].map((p) => <option key={p} value={p}>{p} %</option>)}</select>
+          <Button size="sm" onClick={() => void guardar({ igtfActivo: f.igtfActivo, igtfPct: f.igtfPct })}>Guardar</Button>
+        </div>
+      </Seccion>
+
+      <Seccion titulo="Ticket e impresora" sub="Cómo se ve y cómo se imprime el comprobante.">
+        <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
+          <div className="flex flex-col gap-3">
+            <div className="grid grid-cols-2 gap-2">
+              <Campo etiqueta="Nombre de la farmacia"><input value={f.farmaciaNombre ?? ''} placeholder={f.farmacia.nombre} onChange={(e) => cambiar({ farmaciaNombre: e.target.value })} className={claseInput} /></Campo>
+              <Campo etiqueta="RIF"><input value={f.farmaciaRif ?? ''} placeholder={f.farmacia.rif || 'J-12345678-9'} onChange={(e) => cambiar({ farmaciaRif: e.target.value })} className={claseInput} /></Campo>
+              <Campo etiqueta="Dirección"><input value={f.farmaciaDireccion ?? ''} placeholder={f.farmacia.direccion} onChange={(e) => cambiar({ farmaciaDireccion: e.target.value })} className={claseInput} /></Campo>
+              <Campo etiqueta="Teléfono"><input value={f.farmaciaTelefono ?? ''} placeholder={f.farmacia.telefono} onChange={(e) => cambiar({ farmaciaTelefono: e.target.value })} className={claseInput} /></Campo>
+            </div>
+            <Campo etiqueta="Mensaje al final del ticket"><textarea rows={2} value={f.ticketPie ?? ''} placeholder="¡Gracias por su compra!" onChange={(e) => cambiar({ ticketPie: e.target.value })} className={claseInput + ' h-auto py-2'} /></Campo>
+            <div className="grid grid-cols-3 gap-2">
+              <Campo etiqueta="Papel"><select value={f.ticketAncho} onChange={(e) => cambiar({ ticketAncho: Number(e.target.value) as 58 | 80 })} className={claseInput}><option value={80}>80 mm</option><option value={58}>58 mm</option></select></Campo>
+              <Campo etiqueta="Letra"><select value={f.ticketLetra} onChange={(e) => cambiar({ ticketLetra: Number(e.target.value) })} className={claseInput}>{[10, 11, 12, 13, 14].map((n) => <option key={n} value={n}>{n === 12 ? 'Normal' : n < 12 ? `Pequeña (${n})` : `Grande (${n})`}</option>)}</select></Campo>
+              <Campo etiqueta="Copias"><select value={f.ticketCopias} onChange={(e) => cambiar({ ticketCopias: Number(e.target.value) })} className={claseInput}>{[1, 2, 3].map((n) => <option key={n}>{n}</option>)}</select></Campo>
+            </div>
+            <Interruptor v={f.ticketAuto} onChange={(v) => cambiar({ ticketAuto: v })}>Imprimir solo al terminar de cobrar</Interruptor>
+            <Interruptor v={f.ticketMostrarBs} onChange={(v) => cambiar({ ticketMostrarBs: v })}>Mostrar el total en bolívares</Interruptor>
+            <Interruptor v={f.ticketMostrarTasa} onChange={(v) => cambiar({ ticketMostrarTasa: v })}>Mostrar la tasa y de dónde sale (ej. «BCV dólar + 1 Bs»)</Interruptor>
+            <Alert tone="info">
+              La impresora se elige en la ventana de imprimir la primera vez (queda recordada). Para imprimir sin que salga esa ventana,
+              pon la impresora térmica como predeterminada y abre Chrome con <span className="font-mono">--kiosk-printing</span>.
+            </Alert>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="primary" onClick={() => void guardar({
+                farmaciaNombre: f.farmaciaNombre ?? '', farmaciaRif: f.farmaciaRif ?? '', farmaciaDireccion: f.farmaciaDireccion ?? '', farmaciaTelefono: f.farmaciaTelefono ?? '',
+                ticketPie: f.ticketPie ?? '', ticketAncho: f.ticketAncho, ticketLetra: f.ticketLetra, ticketCopias: f.ticketCopias,
+                ticketAuto: f.ticketAuto, ticketMostrarBs: f.ticketMostrarBs, ticketMostrarTasa: f.ticketMostrarTasa,
+              }, 'Ticket guardado')}>Guardar ticket</Button>
+              <Button icon={<Printer className="h-4 w-4" />} onClick={() => setPrueba(true)}>Imprimir prueba</Button>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-semibold">Vista previa</span>
+            <div className="rounded-xl bg-surface2 p-3">
+              <div className="mx-auto rounded-lg bg-white p-3 font-mono leading-snug text-black shadow-sm" style={{ maxWidth: f.ticketAncho === 58 ? 220 : 300, fontSize: f.ticketLetra }}>
+                <div className="text-center font-bold">{f.farmaciaNombre || f.farmacia.nombre}</div>
+                {(f.farmaciaRif || f.farmacia.rif) && <div className="text-center">RIF {f.farmaciaRif || f.farmacia.rif}</div>}
+                {(f.farmaciaDireccion || f.farmacia.direccion) && <div className="text-center">{f.farmaciaDireccion || f.farmacia.direccion}</div>}
+                <div className="my-1 border-t border-dashed border-black" />
+                <div className="flex justify-between"><span>2 x Atamel 500 mg</span><span>3,60 $</span></div>
+                <div className="flex justify-between"><span>1 x Losartán 50 mg</span><span>6,26 $</span></div>
+                <div className="my-1 border-t border-dashed border-black" />
+                <div className="flex justify-between font-bold"><span>TOTAL</span><span>9,86 $</span></div>
+                {f.ticketMostrarBs && <div className="flex justify-between"><span>Total Bs</span><span>{num2(9.86 * (tasa ?? 0))}</span></div>}
+                {f.ticketMostrarTasa && <div className="flex justify-between gap-2"><span className="truncate">Tasa ({f.tasaModo === 'MANUAL' ? 'Manual' : f.tasaCalculada?.fuente ?? 'BCV'})</span><span>{num2(tasa ?? 0)}</span></div>}
+                <div className="mt-1 whitespace-pre-line text-center">{f.ticketPie || '¡Gracias por su compra!'}</div>
+              </div>
+            </div>
+            <p className="text-xs text-muted">Guarda antes de imprimir la prueba para que salga con estos cambios.</p>
+          </div>
+        </div>
+      </Seccion>
+      {prueba && <Ticket venta={{ ...PRUEBA, totalBs: String(9.86 * (tasa ?? 0)), tasa: String(tasa ?? 0) }} onCerrar={() => setPrueba(false)} />}
+    </div>
+  );
+}

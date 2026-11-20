@@ -1,4 +1,4 @@
-import { BarChart3, ClipboardList, Receipt, Tags, BookLock, Building2, MessageCircle, PieChart, Truck, Camera, Clock, Package, ShieldCheck, ShoppingCart, UserCog, Users, Wallet } from 'lucide-react';
+import { BarChart3, Settings, ClipboardList, Receipt, Tags, BookLock, Building2, MessageCircle, PieChart, Truck, Camera, Clock, Package, ShieldCheck, ShoppingCart, UserCog, Users, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Rol } from '@farmacia/shared';
 
@@ -22,6 +22,7 @@ export const NAV: NavItem[] = [
   { to: '/reportes', label: 'Reportes', short: 'Reportes', icon: PieChart, roles: ['ADMIN'] },
   { to: '/resumen', label: 'Resumen', short: 'Resumen', icon: BarChart3, roles: ['ADMIN'] },
   { to: '/auditoria', label: 'Auditoría', short: 'Auditoría', icon: ClipboardList, roles: ['ADMIN'] },
+  { to: '/configuracion', label: 'Configuración', short: 'Ajustes', icon: Settings, roles: ['ADMIN'] },
   { to: '/usuarios', label: 'Usuarios', short: 'Usuarios', icon: UserCog, roles: ['ADMIN'] },
 ];
 

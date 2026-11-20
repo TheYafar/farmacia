@@ -421,3 +421,24 @@ export const preciosMasivoSchema = z.object({
 export type PreciosMasivoInput = z.infer<typeof preciosMasivoSchema>;
 
 export const codigo2faSchema = z.object({ codigo: z.string().trim().regex(/^\d{6}$/, 'El código tiene 6 números') });
+
+const opcional = (max: number) => z.string().trim().max(max).optional().transform((v) => (v === '' ? null : v));
+export const configuracionGeneralSchema = z.object({
+  tasaModo: z.enum(['BCV_USD', 'BCV_EUR', 'MANUAL']).optional(),
+  tasaAjusteTipo: z.enum(['NINGUNO', 'BS', 'PCT']).optional(),
+  tasaAjusteValor: z.number().min(0).max(100_000).optional(),
+  igtfActivo: z.boolean().optional(),
+  igtfPct: z.number().min(0).max(10).optional(),
+  farmaciaNombre: opcional(80),
+  farmaciaRif: opcional(20),
+  farmaciaDireccion: opcional(160),
+  farmaciaTelefono: opcional(40),
+  ticketPie: opcional(200),
+  ticketAncho: z.union([z.literal(58), z.literal(80)]).optional(),
+  ticketLetra: z.number().int().min(9).max(16).optional(),
+  ticketCopias: z.number().int().min(1).max(3).optional(),
+  ticketAuto: z.boolean().optional(),
+  ticketMostrarBs: z.boolean().optional(),
+  ticketMostrarTasa: z.boolean().optional(),
+});
+export type ConfiguracionGeneralInput = z.infer<typeof configuracionGeneralSchema>;

@@ -17,7 +17,7 @@ async function main() {
     if (!usuario || !clave || clave.length < 10) {
       throw new Error('Define SEED_ADMIN_USUARIO y SEED_ADMIN_CLAVE (mínimo 10 caracteres) para crear el usuario del dueño');
     }
-    await prisma.usuario.create({ data: { nombre: 'Dueño', usuario, rol: 'ADMIN', claveHash: await cifrarClave(clave) } });
+    await prisma.usuario.create({ data: { nombre: process.env.SEED_ADMIN_NOMBRE?.trim() || 'Administrador', usuario, rol: 'ADMIN', claveHash: await cifrarClave(clave) } });
     console.log(`Usuario del dueño creado: ${usuario}. Cambia la clave al entrar por primera vez.`);
   }
 

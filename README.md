@@ -4,6 +4,8 @@ Sistema de mostrador para farmacias en Venezuela: venta con alternativas por pre
 
 **Demo de la interfaz (datos de ejemplo):** https://theyafar.github.io/farmacia/
 
+Capturas de la app real en [`docs/pantallas`](docs/pantallas).
+
 ## Documentación
 
 | Documento | Contenido |

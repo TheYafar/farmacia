@@ -51,6 +51,46 @@ Ejemplo de cálculo, **solo ilustrativo**: si el Plan Completo incluye 300 lectu
 - **El mismo sistema se vende a muchas farmacias**: cada cliente nuevo cuesta poco más que la instalación.
 - **La farmacia no necesita saber de servidores**: tú te encargas de respaldos, seguridad y actualizaciones.
 
+## 3b. Propuesta concreta de precios
+
+Punto de partida para empezar a vender. Revísalo cuando la prueba con récipes reales dé el costo exacto de la IA, y compáralo con lo que la farmacia paga hoy por su sistema.
+
+### Lo que te cuesta cada farmacia al mes (estimado)
+
+| Concepto | Plan Mostrador | Plan Completo |
+|---|---|---|
+| Parte del VPS, dominio y respaldos | 5 $ | 5 $ |
+| IA: 300 lecturas al mes con Opus (0,03–0,06 $ c/u) | — | 9 – 18 $ |
+| WhatsApp (depende de los encargos; confirmar tarifa de Meta) | — | 2 – 5 $ |
+| **Total** | **≈ 5 $** | **≈ 16 – 28 $** |
+
+Si el modelo barato (Haiku) pasa la prueba de récipes, la IA baja a menos de 1 $ y el Plan Completo te cuesta unos 8 $.
+
+### Precios
+
+| Concepto | Precio | Qué incluye |
+|---|---|---|
+| **Plan Mostrador** | **30 $/mes** | Vender, clientes, encargos, inventario y carga desde Excel, resumen, usuarios, respaldos diarios y soporte |
+| **Plan Completo** | **70 $/mes** | Todo lo anterior, más 300 lecturas de récipes con IA al mes y avisos por WhatsApp |
+| Lecturas de récipes extra | 0,15 $ c/u | Por encima de las 300 del mes |
+| Instalación (farmacias nuevas) | 250 $ una vez | Carga del inventario, usuarios y 2 horas de capacitación |
+| Cambios a la medida | Se cotizan aparte | Funciones que solo pide esa farmacia |
+| Pago anual | 10 meses | Paga el año por adelantado y se lleva 2 meses gratis |
+
+Con estos precios tus costos son como máximo el **17 % del Plan Mostrador** y el **23–40 % del Plan Completo** (menos del 15 % si Haiku pasa la prueba).
+
+**Ejemplo con 10 farmacias en Plan Completo:** cobras 700 $/mes, te cuestan unos 160–280 $, y te quedan **420–540 $ al mes** para tu tiempo, el soporte y la ganancia. Con Haiku te quedarían unos 620 $.
+
+### Cómo se paga
+
+| Punto | Propuesta |
+|---|---|
+| Moneda | Dólares (Zelle, USDT o transferencia), o bolívares a la **tasa BCV del día del pago** |
+| Fecha | El aviso de cobro sale el día 1; se paga hasta el **día 5** |
+| Si no paga | Recordatorio el día 6; desde el **día 15** el sistema queda en **solo consulta** (no se puede vender) hasta que pague. **Nunca se borran sus datos** |
+| Soporte incluido | Lunes a sábado, 8 a. m. a 6 p. m., por WhatsApp. Si algo impide vender, respuesta en menos de 2 horas |
+| Cambio de precios | Máximo una vez al año, con 30 días de aviso |
+
 ## 4. Qué hacer con el primer cliente (los 1.000 $)
 
 Trátalo como **«Farmacia fundadora»**:
@@ -58,6 +98,20 @@ Trátalo como **«Farmacia fundadora»**:
 - Los 1.000 $ cubren la **implementación y la adaptación** a su farmacia, pagados por fases (ej. 30 % / 40 % / 30 %).
 - Después paga la **suscripción mensual**, con un descuento de fundador (por ejemplo, los primeros meses a mitad de precio o un precio fijo por un año).
 - A cambio: te deja usar su farmacia como **referencia** con otros clientes y te da sus comentarios para mejorar el sistema.
+
+### Cotización concreta para la farmacia fundadora
+
+| Concepto | Monto |
+|---|---|
+| Desarrollo e instalación | **1.000 $**, en 3 pagos |
+| · Al firmar | 300 $ |
+| · Al instalarlo y probarlo en la farmacia | 400 $ |
+| · A los 30 días funcionando sin problemas | 300 $ |
+| Primeros 2 meses de servicio | Incluidos (0 $) |
+| Mensualidad desde el mes 3 | **45 $/mes** con el Plan Completo, precio fijo por 12 meses (después pasa a precio normal) |
+| Lecturas de IA extra | 0,15 $ c/u por encima de las 300 del mes |
+
+A cambio del precio de fundador: te deja mostrar su farmacia como referencia y te da sus comentarios cada mes.
 
 **Muy importante en el contrato:** los 1.000 $ pagan la implementación y el uso del sistema, **no la propiedad del código**. El software sigue siendo tuyo, para poder ofrecerlo a otras farmacias. Si el cliente quiere exclusividad o el código, es otro precio mucho mayor.
 

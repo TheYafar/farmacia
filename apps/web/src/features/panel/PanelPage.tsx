@@ -28,7 +28,10 @@ function VentasChart({ semana }: { semana: Resumen['semana'] }) {
     return { etiqueta: i === 6 ? 'Hoy' : DIAS[d.getUTCDay()]!, usd: v ? Number(v.usd) : 0 };
   });
   const max = Math.max(...dias.map((d) => d.usd), 1);
-  const paso = max <= 100 ? 25 : max <= 500 ? 100 : 500;
+  // Escala "redonda" de unas 4 divisiones: 1, 2, 5, 10, 20, 50…
+  const bruto = max / 4;
+  const potencia = 10 ** Math.floor(Math.log10(bruto));
+  const paso = [1, 2, 5, 10].map((m) => m * potencia).find((x) => x >= bruto)!;
   const top = Math.ceil(max / paso) * paso;
   const W = 520, H = 180, pl = 44, pb = 22, pt = 8;
   const x = (i: number) => pl + (i * (W - pl - 10)) / 6;

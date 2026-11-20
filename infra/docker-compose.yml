@@ -1,0 +1,66 @@
+# Producción en el VPS. Uso (desde la carpeta infra/):
+#   cp .env.example .env   # y llenar los valores
+#   docker compose up -d --build
+name: farmacia
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: farmacia
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Falta DB_PASSWORD en .env}
+      POSTGRES_DB: farmacia
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U farmacia"]
+      interval: 10s
+      retries: 5
+    # Sin "ports": la base de datos NO es accesible desde internet, solo desde la API.
+    security_opt: ["no-new-privileges:true"]
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/api.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://farmacia:${DB_PASSWORD}@db:5432/farmacia
+      JWT_SECRET: ${JWT_SECRET:?Falta JWT_SECRET en .env}
+      CORS_ORIGINS: https://${DOMINIO:?Falta DOMINIO en .env}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      UPLOAD_DIR: /app/apps/api/uploads
+      NOTIFICADOR: ${NOTIFICADOR:-log}
+      SEED_ADMIN_USUARIO: ${SEED_ADMIN_USUARIO:-}
+      SEED_ADMIN_CLAVE: ${SEED_ADMIN_CLAVE:-}
+    volumes:
+      - uploads:/app/apps/api/uploads
+    security_opt: ["no-new-privileges:true"]
+
+  web:
+    build:
+      context: ..
+      dockerfile: infra/web.Dockerfile
+    restart: unless-stopped
+    depends_on: [api]
+    environment:
+      DOMINIO: ${DOMINIO}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  db:
+  uploads:
+  caddy_data:
+  caddy_config:

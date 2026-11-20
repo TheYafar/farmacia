@@ -3,6 +3,7 @@ name: Publicar demo en GitHub Pages
 on:
   push:
     branches: [main]
+    paths: ['apps/web/**', 'packages/shared/**', '.github/workflows/deploy.yml']
   workflow_dispatch:
 
 permissions:
@@ -23,12 +24,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm run build:pages
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: apps/web/dist
 
   deploy:
     needs: build

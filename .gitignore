@@ -23,3 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 dist-demo
+
+# Despliegue
+infra/.env
+apps/api/uploads
+apps/api/dist-test

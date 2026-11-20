@@ -1,40 +1,18 @@
 {
-  "name": "farmacia-app",
+  "name": "farmacia",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "build:pages": "tsc -b && vite build --mode pages",
-    "build:demo": "tsc -b && vite build --mode demo",
-    "lint": "eslint .",
-    "preview": "vite preview"
+    "dev:web": "npm run dev -w @farmacia/web",
+    "dev:api": "npm run dev -w @farmacia/api",
+    "build": "npm run build -w @farmacia/shared && npm run build -w @farmacia/api && npm run build -w @farmacia/web",
+    "build:pages": "npm run build -w @farmacia/shared && npm run build:pages -w @farmacia/web",
+    "test": "npm run build -w @farmacia/shared && npm test -w @farmacia/api"
   },
-  "dependencies": {
-    "clsx": "^2.1.1",
-    "lucide-react": "^0.460.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.28.0",
-    "zustand": "^4.5.5"
-  },
-  "devDependencies": {
-    "@eslint/js": "^9.13.0",
-    "@types/node": "^22.10.1",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.3",
-    "autoprefixer": "^10.4.20",
-    "eslint": "^9.13.0",
-    "eslint-plugin-react-hooks": "^5.0.0",
-    "eslint-plugin-react-refresh": "^0.4.14",
-    "globals": "^15.11.0",
-    "postcss": "^8.4.49",
-    "tailwindcss": "^3.4.17",
-    "typescript": "~5.6.2",
-    "typescript-eslint": "^8.11.0",
-    "vite": "^5.4.10",
-    "vite-plugin-singlefile": "^2.0.3"
+  "engines": {
+    "node": ">=22"
   }
 }

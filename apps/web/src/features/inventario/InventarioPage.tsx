@@ -14,10 +14,10 @@ const sem = (d: number) =>
   d <= 30 ? { tone: 'bad' as const, txt: 'Vence este mes' } : d <= 90 ? { tone: 'warn' as const, txt: 'Vence pronto' } : { tone: 'ok' as const, txt: 'Bien' };
 const fmtFecha = (iso: string) => new Date(iso).toLocaleDateString('es-VE', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
-interface LineaCompra { producto: Opcion | null; numeroLote: string; vence: string; cantidad: string; factorVenta: string }
-const nueva = (): LineaCompra => ({ producto: null, numeroLote: '', vence: '', cantidad: '', factorVenta: '1' });
+interface LineaCompra { producto: Opcion | null; numeroLote: string; vence: string; cantidad: string; factorVenta: string; costoUsd: string }
+const nueva = (): LineaCompra => ({ producto: null, numeroLote: '', vence: '', cantidad: '', factorVenta: '1', costoUsd: '' });
 
-function ElegirProducto({ valor, onElegir }: { valor: Opcion | null; onElegir: (o: Opcion) => void }) {
+export function ElegirProducto({ valor, onElegir }: { valor: Opcion | null; onElegir: (o: Opcion) => void }) {
   const [q, setQ] = useState('');
   const [res, setRes] = useState<Opcion[]>([]);
   useEffect(() => {
@@ -43,6 +43,7 @@ function ElegirProducto({ valor, onElegir }: { valor: Opcion | null; onElegir: (
 function CargarCompra({ abierto, onCerrar, onListo }: { abierto: boolean; onCerrar: () => void; onListo: () => void }) {
   const [proveedor, setProveedor] = useState('');
   const [factura, setFactura] = useState('');
+  const [credito, setCredito] = useState('0');
   const [lineas, setLineas] = useState<LineaCompra[]>([nueva()]);
   const [error, setError] = useState<string | null>(null);
   const cambiar = (i: number, c: Partial<LineaCompra>) => setLineas((ls) => ls.map((l, j) => (j === i ? { ...l, ...c } : l)));
@@ -57,7 +58,8 @@ function CargarCompra({ abierto, onCerrar, onListo }: { abierto: boolean; onCerr
           const r = await api<{ clientesAvisados: number }>('/inventario/compras', {
             body: {
               proveedor, numeroFactura: factura,
-              lineas: lineas.map((l) => ({ productoId: l.producto!.id, numeroLote: l.numeroLote, vence: l.vence, cantidad: Number(l.cantidad), factorVenta: Number(l.factorVenta) || 1 })),
+              lineas: lineas.map((l) => ({ productoId: l.producto!.id, numeroLote: l.numeroLote, vence: l.vence, cantidad: Number(l.cantidad), factorVenta: Number(l.factorVenta) || 1, costoUsd: Number(l.costoUsd.replace(',', '.')) || 0 })),
+              diasCredito: Number(credito) || 0,
             },
           });
           avisar(r.clientesAvisados ? `Compra cargada. Se avisó a ${r.clientesAvisados} ${r.clientesAvisados === 1 ? 'cliente' : 'clientes'} que esperaban` : 'Compra cargada', 'ok');
@@ -70,6 +72,7 @@ function CargarCompra({ abierto, onCerrar, onListo }: { abierto: boolean; onCerr
         <div className="grid grid-cols-2 gap-2">
           <Campo etiqueta="Droguería"><input required value={proveedor} onChange={(e) => setProveedor(e.target.value)} className={claseInput} /></Campo>
           <Campo etiqueta="N.º de factura"><input required value={factura} onChange={(e) => setFactura(e.target.value)} className={claseInput} /></Campo>
+          <Campo etiqueta="Días de crédito" ayuda="0 si se pagó de contado"><input inputMode="numeric" value={credito} onChange={(e) => setCredito(e.target.value.replace(/\D/g, ''))} className={claseInput} /></Campo>
         </div>
         {lineas.map((l, i) => (
           <div key={i} className="flex flex-col gap-2 rounded-xl border border-line p-3">
@@ -82,6 +85,7 @@ function CargarCompra({ abierto, onCerrar, onListo }: { abierto: boolean; onCerr
               <Campo etiqueta="Vence"><input required type="date" value={l.vence} onChange={(e) => cambiar(i, { vence: e.target.value })} className={claseInput} /></Campo>
               <Campo etiqueta="Cajas recibidas"><input required inputMode="numeric" value={l.cantidad} onChange={(e) => cambiar(i, { cantidad: e.target.value.replace(/\D/g, '') })} className={claseInput} /></Campo>
               <Campo etiqueta="Unidades de venta por caja" ayuda="1 si se vende tal cual. 10 si una caja grande trae 10 tiras"><input inputMode="numeric" value={l.factorVenta} onChange={(e) => cambiar(i, { factorVenta: e.target.value.replace(/\D/g, '') })} className={claseInput} /></Campo>
+              <Campo etiqueta="Costo por caja ($)" ayuda="Para saber la ganancia y lo que se debe"><input inputMode="decimal" value={l.costoUsd} onChange={(e) => cambiar(i, { costoUsd: e.target.value.replace(/[^\d.,]/g, '') })} className={claseInput} /></Campo>
             </div>
           </div>
         ))}

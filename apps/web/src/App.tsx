@@ -13,6 +13,7 @@ import EncargosPage from '@/features/espera/EsperaPage';
 import InventarioPage from '@/features/inventario/InventarioPage';
 import ResumenPage from '@/features/panel/PanelPage';
 import UsuariosPage from '@/features/usuarios/UsuariosPage';
+import { ComprasPage, LibroPage, MayoristaPage, ReportesPage, WhatsappPage } from '@/features/negocio/Negocio';
 import CajaPage from '@/features/caja/CajaPage';
 import { useCaja } from '@/store/caja';
 
@@ -40,6 +41,7 @@ export default function App() {
     ['/vender', <VenderPage />], ['/caja', <CajaPage />], ['/recipe', <RecipePage />], ['/clientes', <ClientesPage />],
     ['/revisar', <RevisarPage />], ['/encargos', <EncargosPage />], ['/inventario', <InventarioPage />],
     ['/resumen', <ResumenPage />], ['/usuarios', <UsuariosPage />],
+    ['/compras', <ComprasPage />], ['/mayor', <MayoristaPage />], ['/whatsapp', <WhatsappPage />], ['/controlados', <LibroPage />], ['/reportes', <ReportesPage />],
   ];
   return (
     <Routes>

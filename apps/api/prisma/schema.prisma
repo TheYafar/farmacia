@@ -146,6 +146,11 @@ model Compra {
   id            String        @id @default(uuid()) @db.Uuid
   proveedor     String
   numeroFactura String
+  /// Cuentas por pagar: total de la factura, pagado y fecha de vencimiento del crédito.
+  totalUsd      Decimal       @default(0) @db.Decimal(12, 2)
+  pagadoUsd     Decimal       @default(0) @db.Decimal(12, 2)
+  venceEn       DateTime?
+  pagos         PagoProveedor[]
   creadaPorId   String        @db.Uuid
   creadaPor     Usuario       @relation(fields: [creadaPorId], references: [id])
   creadaEn      DateTime      @default(now())
@@ -164,6 +169,8 @@ model CompraLinea {
   vence       DateTime @db.Date
   cantidad    Int
   factorVenta Int      @default(1)
+  /// Costo por unidad de compra, en $. Sirve para la ganancia.
+  costoUsd    Decimal  @default(0) @db.Decimal(12, 2)
 }
 
 // ---------- Pacientes y récipes ----------
@@ -424,4 +431,88 @@ model Auditoria {
 
   @@index([entidad, entidadId])
   @@index([creadaEn])
+}
+
+/// Pago a una droguería por una compra a crédito.
+model PagoProveedor {
+  id         String   @id @default(uuid()) @db.Uuid
+  compraId   String   @db.Uuid
+  compra     Compra   @relation(fields: [compraId], references: [id], onDelete: Cascade)
+  montoUsd   Decimal  @db.Decimal(12, 2)
+  metodo     String
+  referencia String?
+  usuarioId  String   @db.Uuid
+  creadoEn   DateTime @default(now())
+}
+
+/// Cliente que compra al mayor: clínica, farmacia o empresa.
+model ClienteEmpresa {
+  id           String        @id @default(uuid()) @db.Uuid
+  rif          String        @unique
+  nombre       String
+  telefono     String?
+  limiteUsd    Decimal       @db.Decimal(12, 2)
+  diasCredito  Int           @default(15)
+  /// Descuento sobre el precio de detal: así sale su precio de mayor.
+  descuentoPct Decimal       @default(10) @db.Decimal(5, 2)
+  activo       Boolean       @default(true)
+  creadoEn     DateTime      @default(now())
+  pedidos      PedidoMayor[]
+}
+
+enum EstadoPedidoMayor {
+  COTIZACION
+  PEDIDO
+  DESPACHADO
+  ENTREGADO
+  ANULADO
+}
+
+model PedidoMayor {
+  id        String             @id @default(uuid()) @db.Uuid
+  numero    Int                @default(autoincrement()) @unique
+  clienteId String             @db.Uuid
+  cliente   ClienteEmpresa     @relation(fields: [clienteId], references: [id])
+  estado    EstadoPedidoMayor  @default(COTIZACION)
+  totalUsd  Decimal            @db.Decimal(12, 2)
+  pagadoUsd Decimal            @default(0) @db.Decimal(12, 2)
+  venceEn   DateTime?
+  creadoPorId String           @db.Uuid
+  creadoEn  DateTime           @default(now())
+  lineas    PedidoMayorLinea[]
+  abonos    AbonoMayor[]
+
+  @@index([clienteId, estado])
+}
+
+model PedidoMayorLinea {
+  id         String      @id @default(uuid()) @db.Uuid
+  pedidoId   String      @db.Uuid
+  pedido     PedidoMayor @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  productoId String      @db.Uuid
+  cantidad   Int
+  precioUsd  Decimal     @db.Decimal(12, 2)
+}
+
+model AbonoMayor {
+  id         String      @id @default(uuid()) @db.Uuid
+  pedidoId   String      @db.Uuid
+  pedido     PedidoMayor @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  montoUsd   Decimal     @db.Decimal(12, 2)
+  metodo     String
+  referencia String?
+  usuarioId  String      @db.Uuid
+  creadoEn   DateTime    @default(now())
+}
+
+/// Registro de mensajes de WhatsApp enviados a clientes (recordatorios de recompra).
+model MensajeWhatsapp {
+  id         String   @id @default(uuid()) @db.Uuid
+  cedula     String
+  productoId String?  @db.Uuid
+  tipo       String
+  usuarioId  String   @db.Uuid
+  creadoEn   DateTime @default(now())
+
+  @@index([cedula, creadoEn])
 }

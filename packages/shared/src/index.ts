@@ -155,6 +155,8 @@ export type TasaInput = z.infer<typeof tasaSchema>;
 export const compraSchema = z.object({
   proveedor: texto(120),
   numeroFactura: texto(40),
+  /** Días de crédito que da la droguería (0 = de contado). */
+  diasCredito: z.number().int().min(0).max(180).default(0),
   lineas: z
     .array(
       z.object({
@@ -163,12 +165,36 @@ export const compraSchema = z.object({
         vence: z.coerce.date(),
         cantidad: z.number().int().positive().max(100_000),
         factorVenta: z.number().int().positive().max(1000).default(1),
+        costoUsd: z.number().nonnegative().max(1_000_000).default(0),
       }),
     )
     .min(1)
     .max(500),
 });
 export type CompraInput = z.infer<typeof compraSchema>;
+
+export const abonoSchema = z.object({
+  montoUsd: z.number().positive().max(1_000_000),
+  metodo: texto(30),
+  referencia: z.string().trim().max(60).optional(),
+});
+export type AbonoInput = z.infer<typeof abonoSchema>;
+
+export const clienteEmpresaSchema = z.object({
+  rif: z.string().trim().toUpperCase().regex(/^[JGVEP]-?\d{8}-?\d$/, 'RIF inválido (ej. J-12345678-9)'),
+  nombre: texto(120),
+  telefono: z.string().trim().max(20).optional(),
+  limiteUsd: z.number().nonnegative().max(1_000_000),
+  diasCredito: z.number().int().min(0).max(180).default(15),
+  descuentoPct: z.number().min(0).max(60).default(10),
+});
+export type ClienteEmpresaInput = z.infer<typeof clienteEmpresaSchema>;
+
+export const pedidoMayorSchema = z.object({
+  clienteId: z.string().uuid(),
+  lineas: z.array(z.object({ productoId: z.string().uuid(), cantidad: z.number().int().positive().max(100_000) })).min(1).max(200),
+});
+export type PedidoMayorInput = z.infer<typeof pedidoMayorSchema>;
 
 /** El Regente aprueba un producto para un paciente: la venta debe citar esta autorización. */
 export const autorizacionSchema = z.object({

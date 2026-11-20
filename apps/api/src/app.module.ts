@@ -22,6 +22,7 @@ import { RecipesModule } from './recipes/recipes';
 import { ReportesModule } from './reportes/reportes';
 import { SaludModule } from './salud/salud';
 import { CajaModule } from './caja/caja';
+import { NegocioModule } from './negocio/negocio';
 import { Global } from '@nestjs/common';
 
 export function crearModulo(config: Config) {
@@ -39,7 +40,7 @@ export function crearModulo(config: Config) {
       ScheduleModule.forRoot(),
       AuditoriaModule, NotificacionesModule,
       AuthModule, UsuariosModule, CatalogoModule, TasaModule, PacientesModule, AutorizacionesModule,
-      CajaModule, VentasModule, EsperaModule, InventarioModule, RecipesModule, ReportesModule, SaludModule,
+      CajaModule, NegocioModule, VentasModule, EsperaModule, InventarioModule, RecipesModule, ReportesModule, SaludModule,
     ],
     providers: [
       { provide: APP_GUARD, useClass: ThrottlerGuard },

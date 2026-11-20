@@ -48,7 +48,11 @@ export class InventarioController {
     let avisos: ReservaLista[] = [];
     const compra = await this.prisma.$transaction(async (tx) => {
       const c = await tx.compra.create({
-        data: { proveedor: b.proveedor, numeroFactura: b.numeroFactura, creadaPorId: u.id, lineas: { create: b.lineas } },
+        data: {
+          proveedor: b.proveedor, numeroFactura: b.numeroFactura, creadaPorId: u.id, lineas: { create: b.lineas },
+          totalUsd: b.lineas.reduce((a, l) => a + l.cantidad * l.costoUsd, 0).toFixed(2),
+          venceEn: new Date(Date.now() + b.diasCredito * 86_400_000),
+        },
       });
       for (const l of b.lineas) {
         const unidades = l.cantidad * l.factorVenta;

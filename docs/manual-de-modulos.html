@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Manual de módulos</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm 18mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; color: #14211c; font-size: 10.5pt; line-height: 1.45; margin: 0; }
+  h1, h2, h3 { color: #0b5a45; margin: 0; }
+  .portada { height: 255mm; display: flex; flex-direction: column; justify-content: space-between; padding: 22mm 14mm; background: linear-gradient(150deg, #0d8a67, #063f30); color: #fff; border-radius: 6mm; page-break-after: always; }
+  .portada h1 { color: #fff; font-size: 34pt; line-height: 1.1; }
+  .portada p { font-size: 13pt; color: rgba(255,255,255,.85); max-width: 130mm; }
+  .cruz { width: 22mm; height: 22mm; border-radius: 5mm; background: rgba(255,255,255,.15); display: grid; place-items: center; }
+  h2 { page-break-after: avoid; break-after: avoid; font-size: 17pt; margin: 0 0 3mm; padding-bottom: 2mm; border-bottom: 2px solid #d8efe6; }
+  h3 { font-size: 12.5pt; margin: 0 0 1.5mm; display: flex; align-items: center; gap: 2mm; }
+  section { margin-bottom: 7mm; }
+  .salto { page-break-before: always; }
+  .modulo { border: 1px solid #d3ddd8; border-radius: 3mm; padding: 3.5mm 4mm; margin-bottom: 3.5mm; page-break-inside: avoid; }
+  .modulo p { margin: 0 0 1.5mm; }
+  .fila { display: grid; grid-template-columns: 30mm 1fr; gap: 1mm 3mm; font-size: 10pt; }
+  .fila b { color: #5b6d66; font-weight: 600; }
+  .rol { display: inline-block; font-size: 8pt; font-weight: 700; padding: .4mm 2mm; border-radius: 10mm; background: #d8efe6; color: #0b5a45; margin-left: 1mm; }
+  .grupo { page-break-after: avoid; break-after: avoid; font-size: 9pt; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #5b6d66; margin: 5mm 0 2mm; }
+  table { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
+  th, td { text-align: left; padding: 1.6mm 2mm; border-bottom: 1px solid #e3ebe7; vertical-align: top; }
+  th { background: #eef5f1; color: #0b5a45; }
+  .si { color: #1b8a4b; font-weight: 700; } .no { color: #b7b7b7; }
+  .nota { background: #fbecd2; border-radius: 2.5mm; padding: 3mm 4mm; color: #6b4300; margin: 3mm 0; page-break-inside: avoid; }
+  .info { background: #dfe9f8; border-radius: 2.5mm; padding: 3mm 4mm; color: #1f3f73; margin: 3mm 0; page-break-inside: avoid; }
+  ol, ul { margin: 1mm 0 2mm 5mm; padding: 0; } li { margin-bottom: 1mm; }
+  /* Mapa */
+  .mapa { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm 6mm; margin: 4mm 0; }
+  .caja { border: 1.5px solid #0d8a67; border-radius: 3mm; padding: 2.5mm 3mm; background: #f3faf7; page-break-inside: avoid; }
+  .caja b { color: #0b5a45; display: block; font-size: 10.5pt; }
+  .caja span { font-size: 8.8pt; color: #3d4f48; }
+  .flecha { font-size: 9pt; color: #0b5a45; font-weight: 600; }
+  .flujo { counter-reset: paso; list-style: none; margin: 0; padding: 0; }
+  .flujo li { page-break-inside: avoid; counter-increment: paso; position: relative; padding: 2mm 0 2mm 11mm; border-left: 2px solid #d8efe6; margin-left: 4mm; }
+  .flujo li::before { content: counter(paso); position: absolute; left: -4.2mm; top: 1.6mm; width: 7mm; height: 7mm; border-radius: 50%; background: #0d8a67; color: #fff; font-weight: 700; font-size: 9pt; display: grid; place-items: center; }
+  .pie { font-size: 8.5pt; color: #5b6d66; margin-top: 6mm; }
+</style>
+</head>
+<body>
+
+<div class="portada">
+  <div class="cruz"><svg viewBox="0 0 24 24" width="48" height="48"><path fill="white" d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z"/></svg></div>
+  <div>
+    <h1>Sistema de mostrador<br>para farmacias</h1>
+    <p style="margin-top:6mm">Manual de módulos: qué hace cada parte, cómo se usa y cómo se conecta con las demás.</p>
+  </div>
+  <p style="font-size:10pt">Versión del 20 de noviembre de 2026 · Documento para socios y dueños</p>
+</div>
+
+<section>
+  <h2>1. La idea en una página</h2>
+  <p>El sistema hace tres trabajos en una farmacia venezolana:</p>
+  <ol>
+    <li><b>Vender rápido y bien:</b> buscar el medicamento (o su genérico más barato) y cobrar en dólares y bolívares con la tasa del BCV del día.</li>
+    <li><b>Vender sin problemas legales:</b> que nadie venda un antibiótico o un psicotrópico sin récipe ni sin el permiso del farmacéutico. Además, el libro de controlados se llena solo.</li>
+    <li><b>Que el dueño sepa qué pasa:</b> cuánto se vendió y ganó, qué falta, qué se vence, si las cajas cuadran y quién hizo cada cosa.</li>
+  </ol>
+  <p>Funciona en el navegador de una computadora, una tablet o un teléfono, sin instalar nada. Cada farmacia tiene su propio servidor y sus datos no se mezclan con los de otras.</p>
+
+  <h3 style="margin-top:4mm">Los tres roles</h3>
+  <table>
+    <tr><th style="width:28mm">Rol</th><th>Para quién</th><th>Qué ve</th></tr>
+    <tr><td><b>Cajero</b></td><td>Quien atiende el mostrador</td><td>Vender, Caja, Ventas (solo las suyas), Récipe, Clientes y Soporte</td></tr>
+    <tr><td><b>Farmacéutico</b> (regente)</td><td>El responsable sanitario</td><td>Lo del cajero, más Por revisar, Controlados, Encargos, WhatsApp, Inventario y Catálogo</td></tr>
+    <tr><td><b>Dueño</b></td><td>El dueño o el administrador</td><td>Todo, incluido Resumen, Reportes, Compras, Al mayor, Cajas, Usuarios, Configuración y Auditoría</td></tr>
+  </table>
+  <p style="margin-top:2mm">El menú está agrupado: <b>Vender · Clientes · Inventario · Farmacéutico · Negocio · Administración</b>. Cada persona solo ve lo que le toca. Si intenta entrar a otra parte, el servidor también la rechaza.</p>
+</section>
+
+<section class="salto">
+  <h2>2. Cómo se conectan los módulos</h2>
+  <p>Ningún módulo trabaja solo. Este mapa muestra por dónde pasa la información:</p>
+  <div class="mapa">
+    <div class="caja"><b>Catálogo</b><span>Productos, precios, principios activos y riesgo (normal, antibiótico, psicotrópico)</span></div>
+    <div class="caja"><b>Compras</b><span>Lo que llega de la droguería crea los lotes con su vencimiento</span></div>
+    <div class="caja"><b>Inventario</b><span>Existencia por lote, vencimientos, carga por Excel y ajustes</span></div>
+    <div class="caja"><b>Vender</b><span>Busca en el catálogo, descuenta del inventario y frena lo que necesita permiso</span></div>
+    <div class="caja"><b>Por revisar</b><span>El farmacéutico aprueba récipes y permisos que pidió Vender</span></div>
+    <div class="caja"><b>Encargos</b><span>Lo que no había. Al llegar la compra se le aparta al cliente</span></div>
+    <div class="caja"><b>Caja</b><span>Cada venta suma al turno. Al cerrar se compara lo contado con lo esperado</span></div>
+    <div class="caja"><b>Controlados</b><span>Cada venta o compra de un controlado se anota sola en el libro</span></div>
+    <div class="caja"><b>Clientes y WhatsApp</b><span>El historial de compras sirve para avisar cuándo recomprar</span></div>
+    <div class="caja"><b>Resumen y Reportes</b><span>Leen ventas, caja, inventario y compras para mostrar números</span></div>
+    <div class="caja"><b>Configuración</b><span>La tasa del día y los impuestos que usan Vender y el ticket</span></div>
+    <div class="caja"><b>Auditoría</b><span>Todo lo que toca dinero, inventario o permisos queda registrado</span></div>
+  </div>
+  <p class="flecha">El camino de un medicamento: Compras → Inventario (lote) → Vender → Caja → Reportes. Si es controlado, también va al libro de Controlados. Si no había, pasa por Encargos.</p>
+</section>
+
+<section>
+  <h2>3. Un día normal en la farmacia</h2>
+  <ol class="flujo">
+    <li><b>7:30 a. m.</b> El dueño revisa la <b>tasa del día</b> en el Resumen. Si está en modo automático, el sistema la toma del BCV. Una tasa nueva que el BCV publica en la tarde se aplica a medianoche, para que los precios no cambien con la farmacia abierta.</li>
+    <li><b>8:00 a. m.</b> La cajera entra en la tablet, que ya está vinculada como <b>«Caja 1»</b>, y <b>abre la caja</b> con el sencillo (por ejemplo $20 y Bs 500).</li>
+    <li>Llega un cliente pidiendo losartán. En <b>Vender</b> ya está todo el inventario a la vista. Al escribir «losartan» salen todas las marcas con su precio, y la más barata marcada. Toca «Agregar» y cobra: mitad por pago móvil y mitad en efectivo en dólares. El vuelto se calcula solo y se imprime o se envía el ticket por WhatsApp.</li>
+    <li>Otro cliente pide amoxicilina, que es un antibiótico. El sistema pide su <b>cédula y el récipe</b>. La cajera toma la foto en <b>Récipe</b>, y al farmacéutico le aparece en <b>Por revisar</b>. Él lo aprueba y la venta sigue. La salida queda anotada sola en el <b>libro de Controlados</b>.</li>
+    <li>Alguien pide glibenclamida y no hay. Se anota en <b>Encargos</b> con su cédula.</li>
+    <li><b>11:00 a. m.</b> Llega la droguería. El dueño registra la compra en <b>Compras</b> y se crean los lotes. Como alguien esperaba glibenclamida, se le <b>aparta una caja</b> por 3 horas y se genera el aviso.</li>
+    <li><b>2:00 p. m.</b> Cambio de turno. La cajera <b>cierra su caja</b> contando el dinero sin saber cuánto debería haber (cierre a ciegas). El sistema compara, y si falta algo el dueño lo ve en los cierres.</li>
+    <li><b>Noche.</b> El dueño mira <b>Reportes</b> desde su teléfono: ventas, ganancia, lo que más se vende, lo que no se mueve y la comparación con el mes anterior.</li>
+  </ol>
+</section>
+
+<section>
+  <h2 style="margin-top:4mm">4. Cada módulo, uno por uno</h2>
+
+  <div class="grupo">Vender</div>
+  <div class="modulo"><h3>Vender <span class="rol">Todos</span></h3>
+    <p>La pantalla del mostrador. Al entrar se ve todo el inventario por categorías, con existencia y precio en $ y Bs. Al escribir se busca por nombre comercial, principio activo, concentración o código de barras, y entiende errores de escritura («rivotrol» encuentra «Rivotril»). Los resultados se agrupan: todas las marcas del mismo medicamento juntas, de la más barata a la más cara.</p>
+    <div class="fila">
+      <b>Cobro</b><span>Pago móvil, punto de venta, efectivo en $ o en Bs, o varios a la vez. Calcula el vuelto, el IVA y el IGTF si están activos, y redondea los bolívares si se configuró.</span>
+      <b>Frena</b><span>Antibióticos y psicotrópicos (piden cédula y récipe), alergias del cliente y descuentos de más del 10 % hechos por un cajero.</span>
+      <b>Sin internet</b><span>Sigue vendiendo lo que no necesita récipe. Las ventas se guardan en el equipo y se envían solas al volver la conexión, sin duplicarse.</span>
+      <b>Se conecta con</b><span>Catálogo (precios), Inventario (descuenta del lote que vence primero), Caja (suma al turno), Por revisar, Controlados, Clientes y Encargos («Avisar cuando llegue»).</span>
+    </div>
+  </div>
+  <div class="modulo"><h3>Caja <span class="rol">Todos</span></h3>
+    <p>Cada persona abre su turno con el sencillo y lo cierra contando por método de pago. El cajero cuenta a ciegas: no ve lo esperado. El farmacéutico y el dueño sí ven la diferencia, y el cierre se imprime con espacio para dos firmas.</p>
+    <div class="fila"><b>Cajas por equipo</b><span>Cada computadora o tablet puede ser una caja («Caja 1 · Mostrador»). Se crea en el mismo equipo y se pasa a otro con un código de 6 letras. Una caja no la pueden abrir dos personas a la vez.</span>
+    <b>Se conecta con</b><span>Vender (cada venta suma al turno), Ventas (devoluciones en efectivo) y Reportes (cierres y diferencias).</span></div>
+  </div>
+  <div class="modulo"><h3>Ventas <span class="rol">Todos</span></h3>
+    <p>El historial de ventas. Desde aquí se reimprime el ticket o se envía por WhatsApp. El cajero solo ve sus ventas.</p>
+    <div class="fila"><b>Devolver</b><span>Farmacéutico o dueño. Se elige qué se devuelve, el producto vuelve a su lote y sale un comprobante.</span>
+    <b>Anular</b><span>Solo el dueño. Nada se borra: queda anulada y registrada en la Auditoría.</span></div>
+  </div>
+  <div class="modulo"><h3>Récipe <span class="rol">Todos</span></h3>
+    <p>Se toma la foto del récipe con la cámara, se asocia a la cédula del cliente y le llega al farmacéutico para revisarla. Las fotos se guardan en privado y se borran solas pasado el plazo que fije la farmacia (2 años por defecto).</p>
+  </div>
+
+  <div class="grupo">Clientes</div>
+  <div class="modulo"><h3>Clientes <span class="rol">Todos</span></h3>
+    <p>La ficha de cada cliente: cédula, teléfono, alergias, condiciones (hipertenso, diabético…) e historial de compras. Se busca por nombre, cédula o teléfono, sin importar las tildes. Al registrar a alguien se pide su consentimiento para guardar sus datos.</p>
+    <div class="fila"><b>Se conecta con</b><span>Vender (avisa si el cliente es alérgico a lo que lleva), Encargos y WhatsApp.</span></div>
+  </div>
+  <div class="modulo"><h3>Encargos <span class="rol">Farmacéutico · Dueño</span></h3>
+    <p>Lo que los clientes pidieron y no había, en orden de llegada. El ciclo es: <b>esperando → llegó (se aparta una caja por 3 horas) → pagado (se guarda en una gaveta) → entregado</b>. Si el cliente no paga a tiempo, la caja pasa al siguiente de la fila. Con «Ya no lo quiere» se cancela el encargo y se libera la caja.</p>
+    <div class="fila"><b>Se conecta con</b><span>Compras (al recibir mercancía se reparte sola), Vender («Avisar cuando llegue») y Resumen («Lo que más piden y no hay»).</span></div>
+  </div>
+  <div class="modulo"><h3>Al mayor <span class="rol">Dueño</span></h3>
+    <p>Ventas a clínicas, farmacias y empresas, con descuento de mayor y crédito. El ciclo es: <b>cotización → pedido → despachado → entregado</b>. Se registran abonos, se ve quién debe y quién está vencido, y se saca el estado de cuenta, la nota de entrega y la cotización en PDF. También permite el convenio con empleados: retira un empleado y se le cobra a la empresa.</p>
+  </div>
+  <div class="modulo"><h3>WhatsApp y recompra <span class="rol">Farmacéutico · Dueño</span></h3>
+    <p>Lista de clientes a los que se les está acabando su tratamiento, calculado con lo que compraron (por ejemplo, si llevó 30 pastillas hace 27 días). Al tocar «Enviar» se abre WhatsApp con el mensaje ya escrito. Con una sola compra, la fecha se estima suponiendo una pastilla al día.</p>
+  </div>
+
+  <div class="grupo">Inventario</div>
+  <div class="modulo"><h3>Inventario <span class="rol">Farmacéutico · Dueño</span></h3>
+    <p>Existencia por lote con su fecha de vencimiento y un semáforo (vence este mes, vence pronto, bien). Desde aquí se <b>carga todo el inventario con un Excel</b> (nombre, laboratorio, principio, precio, existencia, IVA, categoría, costo y stock mínimo) y se hacen ajustes con motivo: merma, roto, vencido o conteo físico.</p>
+    <div class="fila"><b>Detalle útil</b><span>Al importar el Excel, si la columna «Riesgo» viene vacía, el sistema marca solo los psicotrópicos y antibióticos conocidos.</span></div>
+  </div>
+  <div class="modulo"><h3>Catálogo <span class="rol">Farmacéutico · Dueño</span></h3>
+    <p>Los productos, con su precio, costo, margen, IVA, categoría, código de barras y stock mínimo, y los <b>principios activos</b>, que definen si algo es normal, antibiótico o psicotrópico. Permite subir precios por laboratorio o categoría con vista previa, e <b>imprimir etiquetas de precio</b> en $ y Bs. Avisa si un psicotrópico está cargado como «Normal».</p>
+  </div>
+  <div class="modulo"><h3>Compras <span class="rol">Dueño</span></h3>
+    <p>Todo lo que se le compra a las droguerías:</p>
+    <ul>
+      <li><b>Pedido sugerido:</b> calcula qué pedir con las ventas de 30 días, los clientes esperando y la existencia.</li>
+      <li><b>Órdenes y recepción:</b> se crea la orden de compra, se recibe la mercancía (con diferencias si las hay) y se crean los lotes.</li>
+      <li><b>Cuentas por pagar:</b> abonos a cada droguería y avisos de facturas por vencer.</li>
+      <li><b>Devoluciones:</b> se devuelve mercancía a la droguería o se anula una compra.</li>
+    </ul>
+    <div class="fila"><b>Se conecta con</b><span>Inventario (crea lotes), Encargos (aparta para quien espera), Controlados (entradas al libro) y Reportes (el costo da la ganancia).</span></div>
+  </div>
+
+  <div class="grupo">Farmacéutico</div>
+  <div class="modulo"><h3>Por revisar <span class="rol">Farmacéutico · Dueño</span></h3>
+    <p>La bandeja del farmacéutico, que se actualiza sola, con un número rojo en el menú. Aquí llegan los <b>récipes</b> por validar y los <b>permisos</b> que pide la caja (controlados, clientes alérgicos). El farmacéutico aprueba o niega, y la caja sigue o se detiene en ese momento.</p>
+  </div>
+  <div class="modulo"><h3>Controlados (libro de psicotrópicos) <span class="rol">Farmacéutico · Dueño</span></h3>
+    <p>El libro se llena solo con cada venta y compra de productos controlados: fecha, cliente, médico, récipe y farmacéutico. No se puede editar. Se exporta para presentarlo.</p>
+  </div>
+
+  <div class="grupo">Negocio</div>
+  <div class="modulo"><h3>Resumen <span class="rol">Dueño</span></h3>
+    <p>El tablero del día: vendido hoy, ventas de la semana, dinero en la gaveta, lotes por vencer, clientes esperando, productos en el mínimo, lo que más piden y no hay, y la <b>tasa de hoy</b>, que se puede cambiar ahí mismo. Una farmacia nueva ve además la lista de <b>Primeros pasos</b>.</p>
+  </div>
+  <div class="modulo"><h3>Reportes <span class="rol">Dueño</span></h3>
+    <p>Por rango de fechas, cada cifra comparada con el período anterior. Muestra ventas netas, número de ventas, ticket promedio, <b>ganancia y margen</b> (por producto, laboratorio y categoría), rotación (lo que más se vende y lo que no se mueve), ventas por cajero, por hora y por método de pago, y el <b>valor del inventario</b> a costo y a precio de venta. Todo se descarga en Excel.</p>
+  </div>
+
+  <div class="grupo">Administración</div>
+  <div class="modulo"><h3>Configuración <span class="rol">Dueño</span></h3>
+    <div class="fila">
+      <b>Tasa</b><span>BCV dólar, BCV euro o manual, con un ajuste opcional en Bs o en %.</span>
+      <b>Impuestos</b><span>IGTF a los pagos en divisas, si te toca cobrarlo.</span>
+      <b>Redondeo</b><span>Los bolívares se redondean a 1, 5 o 10 Bs.</span>
+      <b>Ticket</b><span>Datos de la farmacia, ancho del papel (58 u 80 mm), letra, copias y prueba de impresión.</span>
+    </div>
+  </div>
+  <div class="modulo"><h3>Cajas <span class="rol">Dueño</span></h3>
+    <p>Todas las cajas: en qué equipos está cada una (por ejemplo «Chrome en Android»), quién la tiene abierta y cuánto vendió hoy. Desde aquí se crean, se pasan a otro equipo con un código, se quita un equipo o se desactiva una caja.</p>
+  </div>
+  <div class="modulo"><h3>Usuarios <span class="rol">Dueño</span></h3>
+    <p>Se crean los usuarios con su rol y, si se quiere, con correo, para entrar con el correo. También se cambia la clave, se desactiva a alguien (se le cierra la sesión al instante) o se edita el nombre y el rol. Cada usuario puede activar la <b>clave de dos pasos</b> con una app del teléfono.</p>
+  </div>
+  <div class="modulo"><h3>Auditoría <span class="rol">Dueño</span></h3>
+    <p>Quién hizo qué y cuándo: ventas, anulaciones, cambios de precio, permisos, entradas al sistema y accesos de soporte. No se puede borrar ni editar.</p>
+  </div>
+  <div class="modulo"><h3>Soporte <span class="rol">Todos</span></h3>
+    <p>Para pedir ayuda cuando algo falla. Se escribe qué pasa y se envía junto con el estado del sistema (sin datos de clientes), y la respuesta de soporte aparece en la misma página. El dueño puede dar <b>acceso remoto</b> a soporte por 1 a 24 horas: todo queda en la auditoría y lo puede quitar al instante.</p>
+  </div>
+</section>
+
+<section>
+  <h2 style="margin-top:4mm">5. Lo que está alrededor</h2>
+  <div class="modulo"><h3>Pantalla de entrada</h3>
+    <p>Se entra con el usuario o con el correo. Muestra qué caja es ese equipo, permite vincularlo con un código y tiene el botón <b>Prueba la demo</b>. La primera vez que entra cada persona sale una <b>guía corta</b> según su rol: lo que puede hacer, lo que no (y por qué) y consejos. Se vuelve a abrir con el botón «?».</p>
+  </div>
+  <div class="modulo"><h3>Demo</h3>
+    <p>Una farmacia de ejemplo con 30 productos, clientes, dos meses de ventas, cierres, encargos y compras. Se puede entrar como dueño, farmacéutico o cajero. Está totalmente separada de la farmacia real y se reinicia cada noche. Sirve para mostrar el sistema a un cliente nuevo.</p>
+  </div>
+  <div class="modulo"><h3>Panel central (para nosotros, los que vendemos el sistema)</h3>
+    <p>Un usuario <b>Super admin</b> ve todas las farmacias que usan el sistema: si están en línea, cuánto vendieron hoy, sus errores, su tasa, su espacio en disco y su versión. También ve sus <b>casos de soporte</b> para responderlos. Puede crear usuarios de <b>Soporte</b> que ven farmacias y responden casos, pero no registran farmacias. Cada farmacia se enlaza con un código y se reporta sola cada 5 minutos.</p>
+  </div>
+
+  <h2 style="margin-top:6mm">6. Lo que todavía no hace</h2>
+  <table>
+    <tr><th style="width:52mm">Tema</th><th>Situación</th></tr>
+    <tr><td><b>Factura fiscal (SENIAT)</b></td><td>No imprime factura fiscal ni conecta con la máquina fiscal. Por ahora la farmacia sigue usando su máquina fiscal. Se cotiza aparte.</td></tr>
+    <tr><td><b>Lectura de récipes con IA</b></td><td>Hoy el récipe se fotografía y lo revisa el farmacéutico. La lectura automática con IA es un módulo aparte, todavía no activo.</td></tr>
+    <tr><td><b>WhatsApp automático</b></td><td>Los avisos de «llegó tu medicamento» se generan, pero el envío automático necesita conectar un número de WhatsApp Business (aprobación de Meta). Mientras tanto, la recompra se envía con un toque, que abre WhatsApp con el mensaje listo.</td></tr>
+    <tr><td><b>Sucursales</b></td><td>Cada farmacia es independiente. Mover mercancía entre sucursales todavía no está.</td></tr>
+  </table>
+
+  <div class="info"><b>Seguridad, en corto:</b> claves cifradas, bloqueo tras varios intentos fallidos, clave de dos pasos opcional, sesiones que se cierran al desactivar a alguien, respaldos diarios de la base de datos y auditoría que no se puede borrar.</div>
+  <p class="pie">Para dudas o para agregar algo a este manual, escribir a soporte desde el módulo Soporte.</p>
+</section>
+
+</body>
+</html>

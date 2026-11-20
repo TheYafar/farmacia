@@ -41,6 +41,7 @@ services:
       SEED_DEMO: ${SEED_DEMO:-false}
       SEED_DEMO_CLAVE: ${SEED_DEMO_CLAVE:-}
       SEED_ADMIN_USUARIO: ${SEED_ADMIN_USUARIO:-}
+      SEED_ADMIN_NOMBRE: ${SEED_ADMIN_NOMBRE:-}
       SEED_ADMIN_CLAVE: ${SEED_ADMIN_CLAVE:-}
     volumes:
       - uploads:/app/apps/api/uploads

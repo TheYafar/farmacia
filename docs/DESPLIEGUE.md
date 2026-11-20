@@ -10,6 +10,26 @@ Guía para poner el sistema en un VPS de Contabo con Ubuntu 24.04. Tiempo aproxi
 
 > **¿El VPS ya tiene otro proyecto (por ejemplo Kiospos)?** Sigue la sección [«VPS compartido»](#vps-compartido-con-otro-proyecto) al final en vez de los pasos 1 y 3: no hay que tocar nada de lo que ya funciona.
 
+## Instalación rápida (recomendada)
+
+Un solo comando hace todo: revisa el VPS, detecta si otro proyecto usa los puertos 80/443 (modo compartido), genera las claves, arranca, crea los usuarios y muestra la configuración exacta para tu Nginx o Caddy.
+
+```bash
+git clone https://github.com/TheYafar/farmacia.git /opt/farmacia
+```
+
+```bash
+cd /opt/farmacia/infra && sudo ./instalar.sh
+```
+
+Te pregunta el dominio, el usuario y nombre del dueño, y si cargar datos de ejemplo. Al final imprime las claves (guárdalas) y los pasos que faltan. Para **actualizar** a una versión nueva:
+
+```bash
+cd /opt/farmacia && git pull && cd infra && sudo ./instalar.sh
+```
+
+Reutiliza la configuración: no cambia claves ni borra datos. Los pasos de abajo explican lo mismo a mano.
+
 ## 1. Entrar al servidor y prepararlo
 
 ```bash
@@ -204,7 +224,7 @@ farmacia.tudominio.com {
 
 ### 4c. Si el otro proyecto tiene su proxy dentro de Docker
 
-Si Nginx o Caddy corren en un contenedor, `127.0.0.1` dentro del contenedor no es el VPS. Usa la IP del VPS en la red de Docker (`172.17.0.1` normalmente) y en `.env` pon `PUERTO_LOCAL=8090`, cambiando en `docker-compose.compartido.yml` la línea de `ports` por `"172.17.0.1:8090:80"`.
+Si Nginx o Caddy corren en un contenedor, `127.0.0.1` dentro del contenedor no es el VPS. En `infra/.env` pon `IP_LOCAL=172.17.0.1` (la IP del VPS en la red de Docker), vuelve a arrancar la farmacia y en el proxy usa `http://172.17.0.1:8090`.
 
 ### Usuarios para probar
 

@@ -36,8 +36,12 @@ z.setErrorMap((issue, ctx) => {
 
 // ---------- Enumeraciones ----------
 
+/** Roles de una farmacia. */
 export const ROLES = ['CAJERO', 'REGENTE', 'ADMIN'] as const;
-export type Rol = (typeof ROLES)[number];
+/** Roles del panel central (quien vende el sistema): super admin y soporte. */
+export const ROLES_CENTRAL = ['SUPERADMIN', 'SOPORTE'] as const;
+export type Rol = (typeof ROLES)[number] | (typeof ROLES_CENTRAL)[number];
+export const esRolCentral = (r: Rol) => r === 'SUPERADMIN' || r === 'SOPORTE';
 
 export const NIVELES_PRECIO = ['GENERICO', 'NACIONAL', 'MARCA'] as const;
 export type NivelPrecio = (typeof NIVELES_PRECIO)[number];
@@ -515,3 +519,32 @@ export function riesgoSugerido(principio: string): CategoriaRiesgo | null {
   if (ANTIBIOTICOS_CONOCIDOS.some((m) => n.includes(m))) return 'ANTIBIOTICO';
   return null;
 }
+
+
+// ---------- Panel central y soporte en línea ----------
+
+const opc = (max: number) => z.string().trim().max(max).optional().transform((v) => v || undefined);
+
+export const farmaciaRegistradaSchema = z.object({
+  nombre: texto(80),
+  rif: opc(20),
+  contacto: opc(80),
+  telefono: opc(40),
+  url: z.string().trim().url('Dirección inválida. Ejemplo: https://mifarmacia.com').max(200).optional().or(z.literal('').transform(() => undefined)),
+  notas: opc(1000),
+  activa: z.boolean().optional(),
+});
+export type FarmaciaRegistradaInput = z.infer<typeof farmaciaRegistradaSchema>;
+
+export const miembroEquipoSchema = crearUsuarioSchema.extend({ rol: z.enum(ROLES_CENTRAL) });
+export type MiembroEquipoInput = z.infer<typeof miembroEquipoSchema>;
+
+export const ticketNuevoSchema = z.object({ asunto: texto(120), texto: texto(4000) });
+export type TicketNuevoInput = z.infer<typeof ticketNuevoSchema>;
+export const mensajeSoporteSchema = z.object({ texto: texto(4000), cerrar: z.boolean().optional() });
+export type MensajeSoporteInput = z.infer<typeof mensajeSoporteSchema>;
+
+/** El código que el panel central le da a cada farmacia para enlazarse. */
+export const enlaceCentralSchema = z.object({ codigo: z.string().trim().min(20).max(600) });
+/** Acceso remoto: el dueño deja entrar a soporte por unas horas. */
+export const accesoSoporteSchema = z.object({ horas: z.number().int().min(1).max(24) });

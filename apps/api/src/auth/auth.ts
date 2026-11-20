@@ -4,6 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import * as argon2 from 'argon2';
 import { createHash, randomBytes } from 'node:crypto';
 import type { Request, Response } from 'express';
+import { z } from 'zod';
 import { codigo2faSchema, loginSchema, type LoginInput } from '@farmacia/shared';
 import { cifrar, descifrar, nuevoSecreto, urlTotp, verificarCodigo } from '../common/totp';
 import { PrismaService } from '../prisma/prisma.service';
@@ -13,6 +14,7 @@ import { Publico, Usuario, type UsuarioActual } from '../common/seguridad';
 import { Validar } from '../common/validacion';
 
 const COOKIE = 'farm_rt';
+const tokenSoporteSchema = z.object({ token: z.string().min(20).max(100) });
 const RUTA_COOKIE = '/api/v1/auth';
 
 /** Parámetros de Argon2id recomendados por OWASP (19 MiB, 2 pasadas). */
@@ -37,7 +39,7 @@ export class AuthService {
     const u = await this.prisma.usuario.findUnique({ where: { usuario } });
     const valida = await argon2.verify(u?.claveHash ?? (await this.hashFalso), clave);
 
-    if (!u || !u.activo) throw new UnauthorizedException('Usuario o clave incorrectos');
+    if (!u || !u.activo || u.sistema) throw new UnauthorizedException('Usuario o clave incorrectos');
     if (u.bloqueadoHasta && u.bloqueadoHasta > new Date()) {
       throw new ForbiddenException('Usuario bloqueado por intentos fallidos. Espera unos minutos o pide al dueño que lo desbloquee');
     }
@@ -88,10 +90,34 @@ export class AuthService {
     }
     if (sesion.revocadaEn || sesion.expira < new Date()) throw new UnauthorizedException('La sesión venció. Vuelve a entrar');
 
+    if (sesion.limite && sesion.limite < new Date()) throw new UnauthorizedException('El acceso de soporte terminó');
     const nuevo = randomBytes(32).toString('base64url');
-    await this.prisma.sesion.update({ where: { id: sesion.id }, data: { refreshHash: sha256(nuevo), expira: this.venceSesion() } });
+    const expira = sesion.limite && sesion.limite < this.venceSesion() ? sesion.limite : this.venceSesion();
+    await this.prisma.sesion.update({ where: { id: sesion.id }, data: { refreshHash: sha256(nuevo), expira } });
     await this.auditoria.registrar({ usuarioId: sesion.usuarioId, accion: 'TOKEN_ROTADO', entidad: 'Sesion', entidadId: sesion.id, datos: { hash } });
     return { refresh: nuevo, ...(await this.respuesta(sesion.usuarioId, sesion.id)) };
+  }
+
+  /**
+   * Soporte remoto: entra con el enlace que el dueño autorizó desde Soporte.
+   * Usa un usuario interno «Soporte técnico» (todo queda en la auditoría a su nombre)
+   * y la sesión se corta sola cuando vence el permiso o si el dueño lo quita.
+   */
+  async entrarSoporte(token: string, ip?: string, agente?: string) {
+    const acceso = await this.prisma.accesoSoporte.findUnique({ where: { tokenHash: sha256(token) } });
+    if (!acceso || acceso.revocadoEn || acceso.vence < new Date()) throw new UnauthorizedException('El acceso de soporte venció o fue quitado. Pídele al dueño que lo vuelva a dar');
+    const u = await this.prisma.usuario.upsert({
+      where: { usuario: 'soporte.remoto' },
+      update: { activo: true },
+      create: { usuario: 'soporte.remoto', nombre: 'Soporte técnico', rol: 'ADMIN', sistema: true, claveHash: await cifrarClave(randomBytes(32).toString('hex')) },
+    });
+    const refresh = randomBytes(32).toString('base64url');
+    const sesion = await this.prisma.sesion.create({
+      data: { usuarioId: u.id, refreshHash: sha256(refresh), expira: acceso.vence, limite: acceso.vence, ip, agente: agente?.slice(0, 200) },
+    });
+    await this.prisma.accesoSoporte.update({ where: { id: acceso.id }, data: { usos: { increment: 1 } } });
+    await this.auditoria.registrar({ usuarioId: u.id, accion: 'SOPORTE_ENTRO', entidad: 'Sesion', entidadId: sesion.id, ip });
+    return { refresh, ...(await this.respuesta(u.id, sesion.id)) };
   }
 
   async cerrar(sesionId: string) {
@@ -122,9 +148,9 @@ export class AuthService {
   }
 
   private async respuesta(usuarioId: string, sesionId: string) {
-    const u = await this.prisma.usuario.findUniqueOrThrow({ where: { id: usuarioId }, select: { id: true, nombre: true, usuario: true, rol: true } });
+    const { sistema, ...u } = await this.prisma.usuario.findUniqueOrThrow({ where: { id: usuarioId }, select: { id: true, nombre: true, usuario: true, rol: true, sistema: true } });
     const accessToken = await this.jwt.signAsync({ sub: u.id, sid: sesionId, rol: u.rol }, { expiresIn: `${this.config.ACCESS_TOKEN_MINUTOS}m`, algorithm: 'HS256' });
-    return { accessToken, usuario: u };
+    return { accessToken, usuario: { ...u, soporte: sistema } };
   }
 }
 
@@ -139,6 +165,17 @@ export class AuthController {
   @HttpCode(200)
   async login(@Body(new Validar(loginSchema)) body: LoginInput, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const { refresh, ...r } = await this.auth.login(body, req.ip, req.headers['user-agent']);
+    this.ponerCookie(res, refresh);
+    return r;
+  }
+
+  /** Entrada de soporte remoto con el enlace que el dueño autorizó. */
+  @Publico()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('soporte')
+  @HttpCode(200)
+  async soporte(@Body(new Validar(tokenSoporteSchema)) body: { token: string }, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const { refresh, ...r } = await this.auth.entrarSoporte(body.token, req.ip, req.headers['user-agent']);
     this.ponerCookie(res, refresh);
     return r;
   }
@@ -163,7 +200,7 @@ export class AuthController {
 
   @Get('yo')
   async yo(@Usuario() u: UsuarioActual) {
-    return { id: u.id, nombre: u.nombre, rol: u.rol, dosPasos: await this.auth.tiene2fa(u.id) };
+    return { id: u.id, nombre: u.nombre, rol: u.rol, soporte: !!u.soporte, dosPasos: await this.auth.tiene2fa(u.id) };
   }
 
   @Post('2fa/iniciar')

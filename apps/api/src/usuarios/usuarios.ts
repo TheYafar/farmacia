@@ -16,9 +16,15 @@ const claveSchema = z.object({ clave: crearUsuarioSchema.shape.clave });
 export class UsuariosController {
   constructor(private readonly prisma: PrismaService, private readonly auditoria: AuditoriaService) {}
 
+  /** Solo se administran los usuarios de la farmacia (no el de soporte ni el equipo del panel central). */
+  private async deLaFarmacia(id: string) {
+    const u = await this.prisma.usuario.findUnique({ where: { id }, select: { rol: true, sistema: true } });
+    if (!u || u.sistema || !['CAJERO', 'REGENTE', 'ADMIN'].includes(u.rol)) throw new NotFoundException('El usuario no existe');
+  }
+
   @Get()
   listar() {
-    return this.prisma.usuario.findMany({ select: campos, orderBy: { nombre: 'asc' } });
+    return this.prisma.usuario.findMany({ where: { sistema: false, rol: { in: ['CAJERO', 'REGENTE', 'ADMIN'] } }, select: campos, orderBy: { nombre: 'asc' } });
   }
 
   @Post()
@@ -35,10 +41,10 @@ export class UsuariosController {
   @Patch(':id')
   async editar(@Param('id', ParseUUIDPipe) id: string, @Body(new Validar(editarUsuarioSchema)) b: EditarUsuarioInput, @Usuario() yo: UsuarioActual) {
     const antes = await this.prisma.usuario.findUnique({ where: { id } });
-    if (!antes) throw new NotFoundException('El usuario no existe');
+    if (!antes || antes.sistema || !['CAJERO', 'REGENTE', 'ADMIN'].includes(antes.rol)) throw new NotFoundException('El usuario no existe');
     if (b.rol && b.rol !== 'ADMIN' && antes.rol === 'ADMIN') {
       if (id === yo.id) throw new BadRequestException('No puedes quitarte el rol de dueño a ti mismo');
-      const otros = await this.prisma.usuario.count({ where: { rol: 'ADMIN', activo: true, id: { not: id } } });
+      const otros = await this.prisma.usuario.count({ where: { rol: 'ADMIN', activo: true, sistema: false, id: { not: id } } });
       if (!otros) throw new BadRequestException('Debe quedar al menos un dueño activo');
     }
     const cambiaRol = !!b.rol && b.rol !== antes.rol;
@@ -54,6 +60,7 @@ export class UsuariosController {
   @Post(':id/desactivar')
   @HttpCode(204)
   async desactivar(@Param('id', ParseUUIDPipe) id: string, @Usuario() yo: UsuarioActual) {
+    await this.deLaFarmacia(id);
     await this.prisma.$transaction([
       this.prisma.usuario.update({ where: { id }, data: { activo: false } }),
       this.prisma.sesion.updateMany({ where: { usuarioId: id, revocadaEn: null }, data: { revocadaEn: new Date() } }),
@@ -64,6 +71,7 @@ export class UsuariosController {
   @Post(':id/activar')
   @HttpCode(204)
   async activar(@Param('id', ParseUUIDPipe) id: string, @Usuario() yo: UsuarioActual) {
+    await this.deLaFarmacia(id);
     await this.prisma.usuario.update({ where: { id }, data: { activo: true, bloqueadoHasta: null, intentosFallidos: 0 } });
     await this.auditoria.registrar({ usuarioId: yo.id, accion: 'USUARIO_ACTIVADO', entidad: 'Usuario', entidadId: id });
   }
@@ -72,6 +80,7 @@ export class UsuariosController {
   @Patch(':id/clave')
   @HttpCode(204)
   async cambiarClave(@Param('id', ParseUUIDPipe) id: string, @Body(new Validar(claveSchema)) b: { clave: string }, @Usuario() yo: UsuarioActual) {
+    await this.deLaFarmacia(id);
     await this.prisma.$transaction([
       this.prisma.usuario.update({ where: { id }, data: { claveHash: await cifrarClave(b.clave), intentosFallidos: 0, bloqueadoHasta: null } }),
       this.prisma.sesion.updateMany({ where: { usuarioId: id, revocadaEn: null }, data: { revocadaEn: new Date() } }),

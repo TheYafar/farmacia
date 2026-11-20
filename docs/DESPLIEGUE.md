@@ -249,3 +249,20 @@ Los respaldos (`respaldo.sh`) y las actualizaciones funcionan igual; para actual
 ```bash
 cd /opt/farmacia && git pull && cd infra && docker compose -f docker-compose.yml -f docker-compose.compartido.yml up -d --build
 ```
+
+## Panel central (super admin) y soporte en línea
+
+El servidor de quien vende el sistema funciona también como **panel central**: ahí se ven todas las farmacias, su estado y los casos de soporte.
+
+1. **Crear el super admin** (una vez, en el servidor del panel central):
+   ```bash
+   cd /opt/farmacia/infra && ./crear-superadmin.sh admin.central "Tu nombre"
+   ```
+   Muestra una clave aleatoria. Entra con ese usuario: verás **Farmacias**, **Casos de soporte** y **Equipo**.
+2. **WhatsApp de soporte** (opcional): en el `.env` del panel central pon `SOPORTE_TELEFONO=584145550192`. Las farmacias enlazadas lo ven en su pantalla de entrada y en Soporte.
+3. **Registrar una farmacia:** Farmacias → Registrar farmacia. Sale un **código de enlace** (empieza por `FT1.`), que solo se muestra una vez.
+4. **En la farmacia**, el dueño va a **Soporte → Enlazar con soporte** y pega el código. Desde ahí la farmacia se reporta sola cada 5 minutos: ventas de hoy, cajas abiertas, tasa, errores recientes, espacio en disco y versión. No se envían datos de clientes.
+5. **Casos:** cualquier usuario de la farmacia puede pedir ayuda desde Soporte. El caso llega al panel con el estado del sistema de ese momento, y la respuesta se ve en la farmacia.
+6. **Acceso remoto:** solo si el dueño lo permite (Soporte → Acceso remoto, de 1 a 24 horas), aparece el botón **Entrar** en el panel. Soporte entra como «Soporte técnico»: todo queda en la auditoría, y el dueño ve un aviso arriba con un botón para quitar el acceso al instante.
+
+Si un código se filtra, genera uno nuevo desde la ficha de la farmacia: el anterior deja de funcionar. Para dar de baja a una farmacia, usa **Desactivar**.

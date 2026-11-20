@@ -9,6 +9,8 @@ interface Sesion {
   usuario: UsuarioSesion | null;
   listo: boolean;
   tasa: number | null;
+  /** Error al entrar con un enlace de soporte (se muestra en la pantalla de entrada). */
+  errorEntrada: string | null;
   restaurar: () => Promise<void>;
   entrar: (usuario: string, clave: string, codigo?: string) => Promise<void>;
   salir: () => Promise<void>;
@@ -19,9 +21,25 @@ export const useSesion = create<Sesion>((set, get) => ({
   usuario: null,
   listo: false,
   tasa: null,
+  errorEntrada: null,
 
   /** Al abrir la app: si hay una sesión guardada en la cookie, se recupera sin pedir la clave. */
   restaurar: async () => {
+    // Soporte remoto: llega con ?soporte=… desde el panel central (el dueño dio permiso).
+    const token = new URLSearchParams(location.search).get('soporte');
+    if (token) {
+      history.replaceState(null, '', location.pathname);
+      try {
+        const r = await api<{ accessToken: string; usuario: UsuarioSesion }>('/auth/soporte', { body: { token } });
+        sesionToken.poner(r.accessToken);
+        olvidarCaja();
+        set({ usuario: r.usuario, listo: true });
+        await get().cargarTasa();
+        return;
+      } catch (e) {
+        set({ errorEntrada: e instanceof Error ? e.message : 'No se pudo entrar como soporte' });
+      }
+    }
     if (await renovar()) {
       try {
         set({ usuario: await api<UsuarioSesion>('/auth/yo') });
@@ -35,7 +53,7 @@ export const useSesion = create<Sesion>((set, get) => ({
     const r = await api<{ accessToken: string; usuario: UsuarioSesion }>('/auth/login', { body: { usuario, clave, codigo: codigo || undefined } });
     sesionToken.poner(r.accessToken);
     olvidarCaja();
-    set({ usuario: r.usuario });
+    set({ usuario: r.usuario, errorEntrada: null });
     await get().cargarTasa();
   },
 
@@ -47,6 +65,8 @@ export const useSesion = create<Sesion>((set, get) => ({
   },
 
   cargarTasa: async () => {
+    const rol = get().usuario?.rol;
+    if (rol === 'SUPERADMIN' || rol === 'SOPORTE') return set({ tasa: null });
     try {
       const t = await api<{ valor: string }>('/tasa');
       set({ tasa: Number(t.valor) });

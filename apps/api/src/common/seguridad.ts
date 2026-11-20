@@ -2,7 +2,7 @@ import { CanActivate, ExecutionContext, Inject, Injectable, SetMetadata, Unautho
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
-import type { Rol } from '@farmacia/shared';
+import { esRolCentral, type Rol } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface UsuarioActual {
@@ -10,6 +10,8 @@ export interface UsuarioActual {
   rol: Rol;
   sesionId: string;
   nombre: string;
+  /** Entró como soporte remoto (con permiso del dueño). */
+  soporte?: boolean;
 }
 
 export interface RequestConUsuario extends Request {
@@ -61,14 +63,19 @@ export class GuardiaAcceso implements CanActivate {
 
     const sesion = await this.prisma.sesion.findUnique({
       where: { id: datos.sid },
-      include: { usuario: { select: { id: true, rol: true, nombre: true, activo: true } } },
+      include: { usuario: { select: { id: true, rol: true, nombre: true, activo: true, sistema: true } } },
     });
-    if (!sesion || sesion.revocadaEn || sesion.expira < new Date() || sesion.usuarioId !== datos.sub || !sesion.usuario.activo) {
+    const ahora = new Date();
+    if (!sesion || sesion.revocadaEn || sesion.expira < ahora || (sesion.limite && sesion.limite < ahora) || sesion.usuarioId !== datos.sub || !sesion.usuario.activo) {
       throw new UnauthorizedException('La sesión ya no es válida. Vuelve a entrar');
     }
-    req.usuario = { id: sesion.usuario.id, rol: sesion.usuario.rol, nombre: sesion.usuario.nombre, sesionId: sesion.id };
+    req.usuario = { id: sesion.usuario.id, rol: sesion.usuario.rol, nombre: sesion.usuario.nombre, sesionId: sesion.id, soporte: sesion.usuario.sistema };
 
     const permitidos = this.reflector.getAllAndOverride<Rol[] | undefined>(ROLES, objetivos);
+    // El equipo central no opera farmacias desde aquí: solo su panel y su propia sesión.
+    if (esRolCentral(req.usuario.rol) && !permitidos?.includes(req.usuario.rol) && Reflect.getMetadata('path', ctx.getClass()) !== 'auth') {
+      throw new ForbiddenException('Esta opción es de la farmacia, no del panel central');
+    }
     if (permitidos && !permitidos.includes(req.usuario.rol)) {
       throw new ForbiddenException('Tu usuario no tiene permiso para esto');
     }

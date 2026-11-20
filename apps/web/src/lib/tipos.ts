@@ -1,6 +1,6 @@
 import type { CategoriaRiesgo, EstadoEspera, NivelPrecio, Rol } from '@farmacia/shared';
 
-export interface UsuarioSesion { id: string; nombre: string; usuario?: string; rol: Rol }
+export interface UsuarioSesion { id: string; nombre: string; usuario?: string; rol: Rol; soporte?: boolean }
 
 export interface Opcion {
   id: string;
@@ -126,4 +126,4 @@ export interface Turno {
   _count?: { ventas: number };
 }
 
-export interface Farmacia { nombre: string; rif: string; direccion: string; telefono: string }
+export interface Farmacia { nombre: string; rif: string; direccion: string; telefono: string; soporte?: string | null }

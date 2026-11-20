@@ -23,6 +23,8 @@ import { ReportesModule } from './reportes/reportes';
 import { SaludModule } from './salud/salud';
 import { CajaModule } from './caja/caja';
 import { NegocioModule } from './negocio/negocio';
+import { CentralModule } from './central/central';
+import { SoporteModule } from './soporte/soporte';
 import { Global } from '@nestjs/common';
 
 export function crearModulo(config: Config) {
@@ -41,6 +43,7 @@ export function crearModulo(config: Config) {
       AuditoriaModule, NotificacionesModule,
       AuthModule, UsuariosModule, CatalogoModule, TasaModule, PacientesModule, AutorizacionesModule,
       CajaModule, NegocioModule, VentasModule, EsperaModule, InventarioModule, RecipesModule, ReportesModule, SaludModule,
+      CentralModule, SoporteModule,
     ],
     providers: [
       { provide: APP_GUARD, useClass: ThrottlerGuard },

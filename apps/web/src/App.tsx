@@ -18,6 +18,8 @@ import { AuditoriaPage, CatalogoPage, VentasPage } from '@/features/gestion/Gest
 import ConfiguracionPage from '@/features/configuracion/ConfiguracionPage';
 import CajaPage from '@/features/caja/CajaPage';
 import { useCaja } from '@/store/caja';
+import SoportePage from '@/features/soporte/SoportePage';
+import { CasosPage, EquipoPage, FarmaciasPage } from '@/features/central/CentralPage';
 
 /** Esconde la ruta a quien no tiene el rol (el servidor igual lo rechazaría). */
 function ConRol({ ruta, children }: { ruta: string; children: ReactNode }) {
@@ -44,6 +46,7 @@ export default function App() {
     ['/revisar', <RevisarPage />], ['/encargos', <EncargosPage />], ['/inventario', <InventarioPage />],
     ['/resumen', <ResumenPage />], ['/usuarios', <UsuariosPage />], ['/ventas', <VentasPage />], ['/catalogo', <CatalogoPage />], ['/auditoria', <AuditoriaPage />], ['/configuracion', <ConfiguracionPage />],
     ['/compras', <ComprasPage />], ['/mayor', <MayoristaPage />], ['/whatsapp', <WhatsappPage />], ['/controlados', <LibroPage />], ['/reportes', <ReportesPage />],
+    ['/soporte', <SoportePage />], ['/farmacias', <FarmaciasPage />], ['/casos', <CasosPage />], ['/equipo', <EquipoPage />],
   ];
   return (
     <Routes>

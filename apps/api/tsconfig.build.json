@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": { "outDir": "dist", "rootDir": "." },
-  "include": ["src", "prisma/seed.ts", "prisma/quitar-2fa.ts"]
+  "include": ["src", "prisma/seed.ts", "prisma/quitar-2fa.ts", "prisma/crear-superadmin.ts"]
 }

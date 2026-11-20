@@ -19,6 +19,7 @@ const usdF = (v: number) => `$${v.toLocaleString('es-VE', { minimumFractionDigit
 function useBadges(rol: string): Record<string, number> {
   const { datos } = useCargar(async (): Promise<Record<string, number>> => {
     if (rol === 'CAJERO') return {};
+    if (rol === 'SUPERADMIN' || rol === 'SOPORTE') return { '/casos': (await api<unknown[]>('/central/tickets?estado=ABIERTO')).length };
     const [permisos, recipes, avisados] = await Promise.all([
       api<unknown[]>('/autorizaciones'),
       api<unknown[]>('/recipes/pendientes'),
@@ -65,8 +66,9 @@ function Badge({ n, inline }: { n?: number; inline?: boolean }) {
 
 export default function AppShell() {
   const cargarConfig = useConfig((s) => s.cargar);
-  useEffect(() => { void cargarConfig(); }, [cargarConfig]);
   const rol = useRol();
+  const central = rol === 'SUPERADMIN' || rol === 'SOPORTE';
+  useEffect(() => { if (!central) void cargarConfig(); }, [cargarConfig, central]);
   const usuario = useSesion((s) => s.usuario)!;
   const tasa = useSesion((s) => s.tasa);
   const tasaModo = useConfig((s) => s.config?.tasaModo);
@@ -139,7 +141,7 @@ export default function AppShell() {
         <div className="mt-auto flex flex-col items-center gap-2 border-t border-line pt-3 xl:items-stretch xl:px-2">
           <div className="hidden text-xs text-muted xl:block">
             <div className="font-semibold text-fg">{usuario.nombre}</div>
-            <div>{ROLE_LABEL[rol]}</div>
+            <div>{usuario.soporte ? 'Soporte remoto' : ROLE_LABEL[rol]}</div>
           </div>
           <div className="flex items-center gap-1">
             <ThemeToggle />
@@ -151,16 +153,17 @@ export default function AppShell() {
       </nav>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <SinConexion />
+        {central ? null : <SinConexion />}
+        <AvisoSoporte />
         <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-line bg-surface/95 px-4 py-2.5 backdrop-blur md:px-6" style={{ paddingTop: 'max(0.625rem, env(safe-area-inset-top))' }}>
           <div className="flex min-w-0 items-center gap-2.5">
             <span className="md:hidden"><Brand /></span>
             <span className="truncate font-display text-lg font-bold">{current?.label ?? 'Farmacia'}</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className={clsx('whitespace-nowrap rounded-md px-2 py-1 font-mono text-xs', tasa ? 'bg-surface2 text-muted' : 'bg-warn-soft text-warn')} title={tasaModo === 'BCV_EUR' ? 'Los precios en $ se convierten con la tasa del euro del BCV' : 'Tasa con la que se cobra'}>
+            {central ? <span className="whitespace-nowrap rounded-md bg-accent-soft px-2 py-1 text-xs font-semibold text-accent">Panel central</span> : <span className={clsx('whitespace-nowrap rounded-md px-2 py-1 font-mono text-xs', tasa ? 'bg-surface2 text-muted' : 'bg-warn-soft text-warn')} title={tasaModo === 'BCV_EUR' ? 'Los precios en $ se convierten con la tasa del euro del BCV' : 'Tasa con la que se cobra'}>
               {tasa ? `${tasaModo === 'BCV_EUR' ? 'Euro BCV' : tasaModo === 'BCV_USD' ? 'Dólar BCV' : 'Tasa'}: ${num2(tasa)} Bs` : 'Falta la tasa'}
-            </span>
+            </span>}
             <span className="md:hidden"><ThemeToggle /></span>
           </div>
         </header>
@@ -221,6 +224,26 @@ export default function AppShell() {
 }
 
 /** Barra roja cuando se cae el internet o el servidor no responde. Se quita sola al volver. */
+/**
+ * Soporte remoto: quien entró como soporte ve que está dentro de una farmacia ajena;
+ * el dueño ve hasta cuándo tiene acceso soporte y lo puede quitar con un toque.
+ */
+function AvisoSoporte() {
+  const usuario = useSesion((s) => s.usuario)!;
+  const dueno = usuario.rol === 'ADMIN' && !usuario.soporte;
+  const { datos, recargar } = useCargar(async () => (dueno ? api<{ acceso: { vence: string } | null }>('/soporte') : null), [dueno], 60_000);
+  if (usuario.soporte) {
+    return <div role="status" className="bg-info px-4 py-1.5 text-center text-[13px] font-semibold text-white">Estás dentro de esta farmacia como soporte técnico. Todo lo que hagas queda en la auditoría.</div>;
+  }
+  if (!datos?.acceso) return null;
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-2 bg-info-soft px-4 py-1.5 text-[13px] text-info">
+      <span><b>Soporte técnico puede entrar</b> hasta las {new Date(datos.acceso.vence).toLocaleTimeString('es-VE', { hour: 'numeric', minute: '2-digit' })}</span>
+      <button className="font-semibold underline" onClick={async () => { await api('/soporte/acceso/quitar', { method: 'POST' }); avisar('Acceso de soporte quitado', 'ok'); void recargar(); }}>Quitar acceso</button>
+    </div>
+  );
+}
+
 function SinConexion() {
   const enLinea = useConexion((s) => s.enLinea);
   const { pendientes, rechazadas } = useSinConexion();

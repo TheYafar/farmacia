@@ -4,7 +4,7 @@ Base: `/api/v1`. Respuestas en JSON. Los errores tienen la forma `{ "mensaje": "
 
 **Autenticación**: `Authorization: Bearer <accessToken>`. El token dura 15 minutos; se renueva con `POST /auth/renovar` usando la cookie de sesión.
 
-Roles: **C** = Cajero · **R** = Regente · **A** = Dueño (Administrador). «Todos» = cualquier usuario con sesión.
+Roles: **C** = Cajero · **R** = Regente · **A** = Dueño (Administrador) · **SA** = Super admin y **S** = Soporte (panel central). «Todos» = cualquier usuario de la farmacia con sesión (el equipo central solo usa sus rutas y las de `/auth`).
 
 ## Sesión
 
@@ -114,7 +114,7 @@ POST /api/v1/ventas
 <!-- rutas:inicio -->
 ## Todas las rutas
 
-Generada del código con `python3 infra/generar-api-doc.py`. 97 rutas.
+Generada del código con `python3 infra/generar-api-doc.py`. 121 rutas.
 
 | Método | Ruta | Quién | Qué hace |
 |---|---|---|---|
@@ -122,9 +122,9 @@ Generada del código con `python3 infra/generar-api-doc.py`. 97 rutas.
 | POST | `/auth/2fa/activar` | Todos |  |
 | POST | `/auth/2fa/desactivar` | Todos |  |
 | POST | `/auth/2fa/iniciar` | Todos |  |
-| POST | `/auth/login` | Todos |  |
 | POST | `/auth/renovar` | Público |  |
 | POST | `/auth/salir` | Todos |  |
+| POST | `/auth/soporte` | Público | Entrada de soporte remoto con el enlace que el dueño autorizó. |
 | GET | `/auth/yo` | Todos |  |
 | GET | `/autorizaciones` | R, A |  |
 | POST | `/autorizaciones` | R, A | El Regente da el permiso directamente (por ejemplo, atendiendo él mismo en el mostrador). |
@@ -151,6 +151,23 @@ Generada del código con `python3 infra/generar-api-doc.py`. 97 rutas.
 | POST | `/catalogo/productos` | A |  |
 | PATCH | `/catalogo/productos/:id` | A | Cambiar precio queda en la auditoría con el valor anterior. |
 | GET | `/catalogo/sin-conexion` | Todos | Catálogo completo para vender sin internet (la app lo guarda en el equipo cada pocos minutos). |
+| POST | `/central/enlace/acceso` | Público | El dueño dio (o quitó) acceso remoto a soporte. |
+| POST | `/central/enlace/reporte` | Público | Reporte de estado cada 5 minutos. Responde con el teléfono de soporte. |
+| GET | `/central/enlace/tickets` | Público |  |
+| POST | `/central/enlace/tickets` | Público |  |
+| POST | `/central/enlace/tickets/:id/mensajes` | Público |  |
+| GET | `/central/equipo` | SA | El equipo central (super admin y soporte). |
+| POST | `/central/equipo` | SA |  |
+| POST | `/central/equipo/:id/activo` | SA |  |
+| GET | `/central/farmacias` | SA, S | Todas las farmacias con su estado: en línea, ventas de hoy, errores y casos abiertos. |
+| POST | `/central/farmacias` | SA | Registra una farmacia y devuelve la clave para armar su código de enlace (se muestra una sola vez). |
+| GET | `/central/farmacias/:id` | SA, S |  |
+| PATCH | `/central/farmacias/:id` | SA |  |
+| POST | `/central/farmacias/:id/codigo` | SA | Código nuevo: el anterior deja de funcionar (por si se filtró). |
+| POST | `/central/farmacias/:id/entrar` | SA, S | Entrar a la farmacia como soporte: solo si el dueño dio permiso y no ha vencido. |
+| GET | `/central/tickets` | SA, S | Casos de soporte de todas las farmacias. |
+| GET | `/central/tickets/:id` | SA, S |  |
+| POST | `/central/tickets/:id/mensajes` | SA, S |  |
 | GET | `/configuracion` | Todos | Todos la leen (el cajero la necesita para imprimir); solo el dueño la cambia. |
 | POST | `/configuracion` | A |  |
 | GET | `/configuracion/primeros-pasos` | A | Lista de primeros pasos para una farmacia nueva (el panel la muestra hasta completarla). |
@@ -169,7 +186,7 @@ Generada del código con `python3 infra/generar-api-doc.py`. 97 rutas.
 | GET | `/inventario/lotes` | R, A | Lotes ordenados por vencimiento. `dias=30` muestra solo lo que vence en 30 días o menos. |
 | POST | `/inventario/ordenes/:id/recibir` | A | Recibe una orden de compra: compara lo pedido con lo que llegó y carga la compra (con sus lotes) en una sola operación. |
 | GET | `/libro/controlados` | R, A | Entradas (compras) y salidas (ventas) de productos psicotrópicos. Se arma solo con los movimientos. |
-| POST | `/mayorista/pedidos` | A | Deuda = pedidos despachados o entregados que no se han pagado completos. |
+| POST | `/mayorista/pedidos` | A | Crea una cotización con el precio de mayor del cliente (precio de detal menos su descuento). |
 | POST | `/mayorista/pedidos/:id/abonos` | A |  |
 | POST | `/mayorista/pedidos/:id/anular` | A |  |
 | POST | `/mayorista/pedidos/:id/avanzar` | A | Avanza el pedido. Al despachar descuenta el stock (FEFO) y revisa el límite de crédito. |
@@ -198,11 +215,18 @@ Generada del código con `python3 infra/generar-api-doc.py`. 97 rutas.
 | GET | `/reportes/resumen` | A |  |
 | GET | `/reportes/rotacion` | A | Rotación: lo que más se vende y lo que tiene existencia pero no se ha movido. |
 | GET | `/reportes/ventas-detalle` | A | Ventas por hora del día y por método de pago (netas de devoluciones). |
+| GET | `/soporte` | Todos |  |
+| POST | `/soporte/acceso` | A |  |
+| POST | `/soporte/acceso/quitar` | A |  |
+| POST | `/soporte/desenlazar` | A |  |
+| GET | `/soporte/diagnostico` | A | Lo mismo que se le envía a soporte: para que el dueño vea qué se comparte. |
+| POST | `/soporte/enlazar` | A |  |
+| GET | `/soporte/tickets` | Todos |  |
+| POST | `/soporte/tickets` | Todos | Pedir ayuda: se adjunta solo el estado de la farmacia para que soporte vea qué pasa. |
+| POST | `/soporte/tickets/:id/mensajes` | Todos |  |
 | GET | `/tasa` | Todos |  |
 | POST | `/tasa` | A | Tasa escrita a mano: deja la farmacia en modo manual para que la automática no la reemplace. |
 | POST | `/tasa/bcv` | A | Lee el BCV ahora mismo. |
-| GET | `/usuarios` | A |  |
-| POST | `/usuarios` | A |  |
 | PATCH | `/usuarios/:id` | A | Cambia nombre o rol. Al cambiar el rol se cierran sus sesiones para que entre con los permisos nuevos. |
 | POST | `/usuarios/:id/activar` | A |  |
 | PATCH | `/usuarios/:id/clave` | A | Cambia la clave y cierra las sesiones abiertas con la clave anterior. |

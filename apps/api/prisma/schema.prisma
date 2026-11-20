@@ -17,6 +17,9 @@ enum Rol {
   CAJERO
   REGENTE
   ADMIN
+  /// Panel central (quien vende el sistema): ve todas las farmacias y da soporte.
+  SUPERADMIN
+  SOPORTE
 }
 
 model Usuario {
@@ -31,6 +34,8 @@ model Usuario {
   totpSecreto      String?
   totpActivo       Boolean   @default(false)
   bloqueadoHasta   DateTime?
+  /// Usuario interno (el de soporte remoto): no entra con clave ni aparece en la lista.
+  sistema          Boolean   @default(false)
   creadoEn         DateTime  @default(now())
 
   sesiones        Sesion[]
@@ -56,6 +61,8 @@ model Sesion {
   revocadaEn  DateTime?
   ip          String?
   agente      String?
+  /// Sesiones de soporte remoto: no pueden durar más allá de este momento.
+  limite      DateTime?
   creadaEn    DateTime  @default(now())
 
   @@index([usuarioId])
@@ -618,6 +625,82 @@ model Configuracion {
   redondeoBs        Int     @default(0)
   /// Días que se guardan las fotos de récipes; después se borran solas.
   recipeRetencionDias Int   @default(730)
+
+  /// Enlace con el panel central de soporte (dirección y clave cifrada).
+  centralUrl        String?
+  centralClave      String?
+  centralTelefono   String?
+  centralUltimo     DateTime?
+  centralError      String?
+}
+
+// ---------- Panel central (solo en el servidor de quien vende el sistema) ----------
+
+/// Cada farmacia que usa el sistema. Se reporta sola cada 5 minutos con su estado.
+model FarmaciaRegistrada {
+  id            String    @id @default(uuid()) @db.Uuid
+  nombre        String
+  rif           String?
+  contacto      String?
+  telefono      String?
+  url           String?
+  notas         String?
+  activa        Boolean   @default(true)
+  claveHash     String    @unique
+  ultimoReporte DateTime?
+  version       String?
+  estado        Json?
+  /// Acceso remoto que el dueño de la farmacia autorizó (token cifrado y hasta cuándo vale).
+  accesoToken   String?
+  accesoVence   DateTime?
+  creadaEn      DateTime  @default(now())
+
+  tickets       TicketSoporte[]
+}
+
+enum EstadoTicket {
+  ABIERTO
+  RESPONDIDO
+  CERRADO
+}
+
+model TicketSoporte {
+  id          String             @id @default(uuid()) @db.Uuid
+  farmaciaId  String             @db.Uuid
+  farmacia    FarmaciaRegistrada @relation(fields: [farmaciaId], references: [id], onDelete: Cascade)
+  asunto      String
+  estado      EstadoTicket       @default(ABIERTO)
+  diagnostico Json?
+  creadoEn    DateTime           @default(now())
+  actualizado DateTime           @default(now())
+
+  mensajes    MensajeSoporte[]
+
+  @@index([farmaciaId, actualizado])
+}
+
+model MensajeSoporte {
+  id        String        @id @default(uuid()) @db.Uuid
+  ticketId  String        @db.Uuid
+  ticket    TicketSoporte @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  /// FARMACIA o SOPORTE
+  de        String
+  autor     String
+  texto     String
+  creadoEn  DateTime      @default(now())
+
+  @@index([ticketId, creadoEn])
+}
+
+/// En la farmacia: permisos de acceso remoto que el dueño le dio a soporte.
+model AccesoSoporte {
+  id         String    @id @default(uuid()) @db.Uuid
+  tokenHash  String    @unique
+  vence      DateTime
+  creadoPor  String    @db.Uuid
+  revocadoEn DateTime?
+  usos       Int       @default(0)
+  creadoEn   DateTime  @default(now())
 }
 
 enum EstadoOrdenCompra {

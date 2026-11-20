@@ -28,6 +28,8 @@ const esquema = z.object({
   FARMACIA_DIRECCION: z.string().trim().max(160).default(''),
   FARMACIA_TELEFONO: z.string().trim().max(40).default(''),
   /** Cuántos intermediarios (proxies) hay delante de la API: 1 = solo Caddy; 2 = Nginx/Caddy del VPS + Caddy. */
+  /** Solo en el panel central: WhatsApp de soporte que verán todas las farmacias enlazadas (ej. 584145550192). */
+  SOPORTE_TELEFONO: z.string().trim().max(20).default(''),
   TRUST_PROXY: z.coerce.number().int().min(0).max(3).default(1),
 });
 

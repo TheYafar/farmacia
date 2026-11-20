@@ -1,10 +1,10 @@
-import { BarChart3, Settings, ClipboardList, Receipt, Tags, BookLock, Building2, MessageCircle, PieChart, Truck, Camera, Clock, Package, ShieldCheck, ShoppingCart, UserCog, Users, Wallet } from 'lucide-react';
+import { Headset, LifeBuoy, Store, UsersRound, BarChart3, Settings, ClipboardList, Receipt, Tags, BookLock, Building2, MessageCircle, PieChart, Truck, Camera, Clock, Package, ShieldCheck, ShoppingCart, UserCog, Users, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Rol } from '@farmacia/shared';
 
 export interface NavItem { to: string; label: string; short: string; icon: LucideIcon; roles: Rol[]; grupo: Grupo }
 
-export const GRUPOS = ['Vender', 'Clientes', 'Inventario', 'Farmacéutico', 'Negocio', 'Administración'] as const;
+export const GRUPOS = ['Vender', 'Clientes', 'Inventario', 'Farmacéutico', 'Negocio', 'Administración', 'Panel central'] as const;
 export type Grupo = (typeof GRUPOS)[number];
 
 // El cajero ve solo 5 opciones. El dueño las ve agrupadas (Vender, Clientes, Inventario…); los grupos se pliegan.
@@ -27,7 +27,12 @@ export const NAV: NavItem[] = [
   { to: '/auditoria', label: 'Auditoría', short: 'Auditoría', icon: ClipboardList, roles: ['ADMIN'], grupo: 'Administración' },
   { to: '/configuracion', label: 'Configuración', short: 'Ajustes', icon: Settings, roles: ['ADMIN'], grupo: 'Administración' },
   { to: '/usuarios', label: 'Usuarios', short: 'Usuarios', icon: UserCog, roles: ['ADMIN'], grupo: 'Administración' },
+  { to: '/soporte', label: 'Soporte', short: 'Soporte', icon: LifeBuoy, roles: ['CAJERO', 'REGENTE', 'ADMIN'], grupo: 'Administración' },
+  // Panel central: quien vende el sistema ve todas las farmacias y les da soporte.
+  { to: '/farmacias', label: 'Farmacias', short: 'Farmacias', icon: Store, roles: ['SUPERADMIN', 'SOPORTE'], grupo: 'Panel central' },
+  { to: '/casos', label: 'Casos de soporte', short: 'Casos', icon: Headset, roles: ['SUPERADMIN', 'SOPORTE'], grupo: 'Panel central' },
+  { to: '/equipo', label: 'Equipo', short: 'Equipo', icon: UsersRound, roles: ['SUPERADMIN'], grupo: 'Panel central' },
 ];
 
-export const ROLE_LABEL: Record<Rol, string> = { CAJERO: 'Cajero', REGENTE: 'Farmacéutico', ADMIN: 'Dueño' };
-export const INICIO: Record<Rol, string> = { CAJERO: '/vender', REGENTE: '/revisar', ADMIN: '/resumen' };
+export const ROLE_LABEL: Record<Rol, string> = { CAJERO: 'Cajero', REGENTE: 'Farmacéutico', ADMIN: 'Dueño', SUPERADMIN: 'Super admin', SOPORTE: 'Soporte' };
+export const INICIO: Record<Rol, string> = { CAJERO: '/vender', REGENTE: '/revisar', ADMIN: '/resumen', SUPERADMIN: '/farmacias', SOPORTE: '/farmacias' };

@@ -5,7 +5,7 @@ Reemplaza lo que hay entre los marcadores <!-- rutas:inicio --> y <!-- rutas:fin
 import glob, re, pathlib
 
 RAIZ = pathlib.Path(__file__).resolve().parent.parent
-ROL = {'CAJERO': 'C', 'REGENTE': 'R', 'ADMIN': 'A'}
+ROL = {'CAJERO': 'C', 'REGENTE': 'R', 'ADMIN': 'A', 'SUPERADMIN': 'SA', 'SOPORTE': 'S'}
 
 
 def roles(txt):
@@ -21,12 +21,13 @@ for f in sorted(glob.glob(str(RAIZ / 'apps/api/src/**/*.ts'), recursive=True)):
         if not base:
             continue
         cabecera = bloque[:bloque.find('{')]
-        rol_clase = roles(cabecera) or 'Todos'
+        rol_clase = 'Público' if '@Publico' in cabecera else (roles(cabecera) or 'Todos')
         cuerpo = bloque[bloque.find('{'):]
         for m in re.finditer(r"((?:\s*/\*\*[\s\S]*?\*/)?(?:\s*@\w+\([^)]*\))*)\s*@(Get|Post|Patch|Put|Delete)\(('([^']*)')?\)((?:\s*@\w+\([^)]*\))*)", cuerpo):
             decor = m.group(1) + m.group(5)
-            doc = re.search(r"/\*\*([\s\S]*?)\*/", m.group(1))
-            texto = ' '.join(l.strip(' *') for l in doc.group(1).splitlines()).strip() if doc else ''
+            # El último comentario /** */ antes de la ruta (la expresión puede abarcar varios).
+            docs = re.findall(r"/\*\*((?:(?!\*/)[\s\S])*)\*/", m.group(1))
+            texto = ' '.join(l.strip(' *') for l in docs[-1].splitlines()).strip() if docs else ''
             publico = '@Publico' in decor
             quien = 'Público' if publico else (roles(decor) or rol_clase)
             ruta = '/' + '/'.join(p for p in [base.group(1), m.group(4) or ''] if p)

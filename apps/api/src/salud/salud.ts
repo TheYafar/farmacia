@@ -12,9 +12,12 @@ export class SaludController {
   /** Datos públicos de la farmacia (nombre, RIF, dirección): para el ticket y la pantalla de inicio. */
   @Publico()
   @Get('farmacia')
-  farmacia() {
+  async farmacia() {
     const c = this.config;
-    return { nombre: c.FARMACIA_NOMBRE, rif: c.FARMACIA_RIF, direccion: c.FARMACIA_DIRECCION, telefono: c.FARMACIA_TELEFONO };
+    const conf = await this.prisma.configuracion.findUnique({ where: { id: 1 }, select: { centralTelefono: true } }).catch(() => null);
+    // El WhatsApp de soporte sale del panel central (si la farmacia está enlazada) o del propio panel central.
+    const soporte = conf?.centralTelefono || c.SOPORTE_TELEFONO || null;
+    return { nombre: c.FARMACIA_NOMBRE, rif: c.FARMACIA_RIF, direccion: c.FARMACIA_DIRECCION, telefono: c.FARMACIA_TELEFONO, soporte };
   }
 
   @Publico()

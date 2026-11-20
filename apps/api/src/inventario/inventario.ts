@@ -1,15 +1,29 @@
-import { Body, Controller, Get, Module, Post, Query } from '@nestjs/common';
-import { compraSchema, type CompraInput } from '@farmacia/shared';
+import { Body, Controller, Get, HttpCode, Module, Post, Query } from '@nestjs/common';
+import { compraSchema, importacionSchema, type CompraInput, type ImportacionInput } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
 import { EsperaModule, EsperaService } from '../espera/espera';
 import { Roles, Usuario, type UsuarioActual } from '../common/seguridad';
 import { Validar } from '../common/validacion';
 import type { ReservaLista } from '../notificaciones/notificador';
+import { ImportacionService } from './importacion';
 
 @Controller('inventario')
 export class InventarioController {
-  constructor(private readonly prisma: PrismaService, private readonly espera: EsperaService, private readonly auditoria: AuditoriaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly espera: EsperaService,
+    private readonly auditoria: AuditoriaService,
+    private readonly importacion: ImportacionService,
+  ) {}
+
+  /** Carga del inventario desde Excel: con `confirmar: false` solo revisa, con `true` guarda (todo o nada). */
+  @Post('importar')
+  @Roles('ADMIN')
+  @HttpCode(200)
+  importar(@Body(new Validar(importacionSchema)) b: ImportacionInput, @Usuario() u: UsuarioActual) {
+    return this.importacion.importar(b.filas, b.confirmar, u.id);
+  }
 
   /** Lotes ordenados por vencimiento. `dias=30` muestra solo lo que vence en 30 días o menos. */
   @Get('lotes')
@@ -55,5 +69,5 @@ export class InventarioController {
   }
 }
 
-@Module({ imports: [EsperaModule], controllers: [InventarioController] })
+@Module({ imports: [EsperaModule], providers: [ImportacionService], controllers: [InventarioController] })
 export class InventarioModule {}

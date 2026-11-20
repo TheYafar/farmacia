@@ -1,0 +1,13 @@
+# Modo compartido: para un VPS que ya tiene otro proyecto usando los puertos 80 y 443.
+# La farmacia queda escuchando solo en 127.0.0.1:PUERTO_LOCAL y el servidor web del VPS
+# (Nginx o Caddy) le pasa las visitas del subdominio con HTTPS. Uso:
+#   docker compose -f docker-compose.yml -f docker-compose.compartido.yml up -d --build
+services:
+  web:
+    environment:
+      SITIO: ":80"
+    ports: !override
+      - "127.0.0.1:${PUERTO_LOCAL:-8090}:80"
+  api:
+    environment:
+      TRUST_PROXY: 2

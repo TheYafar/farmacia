@@ -213,6 +213,57 @@ describe('Reglas del mostrador', () => {
     });
   });
 
+  describe('Importación desde Excel', () => {
+    const fila = (extra: object = {}) => ({
+      codigoBarras: '7591000000099', nombreComercial: 'Atamel', laboratorio: 'Calox', principioActivo: 'Acetaminofén',
+      concentracion: '500 mg', forma: 'Tabletas', unidadesPorCaja: 20, precioUsd: 2.35, nivel: 'NACIONAL',
+      lote: 'AT-1', vence: '2027-08-21', cantidad: 18, ...extra,
+    });
+
+    it('primero revisa sin guardar y marca las filas con error', async () => {
+      const r = await admin.post('/inventario/importar', { filas: [fila(), { nombreComercial: 'Sin datos' }, fila({ lote: 'AT-1' })] });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      assert.equal(r.body.guardado, false);
+      assert.ok(r.body.errores.some((e: { fila: number }) => e.fila === 3), 'fila incompleta');
+      assert.ok(r.body.errores.some((e: { fila: number; campo: string }) => e.fila === 4 && e.campo === 'lote'), 'lote repetido');
+      assert.equal(await prisma.producto.count({ where: { nombreComercial: 'Atamel' } }), 0, 'no guardó nada');
+    });
+
+    it('con errores no guarda nada aunque se pida confirmar', async () => {
+      const r = await admin.post('/inventario/importar', { confirmar: true, filas: [fila(), { nombreComercial: 'Sin datos' }] });
+      assert.equal(r.body.guardado, false);
+      assert.equal(await prisma.producto.count({ where: { nombreComercial: 'Atamel' } }), 0);
+    });
+
+    it('guarda productos nuevos, actualiza precios de los existentes y crea principios activos', async () => {
+      const r = await admin.post('/inventario/importar', {
+        confirmar: true,
+        filas: [
+          fila(),
+          // Ya existe (mismo código): cambia el precio y el conteo del lote.
+          { codigoBarras: '7591000000011', nombreComercial: 'Acetaminofén', laboratorio: 'Lab. Orinoco', principioActivo: 'Acetaminofén', concentracion: '500 mg', forma: 'Tabletas', unidadesPorCaja: 10, precioUsd: 0.95, lote: 'TARDE', vence: '2027-01-01', cantidad: 4 },
+          { nombreComercial: 'Loratadina', laboratorio: 'Genéricos Ávila', principioActivo: 'Loratadina', concentracion: '10 mg', forma: 'Tabletas', unidadesPorCaja: 10, precioUsd: 0.95 },
+        ],
+      });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      assert.equal(r.body.guardado, true);
+      assert.deepEqual([r.body.productosNuevos, r.body.productosActualizados, r.body.preciosCambiados, r.body.principiosNuevos, r.body.lotes], [2, 1, 1, 1, 2]);
+      assert.equal((await prisma.producto.findUniqueOrThrow({ where: { codigoBarras: '7591000000011' } })).precioUsd.toFixed(2), '0.95');
+      assert.equal(await stock('TARDE'), 4, 'la cantidad del Excel reemplaza el conteo del lote');
+      assert.equal(await stock('AT-1'), 18);
+      assert.ok(await prisma.auditoria.findFirst({ where: { accion: 'INVENTARIO_IMPORTADO' } }));
+
+      // Importar el mismo archivo otra vez no duplica nada.
+      const otra = await admin.post('/inventario/importar', { confirmar: true, filas: [fila()] });
+      assert.equal(otra.body.productosNuevos, 0);
+      assert.equal(await prisma.producto.count({ where: { nombreComercial: 'Atamel' } }), 1);
+    });
+
+    it('solo el dueño importa', async () => {
+      assert.equal((await regente.post('/inventario/importar', { filas: [fila()] })).status, 403);
+    });
+  });
+
   describe('Récipes', () => {
     it('rechaza un archivo que no es imagen aunque se llame .jpg', async () => {
       const r = await cajero.subir('/recipes').attach('foto', Buffer.from('<script>alert(1)</script>'), 'foto.jpg');

@@ -12,12 +12,13 @@ export async function crearApp(config: Config): Promise<INestApplication> {
   const app = await NestFactory.create<NestExpressApplication>(crearModulo(config), {
     logger: config.NODE_ENV === 'test' ? ['error'] : ['log', 'warn', 'error'],
   });
-  // Detrás de Caddy: confiar en un solo proxy para leer la IP real del cliente.
-  app.set('trust proxy', 1);
+  // Detrás de Caddy (y quizá del servidor web del VPS): leer la IP real del cliente sin confiar en lo que él mismo diga.
+  app.set('trust proxy', config.TRUST_PROXY);
   app.disable('x-powered-by');
   app.use(helmet());
   app.use(cookieParser());
-  app.useBodyParser('json', { limit: '200kb' });
+  // 2 MB: alcanza para importar 5.000 filas de inventario; el resto de las rutas envía mucho menos.
+  app.useBodyParser('json', { limit: '2mb' });
   app.enableCors({ origin: config.corsOrigins, credentials: true, methods: ['GET', 'POST', 'PATCH', 'DELETE'] });
   app.setGlobalPrefix('api/v1');
   app.enableShutdownHooks();

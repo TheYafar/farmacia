@@ -8,6 +8,8 @@ Guía para poner el sistema en un VPS de Contabo con Ubuntu 24.04. Tiempo aproxi
 - Un **dominio** (ej. `mostrador.farmaciaavila.com`) con un registro **A** apuntando a la IP del VPS.
 - Una **llave SSH** en tu computadora (`ssh-keygen -t ed25519` si no tienes).
 
+> **¿El VPS ya tiene otro proyecto (por ejemplo Kiospos)?** Sigue la sección [«VPS compartido»](#vps-compartido-con-otro-proyecto) al final en vez de los pasos 1 y 3: no hay que tocar nada de lo que ya funciona.
+
 ## 1. Entrar al servidor y prepararlo
 
 ```bash
@@ -112,3 +114,112 @@ Las migraciones de la base de datos se aplican solas al arrancar la API. Haz un 
 | `docker compose up` dice «Falta DB_PASSWORD» | Falta llenar `infra/.env` |
 | La API se reinicia sola | `docker compose logs api` — suele ser la configuración |
 | «Falta cargar la tasa del dólar de hoy» al vender | El dueño debe cargar la tasa en Resumen |
+
+## VPS compartido con otro proyecto
+
+Para un VPS que ya usa los puertos 80 y 443 (por ejemplo, con Kiospos). La farmacia corre en sus propios contenedores, con **su propia base de datos**, y solo escucha en `127.0.0.1:8090`. El servidor web que ya tiene el VPS (Nginx o Caddy) le pasa las visitas de un subdominio, con HTTPS.
+
+### 1. Revisar el VPS
+
+```bash
+free -h && df -h / && docker ps --format '{{.Names}}\t{{.Ports}}'
+```
+
+Medido en pruebas: la farmacia usa **unos 100 MB de RAM en reposo** (API, base de datos y web juntas) y **unos 1,3 GB de disco** en imágenes, más espacio temporal al compilar. Con al menos 1 GB de RAM y 5 GB de disco libres alcanza con holgura.
+
+```bash
+sudo ss -tlnp | grep -E ':(80|443|8090) '
+```
+
+Esto dice quién usa los puertos 80 y 443 (`nginx`, `caddy`, `docker-proxy`…) y confirma que el 8090 está libre. Si el 8090 está ocupado, usa otro en `PUERTO_LOCAL`.
+
+**No ejecutes `preparar-servidor.sh`** en un VPS compartido: activa un cortafuegos que podría cerrar puertos que usa el otro proyecto.
+
+### 2. Subdominio
+
+En el panel de tu dominio crea un registro **A**, por ejemplo `farmacia.tudominio.com`, con la misma IP del VPS.
+
+### 3. Instalar y arrancar
+
+```bash
+git clone https://github.com/TheYafar/farmacia.git /opt/farmacia
+```
+
+```bash
+cd /opt/farmacia/infra && cp .env.example .env && chmod 600 .env
+```
+
+En `.env` pon `DOMINIO=farmacia.tudominio.com`, los secretos (paso 2 de arriba) y, para un servidor de pruebas, `SEED_DEMO=true` y una clave en `SEED_DEMO_CLAVE`.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.compartido.yml up -d --build
+```
+
+```bash
+docker compose exec api node dist/prisma/seed.js
+```
+
+Comprobar que responde dentro del VPS:
+
+```bash
+curl http://127.0.0.1:8090/api/v1/salud
+```
+
+### 4a. Si el VPS usa Nginx
+
+Crea `/etc/nginx/sites-available/farmacia`:
+
+```nginx
+server {
+    listen 80;
+    server_name farmacia.tudominio.com;
+    client_max_body_size 6m;
+
+    location / {
+        proxy_pass http://127.0.0.1:8090;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+```bash
+sudo ln -s /etc/nginx/sites-available/farmacia /etc/nginx/sites-enabled/ && sudo nginx -t && sudo systemctl reload nginx
+```
+
+```bash
+sudo certbot --nginx -d farmacia.tudominio.com
+```
+
+### 4b. Si el VPS usa Caddy
+
+Agrega al `Caddyfile` del VPS y recarga Caddy:
+
+```
+farmacia.tudominio.com {
+	reverse_proxy 127.0.0.1:8090
+}
+```
+
+### 4c. Si el otro proyecto tiene su proxy dentro de Docker
+
+Si Nginx o Caddy corren en un contenedor, `127.0.0.1` dentro del contenedor no es el VPS. Usa la IP del VPS en la red de Docker (`172.17.0.1` normalmente) y en `.env` pon `PUERTO_LOCAL=8090`, cambiando en `docker-compose.compartido.yml` la línea de `ports` por `"172.17.0.1:8090:80"`.
+
+### Usuarios para probar
+
+Con `SEED_DEMO=true` y `SEED_DEMO_CLAVE`, quedan creados:
+
+| Usuario | Rol | Clave |
+|---|---|---|
+| `dueno` (o el de `SEED_ADMIN_USUARIO`) | Dueño | `SEED_ADMIN_CLAVE` |
+| `cajero` | Cajero | `SEED_DEMO_CLAVE` |
+| `farmaceutico` | Farmacéutico | `SEED_DEMO_CLAVE` |
+
+También queda una clienta de ejemplo, cédula **V-14582307**, alérgica a la penicilina, para probar los avisos.
+
+Los respaldos (`respaldo.sh`) y las actualizaciones funcionan igual; para actualizar en modo compartido:
+
+```bash
+cd /opt/farmacia && git pull && cd infra && docker compose -f docker-compose.yml -f docker-compose.compartido.yml up -d --build
+```

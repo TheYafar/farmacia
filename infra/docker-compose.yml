@@ -37,6 +37,9 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       UPLOAD_DIR: /app/apps/api/uploads
       NOTIFICADOR: ${NOTIFICADOR:-log}
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+      SEED_DEMO: ${SEED_DEMO:-false}
+      SEED_DEMO_CLAVE: ${SEED_DEMO_CLAVE:-}
       SEED_ADMIN_USUARIO: ${SEED_ADMIN_USUARIO:-}
       SEED_ADMIN_CLAVE: ${SEED_ADMIN_CLAVE:-}
     volumes:
@@ -50,7 +53,7 @@ services:
     restart: unless-stopped
     depends_on: [api]
     environment:
-      DOMINIO: ${DOMINIO}
+      SITIO: ${SITIO:-${DOMINIO}}
     ports:
       - "80:80"
       - "443:443"

@@ -2,6 +2,7 @@
  * Datos iniciales.
  *   SEED_ADMIN_USUARIO / SEED_ADMIN_CLAVE  → crea el usuario del dueño si todavía no hay ninguno (obligatorio la primera vez).
  *   SEED_DEMO=true                         → carga también un catálogo de ejemplo (solo para pruebas, nunca en la farmacia real).
+ *   SEED_DEMO_CLAVE                        → con SEED_DEMO, crea los usuarios de prueba «cajero» y «farmaceutico» con esa clave.
  */
 import { PrismaClient } from '@prisma/client';
 import { cifrarClave } from '../src/auth/auth';
@@ -55,6 +56,19 @@ async function main() {
     });
     if (stock) await prisma.lote.create({ data: { productoId: p.id, numero: `DEMO-${p.id.slice(0, 6)}`, vence: new Date(Date.now() + 240 * 86_400_000), stockLibre: stock } });
   }
+  const claveDemo = process.env.SEED_DEMO_CLAVE;
+  if (claveDemo && claveDemo.length >= 10) {
+    const hash = await cifrarClave(claveDemo);
+    for (const u of [{ nombre: 'Ana Pérez', usuario: 'cajero', rol: 'CAJERO' as const }, { nombre: 'Carlos Méndez', usuario: 'farmaceutico', rol: 'REGENTE' as const }]) {
+      await prisma.usuario.upsert({ where: { usuario: u.usuario }, create: { ...u, claveHash: hash }, update: {} });
+    }
+    console.log('Usuarios de prueba: cajero y farmaceutico.');
+  }
+  await prisma.paciente.upsert({
+    where: { cedula: 'V-14582307' },
+    create: { cedula: 'V-14582307', nombre: 'María Fernanda Rojas', telefono: '0414-5550192', alergias: ['penicilinas'], condiciones: ['Hipertensa'] },
+    update: {},
+  });
   console.log('Catálogo de ejemplo cargado.');
 }
 

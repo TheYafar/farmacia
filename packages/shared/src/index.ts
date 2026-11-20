@@ -4,6 +4,36 @@
  */
 import { z } from 'zod';
 
+/** Mensajes de validación en español para todo el sistema (app y servidor). */
+z.setErrorMap((issue, ctx) => {
+  switch (issue.code) {
+    case z.ZodIssueCode.invalid_type:
+      if (issue.received === 'undefined' || issue.received === 'null') return { message: 'Falta este dato' };
+      if (issue.expected === 'number') return { message: 'Debe ser un número' };
+      return { message: 'El dato no es válido' };
+    case z.ZodIssueCode.invalid_enum_value:
+      return { message: `Debe ser uno de: ${issue.options.join(', ')}` };
+    case z.ZodIssueCode.invalid_date:
+      return { message: 'Fecha inválida. Usa el formato 2027-08-21 o 21/08/2027' };
+    case z.ZodIssueCode.too_small:
+      if (issue.type === 'string') return { message: issue.minimum === 1 ? 'Falta este dato' : `Debe tener al menos ${issue.minimum} caracteres` };
+      if (issue.type === 'number') return { message: issue.minimum === 0 ? 'No puede ser negativo' : 'Debe ser mayor que cero' };
+      if (issue.type === 'array') return { message: `Debe tener al menos ${issue.minimum} elementos` };
+      break;
+    case z.ZodIssueCode.too_big:
+      if (issue.type === 'string') return { message: `Máximo ${issue.maximum} caracteres` };
+      if (issue.type === 'number') return { message: `No puede ser mayor que ${issue.maximum}` };
+      if (issue.type === 'array') return { message: `Máximo ${issue.maximum} elementos` };
+      break;
+    case z.ZodIssueCode.not_multiple_of:
+      return { message: 'Máximo 2 decimales' };
+    case z.ZodIssueCode.invalid_string:
+      if (issue.validation === 'uuid') return { message: 'Identificador inválido' };
+      return { message: 'Formato inválido' };
+  }
+  return { message: ctx.defaultError };
+});
+
 // ---------- Enumeraciones ----------
 
 export const ROLES = ['CAJERO', 'REGENTE', 'ADMIN'] as const;
@@ -201,3 +231,54 @@ export const validarRecipeSchema = z.object({
   nota: z.string().trim().max(500).optional(),
 });
 export type ValidarRecipeInput = z.infer<typeof validarRecipeSchema>;
+
+// ---------- Importación desde Excel ----------
+
+/** Una fila del Excel de inventario. Cada fila es un producto y, si trae lote, su existencia. */
+export const filaImportacionSchema = z
+  .object({
+    codigoBarras: z.string().trim().regex(/^\d{8,14}$/, 'El código de barras debe tener de 8 a 14 números').optional(),
+    nombreComercial: texto(120),
+    laboratorio: texto(120),
+    principioActivo: texto(120),
+    concentracion: texto(40),
+    forma: texto(40),
+    unidadesPorCaja: z.number().int().positive().max(1000),
+    precioUsd: z.number().positive().max(100_000),
+    nivel: z.enum(NIVELES_PRECIO).default('GENERICO'),
+    requiereRecipe: z.boolean().default(false),
+    riesgo: z.enum(CATEGORIAS_RIESGO).default('NORMAL'),
+    familia: z.string().trim().max(60).optional(),
+    lote: z.string().trim().max(40).optional(),
+    vence: z.coerce.date().optional(),
+    cantidad: z.number().int().min(0).max(1_000_000).optional(),
+  })
+  .refine((f) => !f.lote || (f.vence && f.cantidad !== undefined), { message: 'Si pones un lote, también van la fecha de vencimiento y la cantidad', path: ['lote'] });
+export type FilaImportacion = z.infer<typeof filaImportacionSchema>;
+
+export const MAX_FILAS_IMPORTACION = 5000;
+export const importacionSchema = z.object({
+  filas: z.array(z.unknown()).min(1, 'El archivo no tiene filas').max(MAX_FILAS_IMPORTACION, `Máximo ${MAX_FILAS_IMPORTACION} filas por archivo`),
+  /** false: solo revisa y muestra qué haría. true: guarda. */
+  confirmar: z.boolean().default(false),
+});
+export type ImportacionInput = z.infer<typeof importacionSchema>;
+
+/** Columnas del Excel, en el orden de la plantilla. */
+export const COLUMNAS_IMPORTACION: { clave: keyof FilaImportacion; titulo: string; ejemplo: string | number }[] = [
+  { clave: 'codigoBarras', titulo: 'Código de barras', ejemplo: '7591000000011' },
+  { clave: 'nombreComercial', titulo: 'Nombre comercial', ejemplo: 'Atamel' },
+  { clave: 'laboratorio', titulo: 'Laboratorio', ejemplo: 'Calox' },
+  { clave: 'principioActivo', titulo: 'Principio activo', ejemplo: 'Acetaminofén' },
+  { clave: 'concentracion', titulo: 'Concentración', ejemplo: '500 mg' },
+  { clave: 'forma', titulo: 'Forma', ejemplo: 'Tabletas' },
+  { clave: 'unidadesPorCaja', titulo: 'Unidades por caja', ejemplo: 20 },
+  { clave: 'precioUsd', titulo: 'Precio USD', ejemplo: 2.35 },
+  { clave: 'nivel', titulo: 'Nivel', ejemplo: 'NACIONAL' },
+  { clave: 'requiereRecipe', titulo: 'Requiere récipe', ejemplo: 'NO' },
+  { clave: 'riesgo', titulo: 'Riesgo', ejemplo: 'NORMAL' },
+  { clave: 'familia', titulo: 'Familia alergia', ejemplo: '' },
+  { clave: 'lote', titulo: 'Lote', ejemplo: 'L2405F' },
+  { clave: 'vence', titulo: 'Vence', ejemplo: '2027-08-21' },
+  { clave: 'cantidad', titulo: 'Cantidad', ejemplo: 18 },
+];

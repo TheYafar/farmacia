@@ -1,5 +1,13 @@
-# Caddy obtiene y renueva solo el certificado HTTPS de Let's Encrypt para {$DOMINIO}.
-{$DOMINIO} {
+# Modo normal: SITIO = el dominio, y Caddy obtiene y renueva solo el certificado HTTPS.
+# Modo compartido (otro proyecto ya usa 80/443): SITIO = ":80" y el servidor web del VPS hace el HTTPS.
+{
+	servers {
+		# Acepta la IP del cliente que informa el servidor web del VPS (red interna).
+		trusted_proxies static private_ranges
+	}
+}
+
+{$SITIO} {
 	encode zstd gzip
 
 	# Fotos de récipes de hasta 5 MB, más margen.

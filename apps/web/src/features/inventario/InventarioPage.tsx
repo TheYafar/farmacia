@@ -1,5 +1,5 @@
 import { clsx } from 'clsx';
-import { FileUp, Plus, Trash2 } from 'lucide-react';
+import { FileSpreadsheet, FileUp, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Alert, Button, Campo, Card, Cargando, Chip, ErrorCarga, Locked, PageHeader, Sheet, claseInput } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
@@ -8,6 +8,7 @@ import type { Grupo, Lote, Opcion } from '@/lib/tipos';
 import { useCargar } from '@/lib/useCargar';
 import { avisar } from '@/store/avisos';
 import { useRol } from '@/store/sesion';
+import ImportarExcel from './ImportarExcel';
 
 const sem = (d: number) =>
   d <= 30 ? { tone: 'bad' as const, txt: 'Vence este mes' } : d <= 90 ? { tone: 'warn' as const, txt: 'Vence pronto' } : { tone: 'ok' as const, txt: 'Bien' };
@@ -96,6 +97,7 @@ export default function InventarioPage() {
   const rol = useRol();
   const [dias, setDias] = useState<'' | '90' | '30'>('');
   const [compra, setCompra] = useState(false);
+  const [excel, setExcel] = useState(false);
   const { datos, error, cargando, recargar } = useCargar(() => api<Lote[]>(`/inventario/lotes${dias ? `?dias=${dias}` : ''}`), [dias]);
 
   return (
@@ -103,7 +105,12 @@ export default function InventarioPage() {
       <PageHeader
         title="Inventario"
         subtitle="Se vende primero lo que vence antes"
-        actions={rol === 'ADMIN' ? <Button variant="primary" icon={<FileUp className="h-4 w-4" />} onClick={() => setCompra(true)}>Cargar compra</Button> : <Locked>Solo el dueño carga compras</Locked>}
+        actions={rol === 'ADMIN' ? (
+          <>
+            <Button icon={<FileSpreadsheet className="h-4 w-4" />} onClick={() => setExcel(true)}>Cargar desde Excel</Button>
+            <Button variant="primary" icon={<FileUp className="h-4 w-4" />} onClick={() => setCompra(true)}>Cargar compra</Button>
+          </>
+        ) : <Locked>Solo el dueño carga compras</Locked>}
       />
       <div className="flex gap-1 self-start rounded-xl bg-surface2 p-1">
         {([['', 'Todo'], ['90', 'Vence en 3 meses'], ['30', 'Vence este mes']] as const).map(([v, t]) => (
@@ -140,6 +147,7 @@ export default function InventarioPage() {
           )}
         </Card>
       )}
+      <ImportarExcel abierto={excel} onCerrar={() => setExcel(false)} onListo={() => void recargar()} />
       <CargarCompra abierto={compra} onCerrar={() => setCompra(false)} onListo={() => { setCompra(false); void recargar(); }} />
     </div>
   );

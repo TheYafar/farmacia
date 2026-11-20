@@ -22,6 +22,8 @@ const esquema = z.object({
   BLOQUEO_MINUTOS: z.coerce.number().int().positive().default(15),
   /** 'log' escribe los mensajes en el registro; 'whatsapp' usa la API de WhatsApp Business (fase 3). */
   NOTIFICADOR: z.enum(['log', 'whatsapp']).default('log'),
+  /** Cuántos intermediarios (proxies) hay delante de la API: 1 = solo Caddy; 2 = Nginx/Caddy del VPS + Caddy. */
+  TRUST_PROXY: z.coerce.number().int().min(0).max(3).default(1),
 });
 
 export type Config = z.infer<typeof esquema> & { corsOrigins: string[] };

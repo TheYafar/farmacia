@@ -3,7 +3,8 @@ import { FileSpreadsheet, FileUp, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Alert, Button, Campo, Card, Cargando, Chip, ErrorCarga, Locked, PageHeader, Sheet, claseInput } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
-import { daysUntil } from '@/lib/format';
+import { daysUntil, normalizar, usd } from '@/lib/format';
+import { catalogoLocal } from '@/lib/sinConexion';
 import type { Grupo, Lote, Opcion } from '@/lib/tipos';
 import { useCargar } from '@/lib/useCargar';
 import { avisar } from '@/store/avisos';
@@ -17,23 +18,70 @@ const fmtFecha = (iso: string) => new Date(iso).toLocaleDateString('es-VE', { da
 interface LineaCompra { producto: Opcion | null; numeroLote: string; vence: string; cantidad: string; factorVenta: string; costoUsd: string }
 const nueva = (): LineaCompra => ({ producto: null, numeroLote: '', vence: '', cantidad: '', factorVenta: '1', costoUsd: '' });
 
+/** Todo el catálogo, cargado una vez por pantalla (para elegir productos sin esperar al servidor). */
+let catalogoCache: { cuando: number; items: Opcion[] } | null = null;
+async function catalogoCompleto(): Promise<Opcion[]> {
+  if (catalogoCache && Date.now() - catalogoCache.cuando < 60_000) return catalogoCache.items;
+  let grupos: Grupo[];
+  try { grupos = (await api<{ grupos: Grupo[] }>('/catalogo/sin-conexion')).grupos; } catch { grupos = catalogoLocal(); }
+  const items = grupos.flatMap((g) => g.opciones.map((o) => ({ ...o, buscable: normalizar([o.nombreComercial, g.principio.nombre, o.concentracion, o.forma, o.laboratorio, o.codigoBarras ?? ''].join(' ')) })))
+    .sort((a, b) => Number(b.stockLibre > 0) - Number(a.stockLibre > 0) || a.nombreComercial.localeCompare(b.nombreComercial, 'es'));
+  catalogoCache = { cuando: Date.now(), items };
+  return items;
+}
+
+/**
+ * Elegir un producto: al tocar el campo sale todo el inventario (primero lo que hay),
+ * y se filtra con cada letra. Si no aparece, se busca en el servidor (corrige errores de escritura).
+ */
 export function ElegirProducto({ valor, onElegir }: { valor: Opcion | null; onElegir: (o: Opcion) => void }) {
   const [q, setQ] = useState('');
-  const [res, setRes] = useState<Opcion[]>([]);
+  const [abierto, setAbierto] = useState(false);
+  const [todos, setTodos] = useState<(Opcion & { buscable?: string })[] | null>(null);
+  const [delServidor, setDelServidor] = useState<Opcion[]>([]);
+  const [cambiando, setCambiando] = useState(false);
+  const palabras = normalizar(q).split(/\s+/).filter(Boolean);
+  const locales = (todos ?? []).filter((o) => palabras.every((p) => o.buscable?.includes(p)));
   useEffect(() => {
-    if (q.trim().length < 2) { setRes([]); return; }
+    setDelServidor([]);
+    if (locales.length || q.trim().length < 4) return;
     const t = setTimeout(async () => {
-      try { setRes((await api<{ grupos: Grupo[] }>(`/catalogo/buscar?q=${encodeURIComponent(q)}`)).grupos.flatMap((g) => g.opciones)); } catch { setRes([]); }
-    }, 250);
+      try { setDelServidor((await api<{ grupos: Grupo[] }>(`/catalogo/buscar?q=${encodeURIComponent(q)}`)).grupos.flatMap((g) => g.opciones)); } catch { /* nada */ }
+    }, 300);
     return () => clearTimeout(t);
-  }, [q]);
-  if (valor) return <div className="flex h-11 items-center rounded-lg bg-surface2 px-3 text-sm font-semibold">{valor.nombreComercial} {valor.concentracion} · {valor.laboratorio}</div>;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, locales.length]);
+  const res = (locales.length ? locales : delServidor).slice(0, 60);
+  const elegir = (o: Opcion) => { onElegir(o); setQ(''); setAbierto(false); setCambiando(false); };
+
+  if (valor && !cambiando) {
+    return (
+      <div className="flex min-h-11 items-center justify-between gap-2 rounded-lg bg-surface2 px-3 py-1.5 text-sm">
+        <span className="font-semibold">{valor.nombreComercial} {valor.concentracion} · {valor.laboratorio}</span>
+        <button type="button" className="shrink-0 text-xs font-semibold text-accent underline" onClick={() => { setCambiando(true); setAbierto(true); void catalogoCompleto().then(setTodos); }}>Cambiar</button>
+      </div>
+    );
+  }
   return (
     <div className="relative">
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar producto" className={clsx(claseInput, 'w-full')} aria-label="Producto" />
-      {res.length > 0 && (
-        <ul className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-line bg-surface shadow-pop">
-          {res.map((o) => <li key={o.id}><button type="button" className="w-full px-3 py-2 text-left text-sm hover:bg-surface2" onClick={() => { onElegir(o); setQ(''); setRes([]); }}>{o.nombreComercial} {o.concentracion} · {o.laboratorio}</button></li>)}
+      <input value={q} onChange={(e) => { setQ(e.target.value); setAbierto(true); }}
+        onFocus={() => { setAbierto(true); if (!todos) void catalogoCompleto().then(setTodos); }}
+        onBlur={() => setTimeout(() => setAbierto(false), 150)}
+        onKeyDown={(e) => { if (e.key === 'Enter' && res[0]) { e.preventDefault(); elegir(res[0]); } if (e.key === 'Escape') setAbierto(false); }}
+        placeholder="Toca para ver el inventario o escribe" className={clsx(claseInput, 'w-full')} aria-label="Producto" autoComplete="off" />
+      {abierto && (
+        <ul className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-line bg-surface shadow-pop">
+          {!todos ? <li className="px-3 py-2 text-sm text-muted">Cargando inventario…</li>
+            : !res.length ? <li className="px-3 py-2 text-sm text-muted">No hay productos con «{q}»</li>
+            : res.map((o) => (
+              <li key={o.id}>
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => elegir(o)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-surface2">
+                  <span className="min-w-0"><span className="block truncate font-semibold">{o.nombreComercial} {o.concentracion}</span><span className="block truncate text-xs text-muted">{o.laboratorio} · {o.forma}</span></span>
+                  <span className="shrink-0 text-right"><span className="block font-mono">{usd(o.precioUsd)}</span><span className={clsx('block text-xs', o.stockLibre ? 'text-muted' : 'font-semibold text-bad')}>{o.stockLibre ? `Hay ${o.stockLibre}` : 'Agotado'}</span></span>
+                </button>
+              </li>
+            ))}
+          {todos && !q && (todos.length > 60) && <li className="px-3 py-2 text-xs text-muted">Mostrando 60 de {todos.length}. Escribe para filtrar.</li>}
         </ul>
       )}
     </div>

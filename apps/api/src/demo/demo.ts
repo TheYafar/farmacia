@@ -38,7 +38,8 @@ export class DemoService implements OnApplicationBootstrap {
     const c = this.prisma.demo();
     // La extensión «unaccent» vive en el esquema público: la demo la usa con este atajo.
     await c.$executeRawUnsafe(`CREATE OR REPLACE FUNCTION demo.unaccent(text) RETURNS text LANGUAGE sql IMMUTABLE AS $$ SELECT public.unaccent($1) $$`);
-    if (!(await c.usuario.count())) await this.cargar();
+    // Cada vez que arranca el servidor (por ejemplo, al actualizar) la demo queda como nueva.
+    await this.cargar();
   }
 
   private async cargar() {

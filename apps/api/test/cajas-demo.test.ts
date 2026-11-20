@@ -56,6 +56,12 @@ describe('Cajas por equipo, correo y demo', () => {
     assert.equal((await api().get('/api/v1/cajas/este-equipo').set('x-caja', t1)).body.caja, null);
   });
 
+  it('una tasa con fecha futura no tapa la tasa de hoy', async () => {
+    await prisma.tasaCambio.create({ data: { valor: 999, creadaPorId: d.admin.id, creadaEn: new Date(Date.now() + 3_600_000) } });
+    assert.equal((await admin.post('/tasa', { valor: 250.25 })).status, 201);
+    assert.equal(Number((await admin.get('/tasa')).body.valor), 250.25);
+  });
+
   it('entrar con el correo', async () => {
     assert.equal((await admin.patch(`/usuarios/${d.admin.id}`, { correo: 'Duena@Farmacia.com' })).status, 200);
     const r = await api().post('/api/v1/auth/login').send({ usuario: 'duena@farmacia.com', clave: CLAVE });
@@ -75,6 +81,9 @@ describe('Cajas por equipo, correo y demo', () => {
     assert.ok(prods.body.grupos.length > 0);
     assert.ok((await demo.get('/ventas')).body.length > 0 || (await demo.get('/ventas')).status === 200);
     assert.equal((await demo.get('/cajas')).body.length, 2);
+    // Una tasa guardada se ve al instante (aunque haya tasas de ejemplo con hora más tarde en el día).
+    assert.equal((await demo.post('/tasa', { valor: 300.5 })).status, 201);
+    assert.equal(Number((await demo.get('/tasa')).body.valor), 300.5);
     // Lo que no se puede en la demo.
     assert.equal((await demo.post('/usuarios', { nombre: 'X', usuario: 'xxx', clave: 'clave-larga-123', rol: 'CAJERO' })).status, 403);
     // La farmacia real no cambió.

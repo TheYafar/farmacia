@@ -83,7 +83,7 @@ export class SoporteService {
       this.prisma.venta.aggregate({ where: { creadaEn: { gte: hoy }, estado: 'COMPLETADA' }, _count: true, _sum: { totalUsd: true } }),
       this.prisma.venta.findFirst({ orderBy: { creadaEn: 'desc' }, select: { creadaEn: true } }),
       this.prisma.turno.count({ where: { estado: 'ABIERTO' } }),
-      this.prisma.tasaCambio.findFirst({ orderBy: { creadaEn: 'desc' }, select: { valor: true, creadaEn: true, fuente: true } }),
+      this.prisma.tasaCambio.findFirst({ where: { creadaEn: { lte: new Date() } }, orderBy: { creadaEn: 'desc' }, select: { valor: true, creadaEn: true, fuente: true } }),
       this.prisma.configuracion.findUnique({ where: { id: 1 }, select: { tasaModo: true, bcvConsultado: true, bcvFecha: true, farmaciaNombre: true, farmaciaRif: true } }),
       this.prisma.usuario.count({ where: { activo: true, sistema: false } }),
       this.prisma.producto.count({ where: { activo: true } }),

@@ -53,7 +53,7 @@ export class TasaService {
   constructor(private readonly prisma: PrismaService, private readonly auditoria: AuditoriaService, @Inject(CONFIG) private readonly config: Config) {}
 
   async actual(cliente: Prisma.TransactionClient | PrismaService = this.prisma) {
-    const t = await cliente.tasaCambio.findFirst({ orderBy: { creadaEn: 'desc' } });
+    const t = await cliente.tasaCambio.findFirst({ where: { creadaEn: { lte: new Date() } }, orderBy: { creadaEn: 'desc' } });
     if (!t) throw new ServiceUnavailableException('Falta cargar la tasa del dólar de hoy');
     return t;
   }
@@ -88,7 +88,7 @@ export class TasaService {
   async aplicar(c: Awaited<ReturnType<TasaService['configuracion']>>, usuarioId?: string) {
     const r = TasaService.calcular(c);
     if (!r) return null;
-    const vigente = await this.prisma.tasaCambio.findFirst({ orderBy: { creadaEn: 'desc' } });
+    const vigente = await this.prisma.tasaCambio.findFirst({ where: { creadaEn: { lte: new Date() } }, orderBy: { creadaEn: 'desc' } });
     if (vigente && vigente.valor.equals(r.valor) && vigente.fuente === r.fuente) return { valor: r.valor.toFixed(4), fuente: r.fuente, cambio: false };
     // El BCV publica en la tarde la tasa del día siguiente: se aplica a las 12 de la noche, no a mitad de la jornada
     // (así los precios en bolívares no cambian mientras la farmacia está abierta). Si no hay ninguna tasa, se usa ya.

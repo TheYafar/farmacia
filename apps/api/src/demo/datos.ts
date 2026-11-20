@@ -105,7 +105,7 @@ export async function sembrarDemo(prisma: PrismaClient) {
   for (let d = DIAS; d >= 0; d--) {
     const valor = Math.round((240 + (DIAS - d) * 0.4 + r() * 0.6) * 100) / 100;
     tasas.push(valor);
-    await prisma.tasaCambio.create({ data: { valor, fuente: 'BCV', creadaPorId: duena.id, creadaEn: new Date(hoy.getTime() - d * DIA + 9 * 3_600_000) } });
+    await prisma.tasaCambio.create({ data: { valor, fuente: 'BCV', creadaPorId: duena.id, creadaEn: new Date(Math.min(hoy.getTime() - d * DIA + 9 * 3_600_000, ahora - 3_600_000)) } });
   }
 
   const caja1 = await prisma.caja.create({ data: { nombre: 'Caja 1 · Mostrador', creadaPorId: duena.id } });
@@ -149,8 +149,10 @@ export async function sembrarDemo(prisma: PrismaClient) {
     const turnos = d === 0 ? [{ quien: cajera, caja: caja1, desde: 8 }] : [{ quien: cajera, caja: caja1, desde: 8 }, { quien: cajero2, caja: caja2, desde: 14 }];
     for (const t of turnos) {
       const abierto = d === 0;
+      // Hoy: el turno empezó hace un rato y sus ventas son de antes de ahora (nada con hora futura).
+      const inicio = abierto ? Math.min(dia + t.desde * 3_600_000, ahora - 2 * 3_600_000) : dia + t.desde * 3_600_000;
       const turno = await prisma.turno.create({
-        data: { cajeroId: t.quien.id, cajaId: t.caja.id, fondoUsd: 20, fondoBs: 500, abiertoEn: new Date(dia + t.desde * 3_600_000), estado: abierto ? 'ABIERTO' : 'CERRADO', cerradoEn: abierto ? null : new Date(dia + (t.desde + 6) * 3_600_000) },
+        data: { cajeroId: t.quien.id, cajaId: t.caja.id, fondoUsd: 20, fondoBs: 500, abiertoEn: new Date(inicio), estado: abierto ? 'ABIERTO' : 'CERRADO', cerradoEn: abierto ? null : new Date(dia + (t.desde + 6) * 3_600_000) },
       });
       const n = abierto ? 9 : entre(6, 13);
       const totales: Record<string, number> = { PAGO_MOVIL: 0, PUNTO_DE_VENTA: 0, EFECTIVO_USD: 0, EFECTIVO_BS: 0 };
@@ -165,7 +167,7 @@ export async function sembrarDemo(prisma: PrismaClient) {
           data: {
             cajeroId: t.quien.id, turnoId: turno.id, cedula: paciente, totalUsd: D(total), tasa, totalBs: D(total * tasa), metodoPago: metodo, tasaFuente: 'BCV',
             referenciaPago: metodo === 'PAGO_MOVIL' ? String(entre(1000, 9999)) : null,
-            creadaEn: new Date(dia + (t.desde + r() * (abierto ? Math.max(0.5, (ahora - dia) / 3_600_000 - t.desde - 0.2) : 6)) * 3_600_000),
+            creadaEn: new Date(abierto ? inicio + r() * (ahora - inicio - 60_000) : inicio + r() * 6 * 3_600_000),
             lineas: { create: lineas.map((p) => ({ productoId: p.id, loteId: p.loteId, cantidad: 1, precioUsd: p.precio })) },
             pagos: { create: [{ metodo, moneda: enBs ? 'BS' : 'USD', monto: D(enBs ? total * tasa : total), montoUsd: D(total), referencia: metodo === 'PAGO_MOVIL' ? String(entre(1000, 9999)) : null }] },
           },

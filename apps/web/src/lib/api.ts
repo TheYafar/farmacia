@@ -8,7 +8,7 @@ let token: string | null = null;
 let renovando: Promise<boolean> | null = null;
 let alExpirar: (() => void) | null = null;
 
-export interface Bloqueo { productoId: string; motivo: 'FALTA_CEDULA' | 'FALTA_RECIPE' | 'ALERGIA' | 'CONTROLADO'; mensaje: string }
+export interface Bloqueo { productoId: string; motivo: 'FALTA_CEDULA' | 'FALTA_RECIPE' | 'ALERGIA' | 'CONTROLADO' | 'RECIPE_PENDIENTE'; mensaje: string }
 
 /** Estado de la conexión con el servidor: la barra roja «Sin conexión» lo usa. */
 export const useConexion = create<{ enLinea: boolean }>(() => ({ enLinea: true }));

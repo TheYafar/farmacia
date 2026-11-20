@@ -81,16 +81,31 @@ export class CajaController {
     return this.prisma.$transaction(async (tx) => {
       const t = await this.caja.turnoAbierto(u.id, tx);
       if (!t) throw new ConflictException('No tienes una caja abierta');
-      const { ventas, totalUsd, ...esperado } = await this.caja.esperado(t.id, tx);
-      const diferencia = Object.fromEntries(METODOS_PAGO.map((m) => [m, D(b.contado[m]).sub(esperado[m]).toNumber()]));
-      const cerrado = await tx.turno.update({
-        where: { id: t.id },
-        data: { estado: 'CERRADO', cerradoEn: new Date(), esperado, contado: b.contado, diferencia, nota: b.nota },
-      });
-      const cuadra = Object.values(diferencia).every((x) => x === 0);
-      await this.auditoria.registrar({ usuarioId: u.id, accion: cuadra ? 'CAJA_CERRADA' : 'CAJA_CERRADA_CON_DIFERENCIA', entidad: 'Turno', entidadId: t.id, datos: { diferencia, ventas } }, tx);
-      return { ...cerrado, ventas, totalUsd, cuadra };
+      return this.cerrarTurno(tx, t.id, b, u, b.nota);
     });
+  }
+
+  /** El dueño cierra la caja que otra persona dejó abierta (contando él lo que hay). Así esa caja se puede volver a usar. */
+  @Post('turnos/:id/cerrar')
+  @Roles('ADMIN')
+  async cerrarDeOtro(@Param('id', ParseUUIDPipe) id: string, @Body(new Validar(cerrarCajaSchema)) b: CerrarCajaInput, @Usuario() u: UsuarioActual) {
+    return this.prisma.$transaction(async (tx) => {
+      const t = await tx.turno.findUnique({ where: { id }, include: { cajero: { select: { nombre: true } } } });
+      if (!t || t.estado !== 'ABIERTO') throw new ConflictException('Esa caja ya está cerrada');
+      return this.cerrarTurno(tx, id, b, u, `Cerrada por ${u.nombre} (la había dejado abierta ${t.cajero.nombre})${b.nota ? `. ${b.nota}` : ''}`);
+    });
+  }
+
+  private async cerrarTurno(tx: Prisma.TransactionClient, turnoId: string, b: CerrarCajaInput, u: UsuarioActual, nota?: string) {
+    const { ventas, totalUsd, ...esperado } = await this.caja.esperado(turnoId, tx);
+    const diferencia = Object.fromEntries(METODOS_PAGO.map((m) => [m, D(b.contado[m]).sub(esperado[m]).toNumber()]));
+    // Solo cierra si sigue abierta (dos cierres a la vez no se pisan).
+    const r = await tx.turno.updateMany({ where: { id: turnoId, estado: 'ABIERTO' }, data: { estado: 'CERRADO', cerradoEn: new Date(), esperado, contado: b.contado, diferencia, nota } });
+    if (!r.count) throw new ConflictException('Esa caja ya está cerrada');
+    const cerrado = await tx.turno.findUniqueOrThrow({ where: { id: turnoId } });
+    const cuadra = Object.values(diferencia).every((x) => x === 0);
+    await this.auditoria.registrar({ usuarioId: u.id, accion: cuadra ? 'CAJA_CERRADA' : 'CAJA_CERRADA_CON_DIFERENCIA', entidad: 'Turno', entidadId: turnoId, datos: { diferencia, ventas } }, tx);
+    return { ...cerrado, ventas, totalUsd, cuadra };
   }
 
   @Get('turnos')

@@ -114,7 +114,7 @@ POST /api/v1/ventas
 <!-- rutas:inicio -->
 ## Todas las rutas
 
-Generada del código con `python3 infra/generar-api-doc.py`. 133 rutas.
+Generada del código con `python3 infra/generar-api-doc.py`. 134 rutas.
 
 | Método | Ruta | Quién | Qué hace |
 |---|---|---|---|
@@ -137,6 +137,7 @@ Generada del código con `python3 infra/generar-api-doc.py`. 133 rutas.
 | GET | `/caja/actual` | Todos | Mi caja abierta. El cajero NO ve cuánto debería haber (cierre a ciegas): así cuenta de verdad. El Regente y el dueño sí lo ven. |
 | POST | `/caja/cerrar` | Todos |  |
 | GET | `/caja/turnos` | R, A |  |
+| POST | `/caja/turnos/:id/cerrar` | A | El dueño cierra la caja que otra persona dejó abierta (contando él lo que hay). Así esa caja se puede volver a usar. |
 | POST | `/caja/turnos/:id/revisar` | A | El dueño marca el cierre como revisado (por ejemplo, después de aclarar una diferencia). |
 | GET | `/cajas` | A | Todas las cajas: equipos, quién la tiene abierta y lo vendido hoy. |
 | POST | `/cajas` | C, R, A | Crear una caja. Normalmente en el mismo equipo donde se va a cobrar. |
@@ -196,7 +197,7 @@ Generada del código con `python3 infra/generar-api-doc.py`. 133 rutas.
 | POST | `/inventario/importar` | A | Carga del inventario desde Excel: con `confirmar: false` solo revisa, con `true` guarda (todo o nada). |
 | GET | `/inventario/lotes` | R, A | Lotes ordenados por vencimiento. `dias=30` muestra solo lo que vence en 30 días o menos. |
 | POST | `/inventario/ordenes/:id/recibir` | A | Recibe una orden de compra: compara lo pedido con lo que llegó y carga la compra (con sus lotes) en una sola operación. |
-| GET | `/libro/controlados` | R, A | Entradas (compras) y salidas (ventas) de productos psicotrópicos. Se arma solo con los movimientos. |
+| GET | `/libro/controlados` | R, A | Movimientos de productos psicotrópicos, armados solos: ventas, devoluciones de clientes, compras, devoluciones a la droguería, ajustes (mermas, vencidos, conteos) y despachos al mayor. |
 | POST | `/mayorista/pedidos` | A | Crea una cotización con el precio de mayor del cliente (precio de detal menos su descuento). |
 | POST | `/mayorista/pedidos/:id/abonos` | A |  |
 | POST | `/mayorista/pedidos/:id/anular` | A |  |

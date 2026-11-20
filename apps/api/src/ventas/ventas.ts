@@ -11,7 +11,7 @@ import { descontarFefo } from '../inventario/stock';
 import { CajaModule, CajaService } from '../caja/caja';
 
 /** Motivo por el que una línea no se puede vender sin más. El mensaje lo lee el cajero. */
-interface Bloqueo { productoId: string; motivo: 'ALERGIA' | 'CONTROLADO' | 'FALTA_RECIPE' | 'FALTA_CEDULA'; mensaje: string }
+interface Bloqueo { productoId: string; motivo: 'ALERGIA' | 'CONTROLADO' | 'FALTA_RECIPE' | 'FALTA_CEDULA' | 'RECIPE_PENDIENTE'; mensaje: string }
 
 const INCLUIR_VENTA = {
   lineas: { include: { producto: { select: { nombreComercial: true, concentracion: true } }, lote: { select: { numero: true, vence: true } } } },
@@ -68,6 +68,11 @@ export class VentasService {
           if (rx) recipes.set(p.id, rx.id);
           if (!rx || rx.cedula !== b.cedula || rx.estado === 'RECHAZADO') {
             bloqueos.push({ productoId: p.id, motivo: 'FALTA_RECIPE', mensaje: `${nombre} necesita la foto del récipe del cliente` });
+            continue;
+          }
+          // Sin permiso de por medio (no es controlado ni choca con una alergia), el farmacéutico tiene que haber revisado el récipe.
+          if (rx.estado === 'PENDIENTE' && !controlado && !alergia) {
+            bloqueos.push({ productoId: p.id, motivo: 'RECIPE_PENDIENTE', mensaje: `El récipe de ${nombre} está esperando que el farmacéutico lo revise (Por revisar)` });
             continue;
           }
         }
@@ -186,7 +191,7 @@ export class VentasService {
    */
   async devolver(id: string, b: DevolucionInput, quien: UsuarioActual) {
     return this.prisma.$transaction(async (tx) => {
-      const v = await tx.venta.findUnique({ where: { id }, include: { lineas: true } });
+      const v = await tx.venta.findUnique({ where: { id }, include: { lineas: { include: { producto: { select: { ivaPct: true } } } } } });
       if (!v) throw new NotFoundException('La venta no existe');
       if (v.estado === 'ANULADA') throw new ConflictException('La venta está anulada');
       const factor = new Prisma.Decimal(1).sub(v.descuentoPct.div(100));
@@ -197,7 +202,9 @@ export class VentasService {
         if (d.cantidad > l.cantidad - l.devuelto) throw new ConflictException(`Solo quedan ${l.cantidad - l.devuelto} por devolver en esa línea`);
         await tx.ventaLinea.update({ where: { id: l.id }, data: { devuelto: { increment: d.cantidad } } });
         await tx.lote.update({ where: { id: l.loteId }, data: { stockLibre: { increment: d.cantidad } } });
-        montoUsd = montoUsd.add(l.precioUsd.mul(d.cantidad).mul(factor));
+        // Se reintegra lo que pagó: precio con su descuento, más el IVA de ese producto (si tenía la venta).
+        const neto = l.precioUsd.mul(d.cantidad).mul(factor);
+        montoUsd = montoUsd.add(v.ivaUsd.gt(0) ? neto.mul(new Prisma.Decimal(100).add(l.producto.ivaPct)).div(100) : neto);
       }
       montoUsd = montoUsd.toDecimalPlaces(2);
       const monto = monedaDe(b.metodo) === 'USD' ? montoUsd : montoUsd.mul(v.tasa).toDecimalPlaces(2);
@@ -215,7 +222,12 @@ export class VentasService {
       const v = await tx.venta.findUnique({ where: { id }, include: { lineas: true } });
       if (!v) throw new NotFoundException('La venta no existe');
       if (v.estado === 'ANULADA') throw new ConflictException('La venta ya estaba anulada');
-      for (const l of v.lineas) await tx.lote.update({ where: { id: l.loteId }, data: { stockLibre: { increment: l.cantidad } } });
+      // Si ya tuvo devoluciones, anular devolvería el stock y el dinero dos veces: se devuelve el resto.
+      if (await tx.devolucion.count({ where: { ventaId: id } })) throw new ConflictException('Esta venta ya tiene devoluciones: usa «Devolver productos» para el resto');
+      // Si su caja ya se cerró, ese dinero ya se contó: hay que devolverlo (sale de la caja de hoy), no anular.
+      const turno = v.turnoId ? await tx.turno.findUnique({ where: { id: v.turnoId }, select: { estado: true } }) : null;
+      if (turno?.estado === 'CERRADO') throw new ConflictException('Esta venta es de una caja ya cerrada: usa «Devolver productos» para reintegrarle el dinero');
+      for (const l of v.lineas) await tx.lote.update({ where: { id: l.loteId }, data: { stockLibre: { increment: l.cantidad - l.devuelto } } });
       await tx.venta.update({ where: { id }, data: { estado: 'ANULADA' } });
       await this.auditoria.registrar({ usuarioId: quien.id, accion: 'VENTA_ANULADA', entidad: 'Venta', entidadId: id, datos: { totalUsd: v.totalUsd.toFixed(2) } }, tx);
     });

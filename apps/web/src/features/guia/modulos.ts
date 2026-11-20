@@ -45,7 +45,7 @@ export const GUIAS: Record<string, GuiaModulo> = {
       'Toca una venta para ver el detalle.',
       'Toca «Reimprimir ticket» para imprimirlo de nuevo o enviarlo por WhatsApp.',
       'Para devolver (farmacéutico o dueño), toca «Devolver productos», elige cuáles y cuántos, el motivo y cómo se le reintegra. El producto vuelve a su lote y sale un comprobante.',
-      'Para anular toda la venta (solo el dueño), toca «Anular venta».',
+      'Para anular toda la venta (solo el dueño), toca «Anular venta». Solo se puede si la caja de esa venta sigue abierta y no tuvo devoluciones; si no, usa «Devolver productos».',
     ],
     consejos: ['El cajero solo ve sus propias ventas.', 'Nada se borra: las anulaciones quedan en la Auditoría.'],
   },

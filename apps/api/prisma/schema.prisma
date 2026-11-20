@@ -525,6 +525,8 @@ model PedidoMayor {
   validaHasta DateTime?
   /// Convenio: empleado de la empresa que retira (se le cobra a la empresa).
   empleado  String?
+  /// Cuándo salió la mercancía (va al libro de controlados).
+  despachadoEn DateTime?
   creadoPorId String           @db.Uuid
   creadoEn  DateTime           @default(now())
   lineas    PedidoMayorLinea[]
@@ -540,6 +542,8 @@ model PedidoMayorLinea {
   productoId String      @db.Uuid
   cantidad   Int
   precioUsd  Decimal     @db.Decimal(12, 2)
+  /// De qué lotes salió al despachar: [{ loteId, cantidad }].
+  lotes      Json?
 }
 
 model AbonoMayor {

@@ -141,6 +141,31 @@ function CerrarCaja({ onCerrada }: { onCerrada: (t: Turno) => void }) {
   );
 }
 
+/** El dueño cierra una caja que alguien dejó abierta: cuenta lo que hay y la caja queda libre para el próximo turno. */
+function CerrarDeOtro({ t, listo }: { t: Turno; listo: () => void }) {
+  const [contado, setContado] = useState<Record<MetodoPago, string>>({ EFECTIVO_USD: '', EFECTIVO_BS: '', PAGO_MOVIL: '', PUNTO_DE_VENTA: '' });
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="flex flex-col gap-2 rounded-lg bg-surface2 p-3">
+      <p className="text-sm">¿{t.cajero?.nombre} dejó esta caja abierta? Cuenta lo que hay y ciérrala tú. Queda anotado que la cerraste.</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {METODOS_PAGO.map((m) => (
+          <Campo key={m} etiqueta={`${NOMBRE_METODO[m]} (${moneda(m)})`}>
+            <input inputMode="decimal" placeholder="0" value={contado[m]} onChange={(e) => setContado({ ...contado, [m]: e.target.value })} className={`${claseInput} font-mono`} />
+          </Campo>
+        ))}
+      </div>
+      {error && <Alert tone="bad">{error}</Alert>}
+      <Button size="sm" variant="primary" className="self-start" onClick={async () => {
+        const valores = Object.fromEntries(METODOS_PAGO.map((m) => [m, leerMonto(contado[m])])) as Montos;
+        if (METODOS_PAGO.some((m) => !(valores[m] >= 0))) { setError('Revisa los montos: solo números'); return; }
+        try { await api(`/caja/turnos/${t.id}/cerrar`, { body: { contado: valores } }); avisar('Caja cerrada', 'ok'); listo(); }
+        catch (e) { setError(e instanceof ApiError ? e.message : 'No se pudo cerrar'); }
+      }}>Cerrar esta caja</Button>
+    </div>
+  );
+}
+
 function Cierres() {
   const rol = useRol();
   const { datos, error, cargando, recargar } = useCargar(() => api<Turno[]>('/caja/turnos'), [], 30_000);
@@ -165,6 +190,7 @@ function Cierres() {
                   {t.revisadoEn && <Chip tone="ok" icon={<CheckCircle2 className="h-3 w-3" />}>Revisado</Chip>}
                 </span>
               </button>
+              {abierto === t.id && t.estado === 'ABIERTO' && rol === 'ADMIN' && <CerrarDeOtro t={t} listo={() => { setAbierto(null); recargar(); }} />}
               {abierto === t.id && t.estado === 'CERRADO' && (
                 <div className="flex flex-col gap-2 rounded-lg bg-surface2 p-3">
                   <TablaCierre t={t} />

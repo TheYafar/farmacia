@@ -234,10 +234,17 @@ export class MayoristaController {
         if (deuda.plus(p.totalUsd).gt(p.cliente.limiteUsd)) {
           throw new ConflictException(`Pasa el límite de crédito de ${p.cliente.nombre}: debe ${deuda.toFixed(2)} $ y el límite es ${D(p.cliente.limiteUsd).toFixed(2)} $`);
         }
-        for (const l of p.lineas) await descontarFefo(tx, l.productoId, l.cantidad, 'producto para el pedido');
+        // Se guarda de qué lotes salió cada producto (va al libro de controlados).
+        for (const l of p.lineas) {
+          const partes = await descontarFefo(tx, l.productoId, l.cantidad, 'producto para el pedido');
+          await tx.pedidoMayorLinea.update({ where: { id: l.id }, data: { lotes: partes } });
+        }
         data.venceEn = new Date(Date.now() + p.cliente.diasCredito * dia);
+        data.despachadoEn = new Date();
       }
-      await tx.pedidoMayor.update({ where: { id }, data });
+      // Solo avanza si nadie lo avanzó mientras tanto (dos clics a la vez no descuentan el stock dos veces).
+      const r = await tx.pedidoMayor.updateMany({ where: { id, estado: p.estado }, data: data as Prisma.PedidoMayorUpdateManyMutationInput });
+      if (!r.count) throw new ConflictException('El pedido cambió mientras tanto. Recarga');
       await this.auditoria.registrar({ usuarioId: u.id, accion: `PEDIDO_MAYOR_${sig}`, entidad: 'PedidoMayor', entidadId: id }, tx);
       return { estado: sig };
     });
@@ -342,12 +349,16 @@ const intervaloValido = (dias: number) => dias <= 5 && dias >= -20;
 export class LibroController {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Entradas (compras) y salidas (ventas) de productos psicotrópicos. Se arma solo con los movimientos. */
+  /**
+   * Movimientos de productos psicotrópicos, armados solos: ventas, devoluciones de clientes, compras,
+   * devoluciones a la droguería, ajustes (mermas, vencidos, conteos) y despachos al mayor.
+   */
   @Get('controlados')
   async controlados(@Query('desde') desde?: string, @Query('hasta') hasta?: string) {
     const { d, h } = rango(desde, hasta);
     const controlado = { principioActivo: { riesgo: 'PSICOTROPICO' as const } };
-    const [salidas, entradas] = await Promise.all([
+    const nombreDe = (p: { nombreComercial: string; concentracion: string }) => `${p.nombreComercial} ${p.concentracion}`;
+    const [salidas, entradas, devoluciones, devProveedor, ajustes, despachos] = await Promise.all([
       this.prisma.ventaLinea.findMany({
         where: { producto: controlado, venta: { estado: 'COMPLETADA', creadaEn: { gte: d, lt: h } } },
         include: {
@@ -357,24 +368,75 @@ export class LibroController {
           autorizacion: { select: { regente: { select: { nombre: true } } } },
         },
       }),
+      // Las compras anuladas no cuentan: su mercancía se sacó del inventario.
       this.prisma.compraLinea.findMany({
-        where: { producto: controlado, compra: { creadaEn: { gte: d, lt: h } } },
+        where: { producto: controlado, compra: { anulada: false, creadaEn: { gte: d, lt: h } } },
         include: { producto: { select: { nombreComercial: true, concentracion: true } }, compra: { select: { creadaEn: true, proveedor: true, numeroFactura: true, creadaPor: { select: { nombre: true } } } } },
       }),
+      this.prisma.devolucion.findMany({ where: { creadoEn: { gte: d, lt: h } }, include: { venta: { select: { numero: true, cedula: true, paciente: { select: { nombre: true } } } } } }),
+      this.prisma.devolucionProveedor.findMany({ where: { creadoEn: { gte: d, lt: h } } }),
+      this.prisma.ajusteInventario.findMany({ where: { creadoEn: { gte: d, lt: h } } }),
+      this.prisma.pedidoMayorLinea.findMany({
+        where: { productoId: { in: (await this.prisma.producto.findMany({ where: controlado, select: { id: true } })).map((p) => p.id) }, pedido: { estado: { in: ['DESPACHADO', 'ENTREGADO'] }, despachadoEn: { gte: d, lt: h } } },
+        include: { pedido: { select: { numero: true, despachadoEn: true, cliente: { select: { nombre: true, rif: true } } } } },
+      }),
     ]);
-    return [
-      ...salidas.map((s) => ({
-        fecha: s.venta.creadaEn, tipo: 'SALIDA' as const, producto: `${s.producto.nombreComercial} ${s.producto.concentracion}`, lote: s.lote.numero, cantidad: s.cantidad,
-        paciente: s.venta.paciente ? `${s.venta.paciente.nombre} · ${s.venta.cedula}` : s.venta.cedula ?? '—',
-        medico: s.recipe?.medico ? `${s.recipe.medico.nombre}${s.recipe.medico.mpps ? ` · MPPS ${s.recipe.medico.mpps}` : ''}` : '—',
-        documento: `Venta #${s.venta.numero}`,
-        responsable: s.recipe?.validadoPor?.nombre ?? s.autorizacion?.regente?.nombre ?? s.venta.cajero.nombre,
+
+    // Datos que hacen falta para devoluciones, ajustes y despachos (lotes, productos y usuarios).
+    const lineasDev = devoluciones.flatMap((dv) => (dv.lineas as { lineaId: string; cantidad: number }[]).map((x) => ({ ...x, dv })));
+    const vls = await this.prisma.ventaLinea.findMany({
+      where: { id: { in: lineasDev.map((x) => x.lineaId) }, producto: controlado },
+      include: { producto: { select: { nombreComercial: true, concentracion: true } }, lote: { select: { numero: true } } },
+    });
+    const loteIds = [...devProveedor.map((x) => x.loteId), ...ajustes.map((x) => x.loteId), ...despachos.flatMap((x) => ((x.lotes ?? []) as { loteId: string }[]).map((l) => l.loteId))];
+    const lotes = new Map((await this.prisma.lote.findMany({ where: { id: { in: loteIds }, producto: controlado }, include: { producto: { select: { nombreComercial: true, concentracion: true } } } })).map((l) => [l.id, l]));
+    const usuarios = new Map((await this.prisma.usuario.findMany({ where: { id: { in: [...devoluciones.map((x) => x.usuarioId), ...devProveedor.map((x) => x.usuarioId), ...ajustes.map((x) => x.usuarioId)] } }, select: { id: true, nombre: true } })).map((u) => [u.id, u.nombre]));
+    const compras = new Map((await this.prisma.compra.findMany({ where: { id: { in: devProveedor.map((x) => x.compraId) } }, select: { id: true, proveedor: true, numeroFactura: true } })).map((c) => [c.id, c]));
+
+    type Fila = { fecha: Date; tipo: 'ENTRADA' | 'SALIDA'; producto: string; lote: string; cantidad: number; paciente: string; medico: string; documento: string; responsable: string };
+    const filas: Fila[] = [
+      ...salidas.map((x) => ({
+        fecha: x.venta.creadaEn, tipo: 'SALIDA' as const, producto: nombreDe(x.producto), lote: x.lote.numero, cantidad: x.cantidad,
+        paciente: x.venta.paciente ? `${x.venta.paciente.nombre} · ${x.venta.cedula}` : x.venta.cedula ?? '—',
+        medico: x.recipe?.medico ? `${x.recipe.medico.nombre}${x.recipe.medico.mpps ? ` · MPPS ${x.recipe.medico.mpps}` : ''}` : '—',
+        documento: `Venta #${x.venta.numero}`,
+        responsable: x.recipe?.validadoPor?.nombre ?? x.autorizacion?.regente?.nombre ?? x.venta.cajero.nombre,
       })),
-      ...entradas.map((e) => ({
-        fecha: e.compra.creadaEn, tipo: 'ENTRADA' as const, producto: `${e.producto.nombreComercial} ${e.producto.concentracion}`, lote: e.numeroLote, cantidad: e.cantidad * e.factorVenta,
-        paciente: '—', medico: '—', documento: `${e.compra.proveedor} · ${e.compra.numeroFactura}`, responsable: e.compra.creadaPor.nombre,
+      ...entradas.map((x) => ({
+        fecha: x.compra.creadaEn, tipo: 'ENTRADA' as const, producto: nombreDe(x.producto), lote: x.numeroLote, cantidad: x.cantidad * x.factorVenta,
+        paciente: '—', medico: '—', documento: `Compra: ${x.compra.proveedor} · ${x.compra.numeroFactura}`, responsable: x.compra.creadaPor.nombre,
       })),
-    ].sort((a, b) => b.fecha.getTime() - a.fecha.getTime());
+      ...lineasDev.flatMap((x) => {
+        const vl = vls.find((v) => v.id === x.lineaId);
+        return vl ? [{
+          fecha: x.dv.creadoEn, tipo: 'ENTRADA' as const, producto: nombreDe(vl.producto), lote: vl.lote.numero, cantidad: x.cantidad,
+          paciente: x.dv.venta.paciente ? `${x.dv.venta.paciente.nombre} · ${x.dv.venta.cedula}` : x.dv.venta.cedula ?? '—', medico: '—',
+          documento: `Devolución de la venta #${x.dv.venta.numero}: ${x.dv.motivo}`, responsable: usuarios.get(x.dv.usuarioId) ?? '—',
+        }] : [];
+      }),
+      ...devProveedor.flatMap((x) => {
+        const l = lotes.get(x.loteId), c = compras.get(x.compraId);
+        return l ? [{
+          fecha: x.creadoEn, tipo: 'SALIDA' as const, producto: nombreDe(l.producto), lote: l.numero, cantidad: x.cantidad, paciente: '—', medico: '—',
+          documento: `Devuelto a ${c?.proveedor ?? 'la droguería'}${c ? ` · ${c.numeroFactura}` : ''}: ${x.motivo}`, responsable: usuarios.get(x.usuarioId) ?? '—',
+        }] : [];
+      }),
+      ...ajustes.flatMap((x) => {
+        const l = lotes.get(x.loteId);
+        return l ? [{
+          fecha: x.creadoEn, tipo: x.cantidad > 0 ? 'ENTRADA' as const : 'SALIDA' as const, producto: nombreDe(l.producto), lote: l.numero, cantidad: Math.abs(x.cantidad),
+          paciente: '—', medico: '—', documento: `Ajuste: ${x.motivo}${x.nota ? ` (${x.nota})` : ''}`, responsable: usuarios.get(x.usuarioId) ?? '—',
+        }] : [];
+      }),
+      ...despachos.flatMap((x) => ((x.lotes ?? []) as { loteId: string; cantidad: number }[]).flatMap((parte) => {
+        const l = lotes.get(parte.loteId);
+        return l ? [{
+          fecha: x.pedido.despachadoEn!, tipo: 'SALIDA' as const, producto: nombreDe(l.producto), lote: l.numero, cantidad: parte.cantidad,
+          paciente: `${x.pedido.cliente.nombre} · ${x.pedido.cliente.rif}`, medico: '—', documento: `Despacho al mayor #${x.pedido.numero}`, responsable: '—',
+        }] : [];
+      })),
+    ];
+    return filas.sort((a, b) => b.fecha.getTime() - a.fecha.getTime());
   }
 }
 

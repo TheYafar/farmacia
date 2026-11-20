@@ -62,6 +62,7 @@ export interface Recipe {
 export interface Solicitud {
   id: string;
   cedula: string;
+  productoId: string;
   estado: EstadoEspera;
   solicitadaEn: string;
   venceReserva: string | null;

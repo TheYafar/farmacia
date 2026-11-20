@@ -43,15 +43,23 @@ export class InventarioController {
   @Post('ajustes')
   @Roles('REGENTE', 'ADMIN')
   async ajuste(@Body(new Validar(ajusteSchema)) b: AjusteInput, @Usuario() u: UsuarioActual) {
-    return this.prisma.$transaction(async (tx) => {
+    let avisos: ReservaLista[] = [];
+    const r = await this.prisma.$transaction(async (tx) => {
       const [l] = await tx.$queryRaw<{ stockLibre: number }[]>`SELECT "stockLibre" FROM "Lote" WHERE id = ${b.loteId}::uuid FOR UPDATE`;
       if (!l) throw new NotFoundException('Lote no encontrado');
       if (l.stockLibre + b.cantidad < 0) throw new ConflictException(`Solo hay ${l.stockLibre} libres en ese lote`);
       await tx.lote.update({ where: { id: b.loteId }, data: { stockLibre: { increment: b.cantidad } } });
       const a = await tx.ajusteInventario.create({ data: { ...b, usuarioId: u.id } });
       await this.auditoria.registrar({ usuarioId: u.id, accion: 'AJUSTE_INVENTARIO', entidad: 'Lote', entidadId: b.loteId, datos: { cantidad: b.cantidad, motivo: b.motivo, nota: b.nota } }, tx);
+      // Si entró mercancía, se aparta para los clientes que la estaban esperando.
+      if (b.cantidad > 0) {
+        const lote = await tx.lote.findUniqueOrThrow({ where: { id: b.loteId }, select: { productoId: true } });
+        avisos = await this.espera.asignar(tx, lote.productoId);
+      }
       return a;
     });
+    await this.espera.enviar(avisos);
+    return r;
   }
 
   @Get('ajustes')
@@ -79,7 +87,10 @@ export class InventarioController {
         data: {
           proveedor: b.proveedor, numeroFactura: b.numeroFactura, creadaPorId: u.id, lineas: { create: b.lineas },
           totalUsd: b.lineas.reduce((a, l) => a + l.cantidad * l.costoUsd, 0).toFixed(2),
-          venceEn: new Date(Date.now() + b.diasCredito * 86_400_000),
+          // 0 días de crédito = se pagó de contado: no queda como deuda.
+          ...(b.diasCredito > 0
+            ? { venceEn: new Date(Date.now() + b.diasCredito * 86_400_000) }
+            : { pagadoUsd: b.lineas.reduce((a, l) => a + l.cantidad * l.costoUsd, 0).toFixed(2) }),
         },
       });
       for (const l of b.lineas) {
@@ -129,9 +140,18 @@ export class InventarioController {
       if (!l.numeroLote || !l.vence) throw new BadRequestException('Cada producto recibido necesita lote y vencimiento');
       return { productoId: ol.productoId, numeroLote: l.numeroLote, vence: l.vence, cantidad: l.recibido, factorVenta: l.factorVenta, costoUsd: l.costoUsd };
     });
-    const compra = await this.compra({ proveedor: o.proveedor, numeroFactura: b.numeroFactura, diasCredito: b.diasCredito, lineas }, u);
+    // Se «toma» la orden antes de cargar: si alguien la recibe dos veces a la vez, la segunda no carga nada.
+    const tomada = await this.prisma.ordenCompra.updateMany({ where: { id, estado: 'ABIERTA' }, data: { estado: 'RECIBIDA' } });
+    if (!tomada.count) throw new ConflictException('Esta orden ya fue recibida o anulada');
+    let compra: Awaited<ReturnType<InventarioController['compra']>>;
+    try {
+      compra = await this.compra({ proveedor: o.proveedor, numeroFactura: b.numeroFactura, diasCredito: b.diasCredito, lineas }, u);
+    } catch (e) {
+      await this.prisma.ordenCompra.update({ where: { id }, data: { estado: 'ABIERTA' } });
+      throw e;
+    }
     for (const l of b.lineas) await this.prisma.ordenCompraLinea.update({ where: { id: l.lineaId }, data: { recibido: l.recibido } });
-    await this.prisma.ordenCompra.update({ where: { id }, data: { estado: 'RECIBIDA', compraId: compra.id } });
+    await this.prisma.ordenCompra.update({ where: { id }, data: { compraId: compra.id } });
     const faltas = o.lineas.map((ol) => ({ productoId: ol.productoId, pedido: ol.cantidad, llego: b.lineas.find((x) => x.lineaId === ol.id)?.recibido ?? 0 })).filter((x) => x.llego !== x.pedido);
     return { compraId: compra.id, clientesAvisados: compra.clientesAvisados, diferencias: faltas.length };
   }
@@ -170,7 +190,8 @@ export class InventarioController {
       const c = await tx.compra.findUnique({ where: { id }, include: { lineas: true } });
       if (!c) throw new NotFoundException('Compra no encontrada');
       if (c.anulada) throw new ConflictException('Ya estaba anulada');
-      if (c.pagadoUsd.gt(0)) throw new ConflictException('Ya tiene pagos registrados: haz una devolución a la droguería en vez de anular');
+      // Lo que cuenta son los abonos registrados (una compra de contado nace pagada y sí se puede anular).
+      if (await tx.pagoProveedor.count({ where: { compraId: id } })) throw new ConflictException('Ya tiene pagos registrados: haz una devolución a la droguería en vez de anular');
       if (!c.devueltoUsd.isZero()) throw new ConflictException('Ya tiene devoluciones: no se puede anular');
       for (const l of c.lineas) {
         const unidades = l.cantidad * l.factorVenta;

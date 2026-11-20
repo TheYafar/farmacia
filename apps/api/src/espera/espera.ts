@@ -8,6 +8,7 @@ import { TasaModule, TasaService } from '../tasa/tasa';
 import { Notificador, type ReservaLista } from '../notificaciones/notificador';
 import { Modulo, Roles, Usuario, type UsuarioActual } from '../common/seguridad';
 import { Validar } from '../common/validacion';
+import { alergiaQueChoca } from '../common/texto';
 import { bloquearLotes } from '../inventario/stock';
 
 type Tx = Prisma.TransactionClient;
@@ -91,20 +92,52 @@ export class EsperaService {
       if (s.estado !== 'NOTIFICADO' || !s.loteId) throw new ConflictException('Esta solicitud no está esperando pago');
       if (s.venceReserva && s.venceReserva < new Date()) throw new ConflictException('El tiempo para pagar venció');
 
+      // Las mismas reglas que en Vender: récipe para lo que lo pide, y permiso del farmacéutico para controlados o alergias.
+      const reglas = await this.revisarReglas(tx, s.cedula, s.productoId);
       const tasa = await this.tasa.actual(tx);
+      // El cobro entra en la caja abierta de quien lo registra (si tiene una), para que salga en su cierre.
+      const turno = await tx.turno.findFirst({ where: { cajeroId: u.id, estado: 'ABIERTO' }, select: { id: true } });
+      const ivaUsd = s.producto.precioUsd.mul(s.producto.ivaPct).div(100).toDecimalPlaces(2);
+      const totalUsd = s.producto.precioUsd.add(ivaUsd);
+      const totalBs = totalUsd.mul(tasa.valor).toDecimalPlaces(2);
       await tx.lote.update({ where: { id: s.loteId }, data: { stockReservado: { decrement: 1 } } });
       const venta = await tx.venta.create({
         data: {
-          cajeroId: u.id, cedula: s.cedula, metodoPago: 'PAGO_MOVIL', referenciaPago: b.referenciaPagoMovil,
-          totalUsd: s.producto.precioUsd, tasa: tasa.valor, totalBs: s.producto.precioUsd.mul(tasa.valor).toDecimalPlaces(2),
-          lineas: { create: { productoId: s.productoId, loteId: s.loteId, cantidad: 1, precioUsd: s.producto.precioUsd } },
-          pagos: { create: { metodo: 'PAGO_MOVIL', moneda: 'BS', monto: s.producto.precioUsd.mul(tasa.valor).toDecimalPlaces(2), montoUsd: s.producto.precioUsd, referencia: b.referenciaPagoMovil } },
+          cajeroId: u.id, cedula: s.cedula, metodoPago: 'PAGO_MOVIL', referenciaPago: b.referenciaPagoMovil, turnoId: turno?.id, tasaFuente: tasa.fuente,
+          totalUsd, ivaUsd, tasa: tasa.valor, totalBs,
+          lineas: { create: { productoId: s.productoId, loteId: s.loteId, cantidad: 1, precioUsd: s.producto.precioUsd, recipeId: reglas.recipeId, autorizacionId: reglas.autorizacionId } },
+          pagos: { create: { metodo: 'PAGO_MOVIL', moneda: 'BS', monto: totalBs, montoUsd: totalUsd, referencia: b.referenciaPagoMovil } },
         },
       });
       const r = await tx.solicitudEspera.update({ where: { id }, data: { estado: 'PAGADO_CUSTODIA', referenciaPagoMovil: b.referenciaPagoMovil, gaveta: b.gaveta, ventaId: venta.id } });
       await this.auditoria.registrar({ usuarioId: u.id, accion: 'ESPERA_PAGADA', entidad: 'SolicitudEspera', entidadId: id, datos: { ventaId: venta.id } }, tx);
       return r;
     });
+  }
+
+  /** Récipe y permiso para cobrar un encargo de un producto delicado (las mismas reglas que en Vender). */
+  private async revisarReglas(tx: Tx, cedula: string, productoId: string) {
+    const [p, paciente] = await Promise.all([
+      tx.producto.findUniqueOrThrow({ where: { id: productoId }, include: { principioActivo: true } }),
+      tx.paciente.findUniqueOrThrow({ where: { cedula } }),
+    ]);
+    const controlado = p.principioActivo.riesgo !== 'NORMAL';
+    const alergia = alergiaQueChoca(paciente.alergias, p.principioActivo);
+    let recipeId: string | undefined, autorizacionId: string | undefined;
+    if (controlado || p.requiereRecipe) {
+      const rx = await tx.recipe.findFirst({ where: { cedula, estado: { not: 'RECHAZADO' }, creadoEn: { gte: new Date(Date.now() - 30 * 86_400_000) } }, orderBy: { creadoEn: 'desc' } });
+      if (!rx) throw new ConflictException({ mensaje: 'Este producto necesita el récipe: tómale la foto en «Récipe» con la cédula del cliente', codigo: 'NECESITA_RECIPE' });
+      if (rx.estado === 'PENDIENTE' && !controlado && !alergia) throw new ConflictException({ mensaje: 'El récipe está esperando que el farmacéutico lo revise (Por revisar)', codigo: 'RECIPE_PENDIENTE' });
+      recipeId = rx.id;
+    }
+    if (controlado || alergia) {
+      const a = await tx.autorizacion.findFirst({ where: { cedula, productoId, estado: 'APROBADA', usadaEn: null, expira: { gt: new Date() } }, orderBy: { respondidaEn: 'desc' } });
+      if (!a) throw new ConflictException({ mensaje: alergia ? `El cliente es alérgico a ${alergia}: necesita el permiso del farmacéutico` : 'Es un producto controlado: necesita el permiso del farmacéutico', codigo: 'NECESITA_PERMISO' });
+      const r = await tx.autorizacion.updateMany({ where: { id: a.id, usadaEn: null }, data: { usadaEn: new Date() } });
+      if (!r.count) throw new ConflictException('Ese permiso ya se usó en otra venta');
+      autorizacionId = a.id;
+    }
+    return { recipeId, autorizacionId };
   }
 
   async entregar(id: string, u: UsuarioActual) {

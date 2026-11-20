@@ -27,9 +27,14 @@ function Tarjeta({ w, recargar }: { w: Solicitud; recargar: () => void }) {
   const tasa = useSesion((s) => s.tasa);
   const [ref, setRef] = useState('');
   const [gaveta, setGaveta] = useState('');
+  // Productos controlados o con alergia: hace falta el permiso del farmacéutico antes de cobrar el encargo.
+  const [pidePermiso, setPidePermiso] = useState<'ALERGIA' | 'CONTROLADO' | null>(null);
   const accion = async (ruta: string, body?: object, msg?: string) => {
-    try { await api(ruta, { method: 'POST', body }); if (msg) avisar(msg, 'ok'); recargar(); }
-    catch (e) { avisar(e instanceof ApiError ? e.message : 'No se pudo guardar', 'bad'); }
+    try { await api(ruta, { method: 'POST', body }); if (msg) avisar(msg, 'ok'); setPidePermiso(null); recargar(); }
+    catch (e) {
+      avisar(e instanceof ApiError ? e.message : 'No se pudo guardar', 'bad');
+      if (e instanceof ApiError && e.codigo === 'NECESITA_PERMISO') setPidePermiso(e.message.includes('alérgico') ? 'ALERGIA' : 'CONTROLADO');
+    }
   };
   return (
     <li className={clsx('flex flex-col gap-1.5 rounded-lg border border-line bg-surface p-3 text-sm', (w.estado === 'ENTREGADO' || w.estado === 'EXPIRADO' || w.estado === 'CANCELADO') && 'opacity-70')}>
@@ -50,6 +55,12 @@ function Tarjeta({ w, recargar }: { w: Solicitud; recargar: () => void }) {
             <input value={gaveta} onChange={(e) => setGaveta(e.target.value.slice(0, 10))} placeholder="Gaveta" className="h-8 w-20 rounded-md border border-line bg-bg px-2 text-xs outline-none focus:border-accent" aria-label="Gaveta" />
           </div>
           <Button size="sm" variant="primary" disabled={ref.length < 4} onClick={() => accion(`/espera/${w.id}/confirmar-pago`, { referenciaPagoMovil: ref, gaveta: gaveta || undefined }, 'Pago confirmado. Guárdalo en la gaveta')}>Ya pagó</Button>
+          {pidePermiso && (
+            <Button size="sm" onClick={async () => {
+              try { await api('/autorizaciones/solicitudes', { body: { cedula: w.cedula, productoId: w.productoId, razon: pidePermiso } }); avisar('Permiso pedido. Cuando el farmacéutico lo apruebe, toca «Ya pagó» de nuevo', 'ok'); }
+              catch (e) { avisar(e instanceof ApiError ? e.message : 'No se pudo pedir', 'bad'); }
+            }}>Pedir permiso al farmacéutico</Button>
+          )}
         </>
       )}
       {(w.estado === 'EN_ESPERA' || w.estado === 'NOTIFICADO') && (

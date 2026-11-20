@@ -6,7 +6,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Response } from 'express';
-import { normalizarCedula, validarRecipeSchema, type ValidarRecipeInput } from '@farmacia/shared';
+import { medicoSchema, normalizarCedula, validarRecipeSchema, type MedicoInput, type ValidarRecipeInput } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
 import { CONFIG, type Config } from '../config';
@@ -127,6 +127,26 @@ export class RecipesController {
     if (!r.count) throw new ConflictException('Este récipe ya fue revisado');
     await this.auditoria.registrar({ usuarioId: u.id, accion: b.aprobado ? 'RECIPE_VALIDADO' : 'RECIPE_RECHAZADO', entidad: 'Recipe', entidadId: id, datos: { confirmados: b.confirmados } });
     return this.prisma.recipe.findUnique({ where: { id } });
+  }
+
+  /** Anota el médico del récipe (va al libro de controlados). Si tiene MPPS, se reutiliza el mismo médico. */
+  @Post(':id/medico')
+  @Roles('REGENTE', 'ADMIN')
+  async medico(@Param('id', ParseUUIDPipe) id: string, @Body(new Validar(medicoSchema)) b: MedicoInput, @Usuario() u: UsuarioActual) {
+    if (!(await this.prisma.recipe.findUnique({ where: { id } }))) throw new NotFoundException('El récipe no existe');
+    const m = b.mpps
+      ? await this.prisma.medico.upsert({ where: { mpps: b.mpps }, create: b, update: { nombre: b.nombre, especialidad: b.especialidad } })
+      : await this.prisma.medico.create({ data: b });
+    await this.prisma.recipe.update({ where: { id }, data: { medicoId: m.id } });
+    await this.auditoria.registrar({ usuarioId: u.id, accion: 'RECIPE_MEDICO', entidad: 'Recipe', entidadId: id, datos: { medico: m.nombre, mpps: m.mpps } });
+    return m;
+  }
+
+  /** Médicos ya registrados, para sugerirlos al escribir. */
+  @Get('medicos/lista')
+  @Roles('REGENTE', 'ADMIN')
+  medicos() {
+    return this.prisma.medico.findMany({ orderBy: { nombre: 'asc' }, take: 500 });
   }
 }
 

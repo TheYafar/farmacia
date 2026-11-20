@@ -110,6 +110,8 @@ model Producto {
   precioUsd         Decimal         @db.Decimal(12, 2)
   nivel             NivelPrecio
   requiereRecipe    Boolean         @default(false)
+  /// Aviso de stock bajo cuando la existencia llega a este número (0 = sin aviso).
+  stockMinimo       Int             @default(0)
   activo            Boolean         @default(true)
   actualizadoEn     DateTime        @updatedAt
 
@@ -298,6 +300,11 @@ model Venta {
   /// Vuelto entregado al cliente, en la moneda en que se dio.
   vueltoMoneda   Moneda?
   vueltoMonto    Decimal     @default(0) @db.Decimal(16, 2)
+  /// Descuento a toda la venta (tercera edad, convenio…). El total ya lo trae restado.
+  descuentoPct   Decimal     @default(0) @db.Decimal(5, 2)
+  descuentoUsd   Decimal     @default(0) @db.Decimal(12, 2)
+  descuentoMotivo String?
+  devoluciones   Devolucion[]
 
   lineas  VentaLinea[]
   pagos   Pago[]
@@ -370,6 +377,8 @@ model VentaLinea {
   autorizacion   Autorizacion? @relation(fields: [autorizacionId], references: [id])
   recipeId       String?       @db.Uuid
   recipe         Recipe?       @relation(fields: [recipeId], references: [id])
+  /// Unidades de esta línea que el cliente devolvió.
+  devuelto       Int           @default(0)
 }
 
 // ---------- Lista de espera (sección 6 del documento) ----------
@@ -515,4 +524,33 @@ model MensajeWhatsapp {
   creadoEn   DateTime @default(now())
 
   @@index([cedula, creadoEn])
+}
+
+/// Devolución de parte o de toda una venta. El reintegro sale de la caja de quien la hace.
+model Devolucion {
+  id        String     @id @default(uuid()) @db.Uuid
+  ventaId   String     @db.Uuid
+  venta     Venta      @relation(fields: [ventaId], references: [id])
+  motivo    String
+  montoUsd  Decimal    @db.Decimal(12, 2)
+  metodo    MetodoPago
+  /// Monto entregado al cliente, en la moneda del método.
+  monto     Decimal    @db.Decimal(16, 2)
+  turnoId   String?    @db.Uuid
+  lineas    Json
+  usuarioId String     @db.Uuid
+  creadoEn  DateTime   @default(now())
+
+  @@index([turnoId])
+}
+
+/// Corrección de inventario: merma, roto, vencido o conteo físico. Siempre con motivo.
+model AjusteInventario {
+  id        String   @id @default(uuid()) @db.Uuid
+  loteId    String   @db.Uuid
+  cantidad  Int
+  motivo    String
+  nota      String?
+  usuarioId String   @db.Uuid
+  creadoEn  DateTime @default(now())
 }

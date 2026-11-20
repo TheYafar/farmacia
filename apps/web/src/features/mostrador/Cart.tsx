@@ -180,8 +180,15 @@ const leer = (s: string) => Number(s.trim().replace(/\./g, '').replace(',', '.')
 interface PagoUI { metodo: MetodoPago; monto: number; referencia?: string }
 
 /** Cobro con uno o varios pagos. Las cuentas se hacen en bolívares, igual que en el servidor. */
+const MOTIVOS_DESCUENTO = ['Tercera edad', 'Convenio', 'Cliente frecuente', 'Empleado', 'Otro'];
+
 export function CobroSheet({ open, onClose, onVendida }: { open: boolean; onClose: () => void; onVendida: (v: Venta) => void }) {
-  const { lineas, total } = useResumenVenta();
+  const { lineas, total: bruto } = useResumenVenta();
+  const rol = useRol();
+  const [desc, setDesc] = useState(0);
+  const [descMotivo, setDescMotivo] = useState(MOTIVOS_DESCUENTO[0]);
+  const descuento = Math.round(bruto * desc) / 100;
+  const total = Math.round((bruto - descuento) * 100) / 100;
   const cliente = useVenta((s) => s.cliente);
   const vaciar = useVenta((s) => s.vaciar);
   const ponerBloqueos = useVenta((s) => s.ponerBloqueos);
@@ -195,7 +202,7 @@ export function CobroSheet({ open, onClose, onVendida }: { open: boolean; onClos
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => { if (open) { setPagos([]); setMonto(''); setRef(''); setError(null); } }, [open]);
+  useEffect(() => { if (open) { setPagos([]); setMonto(''); setRef(''); setError(null); setDesc(0); } }, [open]);
 
   const enBs = (p: PagoUI) => (monedaDe(p.metodo) === 'USD' ? r2(p.monto * tasa) : p.monto);
   const totalBs = r2(total * tasa);
@@ -220,7 +227,7 @@ export function CobroSheet({ open, onClose, onVendida }: { open: boolean; onClos
     setError(null);
     try {
       const v = await api<Venta>('/ventas', {
-        body: { cedula: cliente?.cedula, pagos, vueltoMoneda: vueltoEn, lineas: lineas.map((l) => ({ productoId: l.producto.id, cantidad: l.cantidad })) },
+        body: { cedula: cliente?.cedula, pagos, vueltoMoneda: vueltoEn, descuentoPct: desc, descuentoMotivo: desc ? descMotivo : undefined, lineas: lineas.map((l) => ({ productoId: l.producto.id, cantidad: l.cantidad })) },
       });
       vaciar();
       onClose();
@@ -245,6 +252,20 @@ export function CobroSheet({ open, onClose, onVendida }: { open: boolean; onClos
         <div className="grid grid-cols-2 gap-2 rounded-xl bg-surface2 p-3 text-center font-mono tabular">
           <div><div className="text-xs font-sans text-muted">Total</div><div className="text-2xl font-medium">{usd(total)}</div></div>
           <div><div className="text-xs font-sans text-muted">En bolívares</div><div className="text-2xl font-medium">Bs {num2(totalBs)}</div></div>
+          {desc > 0 && <div className="col-span-2 text-xs font-sans text-muted">Antes {usd(bruto)} · descuento {desc} % (−{usd(descuento)})</div>}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="font-semibold">Descuento</span>
+          {[0, 5, 10, 15, 20].filter((p) => rol !== 'CAJERO' || p <= 10).map((p) => (
+            <button key={p} type="button" disabled={pagos.length > 0} onClick={() => setDesc(p)}
+              className={`rounded-lg border px-2.5 py-1 font-mono ${desc === p ? 'border-accent bg-accent-soft text-accent' : 'border-line'} disabled:opacity-50`}>{p ? `${p} %` : 'No'}</button>
+          ))}
+          {desc > 0 && (
+            <select value={descMotivo} onChange={(e) => setDescMotivo(e.target.value)} className="h-8 rounded-lg border border-line bg-surface px-2">
+              {MOTIVOS_DESCUENTO.map((m) => <option key={m}>{m}</option>)}
+            </select>
+          )}
         </div>
 
         {pagos.length > 0 && (

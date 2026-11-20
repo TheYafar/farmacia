@@ -1,6 +1,6 @@
-import { Body, Controller, Get, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, ConflictException, Controller, Get, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { productoSchema, type ProductoInput } from '@farmacia/shared';
+import { principioSchema, productoSchema, type PrincipioInput, type ProductoInput } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
 import { Roles, Usuario, type UsuarioActual } from '../common/seguridad';
@@ -77,6 +77,43 @@ export class CatalogoController {
   @Get('principios')
   principios() {
     return this.prisma.principioActivo.findMany({ orderBy: { nombre: 'asc' } });
+  }
+
+  @Post('principios')
+  @Roles('REGENTE', 'ADMIN')
+  async crearPrincipio(@Body(new Validar(principioSchema)) b: PrincipioInput, @Usuario() yo: UsuarioActual) {
+    if (await this.prisma.principioActivo.findFirst({ where: { nombre: { equals: b.nombre, mode: 'insensitive' } } })) throw new ConflictException('Ya existe ese principio activo');
+    const p = await this.prisma.principioActivo.create({ data: b });
+    await this.auditoria.registrar({ usuarioId: yo.id, accion: 'PRINCIPIO_CREADO', entidad: 'PrincipioActivo', entidadId: p.id, datos: { riesgo: b.riesgo } });
+    return p;
+  }
+
+  /** Marcar un principio como psicotrópico o antibiótico cambia las reglas de venta: queda en la auditoría. */
+  @Patch('principios/:id')
+  @Roles('REGENTE', 'ADMIN')
+  async editarPrincipio(@Param('id', ParseUUIDPipe) id: string, @Body(new Validar(principioSchema.partial())) b: Partial<PrincipioInput>, @Usuario() yo: UsuarioActual) {
+    const antes = await this.prisma.principioActivo.findUnique({ where: { id } });
+    if (!antes) throw new NotFoundException('No existe');
+    const p = await this.prisma.principioActivo.update({ where: { id }, data: b });
+    await this.auditoria.registrar({ usuarioId: yo.id, accion: 'PRINCIPIO_EDITADO', entidad: 'PrincipioActivo', entidadId: id, datos: { antes: { riesgo: antes.riesgo, familia: antes.familia }, cambios: b as Prisma.InputJsonValue } });
+    return p;
+  }
+
+  /** Lista para administrar el catálogo: incluye inactivos, existencia y aviso de stock bajo. */
+  @Get('productos')
+  @Roles('REGENTE', 'ADMIN')
+  async productos(@Query('q') q = '', @Query('bajo') bajo?: string) {
+    const filas = await this.prisma.$queryRaw<{ id: string; stock: bigint }[]>`
+      SELECT p.id, COALESCE(sum(l."stockLibre") FILTER (WHERE l.vence >= current_date), 0) AS stock
+      FROM "Producto" p LEFT JOIN "Lote" l ON l."productoId" = p.id GROUP BY p.id`;
+    const stock = new Map(filas.map((f) => [f.id, Number(f.stock)]));
+    const t = q.trim().slice(0, 60);
+    const lista = await this.prisma.producto.findMany({
+      where: t ? { OR: [{ nombreComercial: { contains: t, mode: 'insensitive' } }, { laboratorio: { contains: t, mode: 'insensitive' } }, { codigoBarras: t }, { principioActivo: { nombre: { contains: t, mode: 'insensitive' } } }] } : undefined,
+      include: { principioActivo: { select: { id: true, nombre: true, riesgo: true } } }, orderBy: { nombreComercial: 'asc' }, take: 300,
+    });
+    const r = lista.map((p) => ({ ...p, precioUsd: p.precioUsd.toFixed(2), stock: stock.get(p.id) ?? 0, bajo: p.activo && p.stockMinimo > 0 && (stock.get(p.id) ?? 0) <= p.stockMinimo }));
+    return bajo ? r.filter((p) => p.bajo) : r;
   }
 
   @Post('productos')

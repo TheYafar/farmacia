@@ -1,6 +1,6 @@
 import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Post, Query, UnprocessableEntityException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { crearVentaSchema, ES_EFECTIVO, monedaDe, type CrearVentaInput } from '@farmacia/shared';
+import { crearVentaSchema, devolucionSchema, ES_EFECTIVO, monedaDe, type CrearVentaInput, type DevolucionInput } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
 import { TasaService, TasaModule } from '../tasa/tasa';
@@ -93,6 +93,11 @@ export class VentasService {
         }
         total = total.add(p.precioUsd.mul(l.cantidad));
       }
+      // Descuento a toda la venta: el cajero da hasta 10 %; más, el farmacéutico o el dueño.
+      const pct = new Prisma.Decimal(b.descuentoPct ?? 0);
+      if (pct.gt(10) && cajero.rol === 'CAJERO') throw new ForbiddenException('Un descuento mayor a 10 % lo da el farmacéutico o el dueño');
+      const descuentoUsd = total.mul(pct).div(100).toDecimalPlaces(2);
+      total = total.sub(descuentoUsd);
       if (autorizacionesUsadas.length) {
         const r = await tx.autorizacion.updateMany({ where: { id: { in: autorizacionesUsadas }, usadaEn: null }, data: { usadaEn: new Date() } });
         if (r.count !== autorizacionesUsadas.length) throw new ConflictException('Una autorización ya fue usada en otra venta');
@@ -132,6 +137,7 @@ export class VentasService {
           totalUsd: total, totalBs, metodoPago: principal.metodo,
           referenciaPago: pagos.find((p) => p.referencia)?.referencia,
           vueltoMoneda: excesoBs.gt(0) ? b.vueltoMoneda : null, vueltoMonto,
+          descuentoPct: pct, descuentoUsd, descuentoMotivo: pct.gt(0) ? b.descuentoMotivo : null,
         },
         include: {
           lineas: { include: { producto: { select: { nombreComercial: true, concentracion: true } }, lote: { select: { numero: true, vence: true } } } },
@@ -139,9 +145,38 @@ export class VentasService {
           cajero: { select: { nombre: true } },
         },
       });
-      await this.auditoria.registrar({ usuarioId: cajero.id, accion: 'VENTA', entidad: 'Venta', entidadId: venta.id, datos: { totalUsd: total.toFixed(2), autorizaciones: autorizacionesUsadas } }, tx);
+      await this.auditoria.registrar({ usuarioId: cajero.id, accion: 'VENTA', entidad: 'Venta', entidadId: venta.id, datos: { totalUsd: total.toFixed(2), autorizaciones: autorizacionesUsadas, descuentoPct: pct.toNumber() } }, tx);
       return final;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 15_000 });
+  }
+
+  /**
+   * Devolución de parte de una venta: el stock vuelve a su lote y el reintegro sale de la caja de quien la hace
+   * (se resta de lo esperado en su cierre). Se devuelve al precio cobrado, con el descuento que tuvo la venta.
+   */
+  async devolver(id: string, b: DevolucionInput, quien: UsuarioActual) {
+    return this.prisma.$transaction(async (tx) => {
+      const v = await tx.venta.findUnique({ where: { id }, include: { lineas: true } });
+      if (!v) throw new NotFoundException('La venta no existe');
+      if (v.estado === 'ANULADA') throw new ConflictException('La venta está anulada');
+      const factor = new Prisma.Decimal(1).sub(v.descuentoPct.div(100));
+      let montoUsd = new Prisma.Decimal(0);
+      for (const d of b.lineas) {
+        const l = v.lineas.find((x) => x.id === d.lineaId);
+        if (!l) throw new NotFoundException('Esa línea no es de esta venta');
+        if (d.cantidad > l.cantidad - l.devuelto) throw new ConflictException(`Solo quedan ${l.cantidad - l.devuelto} por devolver en esa línea`);
+        await tx.ventaLinea.update({ where: { id: l.id }, data: { devuelto: { increment: d.cantidad } } });
+        await tx.lote.update({ where: { id: l.loteId }, data: { stockLibre: { increment: d.cantidad } } });
+        montoUsd = montoUsd.add(l.precioUsd.mul(d.cantidad).mul(factor));
+      }
+      montoUsd = montoUsd.toDecimalPlaces(2);
+      const monto = monedaDe(b.metodo) === 'USD' ? montoUsd : montoUsd.mul(v.tasa).toDecimalPlaces(2);
+      const turno = await this.caja.turnoAbierto(quien.id, tx);
+      if (ES_EFECTIVO(b.metodo) && !turno) throw new ConflictException({ mensaje: 'Abre tu caja para devolver en efectivo', codigo: 'CAJA_CERRADA' });
+      const dev = await tx.devolucion.create({ data: { ventaId: id, motivo: b.motivo, montoUsd, metodo: b.metodo, monto, turnoId: turno?.id, lineas: b.lineas, usuarioId: quien.id } });
+      await this.auditoria.registrar({ usuarioId: quien.id, accion: 'DEVOLUCION', entidad: 'Venta', entidadId: id, datos: { montoUsd: montoUsd.toFixed(2), metodo: b.metodo, motivo: b.motivo } }, tx);
+      return { ...dev, montoUsd: montoUsd.toFixed(2), monto: monto.toFixed(2) };
+    });
   }
 
   /** Solo el dueño anula. El stock vuelve a su lote y queda en la auditoría. */
@@ -168,23 +203,31 @@ export class VentasController {
 
   /** El cajero ve solo sus ventas; Regente y dueño ven todas. */
   @Get()
-  listar(@Usuario() u: UsuarioActual, @Query('desde') desde?: string) {
+  listar(@Usuario() u: UsuarioActual, @Query('desde') desde?: string, @Query('hasta') hasta?: string, @Query('numero') numero?: string) {
     const inicio = desde ? new Date(desde) : new Date(new Date().toISOString().slice(0, 10));
-    if (Number.isNaN(inicio.getTime())) throw new BadRequestException('Fecha inválida');
+    const fin = hasta ? new Date(new Date(hasta).getTime() + 86_400_000) : undefined;
+    if (Number.isNaN(inicio.getTime()) || (fin && Number.isNaN(fin.getTime()))) throw new BadRequestException('Fecha inválida');
+    const n = numero && /^\d{1,9}$/.test(numero) ? Number(numero) : undefined;
     return this.prisma.venta.findMany({
-      where: { creadaEn: { gte: inicio }, cajeroId: u.rol === 'CAJERO' ? u.id : undefined },
+      where: n ? { numero: n, cajeroId: u.rol === 'CAJERO' ? u.id : undefined } : { creadaEn: { gte: inicio, lt: fin }, cajeroId: u.rol === 'CAJERO' ? u.id : undefined },
       orderBy: { creadaEn: 'desc' },
       take: 200,
-      include: { cajero: { select: { nombre: true } }, pagos: true, lineas: { select: { cantidad: true, precioUsd: true, producto: { select: { nombreComercial: true } } } } },
+      include: { cajero: { select: { nombre: true } }, pagos: true, lineas: { select: { cantidad: true, devuelto: true, precioUsd: true, producto: { select: { nombreComercial: true } } } }, _count: { select: { devoluciones: true } } },
     });
   }
 
   @Get(':id')
   async ver(@Param('id', ParseUUIDPipe) id: string, @Usuario() u: UsuarioActual) {
-    const v = await this.prisma.venta.findUnique({ where: { id }, include: { lineas: { include: { producto: true, lote: true } }, pagos: true, cajero: { select: { nombre: true } } } });
+    const v = await this.prisma.venta.findUnique({ where: { id }, include: { lineas: { include: { producto: true, lote: true } }, pagos: true, cajero: { select: { nombre: true } }, devoluciones: true } });
     if (!v) throw new NotFoundException('La venta no existe');
     if (u.rol === 'CAJERO' && v.cajeroId !== u.id) throw new ForbiddenException('Solo puedes ver tus ventas');
     return v;
+  }
+
+  @Post(':id/devoluciones')
+  @Roles('REGENTE', 'ADMIN')
+  devolver(@Param('id', ParseUUIDPipe) id: string, @Body(new Validar(devolucionSchema)) b: DevolucionInput, @Usuario() u: UsuarioActual) {
+    return this.ventas.devolver(id, b, u);
   }
 
   @Post(':id/anular')

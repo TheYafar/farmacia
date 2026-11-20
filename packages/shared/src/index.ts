@@ -142,6 +142,8 @@ export const productoSchema = z.object({
   precioUsd: montoUsd,
   nivel: z.enum(NIVELES_PRECIO),
   requiereRecipe: z.boolean().default(false),
+  stockMinimo: z.number().int().min(0).max(100_000).default(0),
+  activo: z.boolean().default(true),
 });
 export type ProductoInput = z.infer<typeof productoSchema>;
 
@@ -258,7 +260,11 @@ export const crearVentaSchema = z
     /** Forma corta: un solo método por el monto exacto. */
     metodoPago: z.enum(METODOS_PAGO).optional(),
     referenciaPago: referencia.optional(),
+    /** Descuento a toda la venta. El cajero puede dar hasta 10 %; más, solo el farmacéutico o el dueño. */
+    descuentoPct: z.number().min(0).max(50).default(0),
+    descuentoMotivo: z.string().trim().max(60).optional(),
   })
+  .refine((v) => !v.descuentoPct || !!v.descuentoMotivo, { message: 'El descuento necesita un motivo', path: ['descuentoMotivo'] })
   .refine((v) => !!v.pagos?.length || !!v.metodoPago, { message: 'Falta el pago', path: ['pagos'] })
   .refine((v) => v.pagos?.length || v.metodoPago !== 'PAGO_MOVIL' || !!v.referenciaPago, {
     message: 'El Pago Móvil necesita el número de referencia',
@@ -357,3 +363,36 @@ export const cerrarCajaSchema = z.object({
 });
 export type CerrarCajaInput = z.infer<typeof cerrarCajaSchema>;
 export type MontosPorMetodo = Record<MetodoPago, number>;
+
+export const principioSchema = z.object({
+  nombre: texto(120),
+  familia: z.string().trim().max(60).optional(),
+  riesgo: z.enum(['NORMAL', 'ANTIBIOTICO', 'PSICOTROPICO']).default('NORMAL'),
+  uso: z.string().trim().max(200).optional(),
+});
+export type PrincipioInput = z.infer<typeof principioSchema>;
+
+export const devolucionSchema = z.object({
+  lineas: z.array(z.object({ lineaId: z.string().uuid(), cantidad: z.number().int().positive().max(1000) })).min(1).max(100),
+  motivo: texto(120),
+  /** Cómo se le devuelve el dinero al cliente. */
+  metodo: z.enum(METODOS_PAGO),
+});
+export type DevolucionInput = z.infer<typeof devolucionSchema>;
+
+export const MOTIVOS_AJUSTE = ['MERMA', 'ROTO', 'VENCIDO', 'CONTEO', 'OTRO'] as const;
+export const ajusteSchema = z.object({
+  loteId: z.string().uuid(),
+  /** Positivo suma, negativo resta. Para un conteo, la diferencia contra el sistema. */
+  cantidad: z.number().int().min(-100_000).max(100_000).refine((n) => n !== 0, 'La cantidad no puede ser 0'),
+  motivo: z.enum(MOTIVOS_AJUSTE),
+  nota: z.string().trim().max(200).optional(),
+});
+export type AjusteInput = z.infer<typeof ajusteSchema>;
+
+export const medicoSchema = z.object({
+  nombre: texto(120),
+  mpps: z.string().trim().regex(/^\d{3,8}$/, 'MPPS: solo números').optional(),
+  especialidad: z.string().trim().max(60).default('General'),
+});
+export type MedicoInput = z.infer<typeof medicoSchema>;

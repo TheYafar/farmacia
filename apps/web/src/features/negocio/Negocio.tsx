@@ -1,6 +1,6 @@
 import { clsx } from 'clsx';
 import { Plus, Trash2 } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Alert, Button, Campo, Card, Cargando, Chip, ErrorCarga, PageHeader, Sheet, claseInput } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
 import { useCargar } from '@/lib/useCargar';
@@ -165,25 +165,37 @@ interface Pedido { id: string; numero: number; estado: string; totalUsd: string;
 const PASOS = ['COTIZACION', 'PEDIDO', 'DESPACHADO', 'ENTREGADO'];
 const NOMBRE_PASO: Record<string, string> = { COTIZACION: 'Cotización', PEDIDO: 'Pedido', DESPACHADO: 'Despachado', ENTREGADO: 'Entregado', ANULADO: 'Anulado' };
 
-function NuevoCliente({ abierto, onCerrar, onListo }: { abierto: boolean; onCerrar: () => void; onListo: () => void }) {
-  const [f, setF] = useState({ rif: '', nombre: '', telefono: '', limiteUsd: '1000', diasCredito: '15', descuentoPct: '10' });
+function NuevoCliente({ abierto, c, onCerrar, onListo }: { abierto: boolean; c?: Cliente | null; onCerrar: () => void; onListo: () => void }) {
+  const vacio = { rif: '', nombre: '', telefono: '', limiteUsd: '1000', diasCredito: '15', descuentoPct: '10' };
+  const [f, setF] = useState(vacio);
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    setError(null);
+    setF(c ? { rif: c.rif, nombre: c.nombre, telefono: c.telefono ?? '', limiteUsd: String(Number(c.limiteUsd)), diasCredito: String(c.diasCredito), descuentoPct: String(Number(c.descuentoPct)) } : vacio);
+  }, [c, abierto]); // eslint-disable-line react-hooks/exhaustive-deps
   const campo = (k: keyof typeof f, etiqueta: string, ayuda?: string) => (
     <Campo etiqueta={etiqueta} ayuda={ayuda}><input required={k !== 'telefono'} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} className={claseInput} /></Campo>
   );
   return (
-    <Sheet open={abierto} onClose={onCerrar} title="Nuevo cliente al mayor">
+    <Sheet open={abierto} onClose={onCerrar} title={c ? `Editar ${c.nombre}` : 'Nuevo cliente al mayor'}>
       <form className="flex flex-col gap-3" onSubmit={async (e) => {
         e.preventDefault(); setError(null);
         try {
-          await api('/mayorista/clientes', { body: { rif: f.rif, nombre: f.nombre, telefono: f.telefono || undefined, limiteUsd: Number(f.limiteUsd), diasCredito: Number(f.diasCredito), descuentoPct: Number(f.descuentoPct) } });
-          avisar('Cliente creado', 'ok'); onListo(); onCerrar();
+          const datos = { nombre: f.nombre, telefono: f.telefono || undefined, limiteUsd: Number(f.limiteUsd), diasCredito: Number(f.diasCredito), descuentoPct: Number(f.descuentoPct) };
+          if (c) await api(`/mayorista/clientes/${c.id}`, { method: 'PATCH', body: datos });
+          else await api('/mayorista/clientes', { body: { rif: f.rif, ...datos } });
+          avisar(c ? 'Cliente actualizado' : 'Cliente creado', 'ok'); onListo(); onCerrar();
         } catch (err) { setError(msg(err)); }
       }}>
-        {campo('rif', 'RIF', 'Ej. J-12345678-9')}{campo('nombre', 'Razón social')}{campo('telefono', 'Teléfono (opcional)')}
+        {c ? <p className="text-sm text-muted">RIF {c.rif} (no se cambia)</p> : campo('rif', 'RIF', 'Ej. J-12345678-9')}{campo('nombre', 'Razón social')}{campo('telefono', 'Teléfono (opcional)')}
         <div className="grid grid-cols-3 gap-2">{campo('limiteUsd', 'Límite ($)')}{campo('diasCredito', 'Días crédito')}{campo('descuentoPct', 'Descuento %', 'Su precio de mayor')}</div>
         {error && <Alert tone="bad">{error}</Alert>}
         <Button type="submit" variant="primary" size="lg">Guardar</Button>
+        {c && <Button type="button" variant="ghost" onClick={async () => {
+          if (Number(c.deudaUsd) > 0) { setError('No se puede desactivar: todavía debe dinero'); return; }
+          if (!confirm(`¿Desactivar a ${c.nombre}? Ya no aparecerá para nuevas cotizaciones.`)) return;
+          try { await api(`/mayorista/clientes/${c.id}`, { method: 'PATCH', body: { activo: false } }); avisar('Cliente desactivado', 'ok'); onListo(); onCerrar(); } catch (err) { setError(msg(err)); }
+        }}>Desactivar cliente</Button>}
       </form>
     </Sheet>
   );
@@ -233,6 +245,7 @@ export function MayoristaPage() {
   const cli = useCargar(() => api<Cliente[]>('/mayorista/clientes'), []);
   const ped = useCargar(() => api<Pedido[]>('/mayorista/pedidos'), []);
   const [hoja, setHoja] = useState<'cliente' | 'cotizacion' | null>(null);
+  const [editar, setEditar] = useState<Cliente | null>(null);
   const [abonar, setAbonar] = useState<Pedido | null>(null);
   const recargar = () => { cli.recargar(); ped.recargar(); };
   const accion = async (p: Pedido, a: 'avanzar' | 'anular') => {
@@ -282,10 +295,10 @@ export function MayoristaPage() {
         <Tabla vacio="Aún no hay clientes al mayor." head={['Cliente', 'RIF', 'Descuento', 'Límite', 'Debe', 'Estado', '']} rows={d.map((c) => [
           <span className="font-semibold">{c.nombre}</span>, mono(c.rif), mono(`${Number(c.descuentoPct)} %`), mono(usd(c.limiteUsd)), mono(usd(c.deudaUsd)),
           Number(c.vencidoUsd) > 0 ? <Chip tone="bad">Vencido {usd(c.vencidoUsd)}</Chip> : Number(c.deudaUsd) > Number(c.limiteUsd) ? <Chip tone="bad">Pasó su límite</Chip> : <Chip tone="ok">Al día</Chip>,
-          <Button size="sm" disabled={!Number(c.deudaUsd)} onClick={() => estadoCuenta(c)}>Estado de cuenta</Button>,
+          <div className="flex gap-1"><Button size="sm" onClick={() => setEditar(c)}>Editar</Button><Button size="sm" disabled={!Number(c.deudaUsd)} onClick={() => estadoCuenta(c)}>Estado de cuenta</Button></div>,
         ])} />
       )}</Estado>
-      <NuevoCliente abierto={hoja === 'cliente'} onCerrar={() => setHoja(null)} onListo={recargar} />
+      <NuevoCliente abierto={hoja === 'cliente' || !!editar} c={editar} onCerrar={() => { setHoja(null); setEditar(null); }} onListo={recargar} />
       <NuevaCotizacion clientes={cli.datos ?? []} abierto={hoja === 'cotizacion'} onCerrar={() => setHoja(null)} onListo={recargar} />
       <HojaPago titulo={`Abono · pedido #${abonar?.numero ?? ''}`} saldo={abonar?.saldoUsd ?? '0'} ruta={abonar ? `/mayorista/pedidos/${abonar.id}/abonos` : null} onCerrar={() => setAbonar(null)} onListo={recargar} />
     </div>

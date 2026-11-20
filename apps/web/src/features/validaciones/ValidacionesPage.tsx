@@ -1,3 +1,4 @@
+import { MedicoRecipe } from '@/features/gestion/Gestion';
 import { AlertTriangle, Check, ShieldCheck, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Alert, Avatar, Button, Card, Cargando, Chip, EmptyState, ErrorCarga, PageHeader, claseInput } from '@/components/ui';
@@ -67,6 +68,7 @@ function RecipePendiente({ r, onListo }: { r: Recipe; onListo: () => void }) {
   return (
     <div className="grid gap-3 rounded-xl border border-l-[6px] border-line border-l-warn bg-surface p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <FotoProtegida id={r.id} />
+      <MedicoRecipe recipeId={r.id} />
       <div className="flex flex-col gap-3">
         <div>
           <div className="text-lg font-semibold">{r.paciente?.nombre ?? 'Cliente sin cédula'}</div>

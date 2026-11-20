@@ -1,5 +1,5 @@
-import { Body, Controller, Get, HttpCode, Module, Post, Query } from '@nestjs/common';
-import { compraSchema, importacionSchema, type CompraInput, type ImportacionInput } from '@farmacia/shared';
+import { Body, ConflictException, Controller, Get, HttpCode, Module, NotFoundException, Post, Query } from '@nestjs/common';
+import { ajusteSchema, compraSchema, importacionSchema, type AjusteInput, type CompraInput, type ImportacionInput } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
 import { EsperaModule, EsperaService } from '../espera/espera';
@@ -35,6 +35,33 @@ export class InventarioController {
       orderBy: { vence: 'asc' },
       take: 500,
       include: { producto: { select: { nombreComercial: true, concentracion: true, laboratorio: true } } },
+    });
+  }
+
+  /** Merma, roto, vencido o conteo físico. Nunca deja el lote en negativo. */
+  @Post('ajustes')
+  @Roles('REGENTE', 'ADMIN')
+  async ajuste(@Body(new Validar(ajusteSchema)) b: AjusteInput, @Usuario() u: UsuarioActual) {
+    return this.prisma.$transaction(async (tx) => {
+      const [l] = await tx.$queryRaw<{ stockLibre: number }[]>`SELECT "stockLibre" FROM "Lote" WHERE id = ${b.loteId}::uuid FOR UPDATE`;
+      if (!l) throw new NotFoundException('Lote no encontrado');
+      if (l.stockLibre + b.cantidad < 0) throw new ConflictException(`Solo hay ${l.stockLibre} libres en ese lote`);
+      await tx.lote.update({ where: { id: b.loteId }, data: { stockLibre: { increment: b.cantidad } } });
+      const a = await tx.ajusteInventario.create({ data: { ...b, usuarioId: u.id } });
+      await this.auditoria.registrar({ usuarioId: u.id, accion: 'AJUSTE_INVENTARIO', entidad: 'Lote', entidadId: b.loteId, datos: { cantidad: b.cantidad, motivo: b.motivo, nota: b.nota } }, tx);
+      return a;
+    });
+  }
+
+  @Get('ajustes')
+  @Roles('REGENTE', 'ADMIN')
+  async ajustes() {
+    const lista = await this.prisma.ajusteInventario.findMany({ orderBy: { creadoEn: 'desc' }, take: 100 });
+    const lotes = await this.prisma.lote.findMany({ where: { id: { in: lista.map((a) => a.loteId) } }, include: { producto: { select: { nombreComercial: true, concentracion: true } } } });
+    const usuarios = await this.prisma.usuario.findMany({ where: { id: { in: lista.map((a) => a.usuarioId) } }, select: { id: true, nombre: true } });
+    return lista.map((a) => {
+      const l = lotes.find((x) => x.id === a.loteId);
+      return { ...a, producto: l ? `${l.producto.nombreComercial} ${l.producto.concentracion}` : '—', lote: l?.numero, usuario: usuarios.find((x) => x.id === a.usuarioId)?.nombre };
     });
   }
 

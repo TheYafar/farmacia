@@ -1,5 +1,6 @@
-import { BadRequestException, Body, ConflictException, Controller, Get, Module, NotFoundException, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, Get, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { z } from 'zod';
 import {
   clienteEmpresaSchema, abonoSchema, pedidoMayorSchema,
   type ClienteEmpresaInput, type AbonoInput, type PedidoMayorInput,
@@ -52,6 +53,13 @@ export class ProveedoresController {
       })
       .filter((f) => f.pedir > 0)
       .sort((a, b) => (a.stock === 0 ? -1 : 0) - (b.stock === 0 ? -1 : 0) || b.pedir - a.pedir);
+  }
+
+  /** Droguerías a las que ya se les compró, para elegirlas al cargar una compra. */
+  @Get('lista')
+  async lista() {
+    const f = await this.prisma.compra.groupBy({ by: ['proveedor'], _count: true, orderBy: { _count: { proveedor: 'desc' } } });
+    return f.map((x) => x.proveedor);
   }
 
   /** Cuentas por pagar: compras con saldo, de la que vence antes a la que vence después. */
@@ -121,6 +129,15 @@ export class MayoristaController {
     if (await this.prisma.clienteEmpresa.findUnique({ where: { rif } })) throw new ConflictException('Ya existe un cliente con ese RIF');
     const c = await this.prisma.clienteEmpresa.create({ data: { ...b, rif } });
     await this.auditoria.registrar({ usuarioId: u.id, accion: 'CLIENTE_EMPRESA_CREADO', entidad: 'ClienteEmpresa', entidadId: c.id });
+    return c;
+  }
+
+  @Patch('clientes/:id')
+  async editarCliente(@Param('id', ParseUUIDPipe) id: string, @Body(new Validar(clienteEmpresaSchema.partial().extend({ activo: z.boolean().optional() }))) b: Partial<ClienteEmpresaInput> & { activo?: boolean }, @Usuario() u: UsuarioActual) {
+    if (!(await this.prisma.clienteEmpresa.findUnique({ where: { id } }))) throw new NotFoundException('Cliente no encontrado');
+    const { rif: _rif, ...datos } = b; // el RIF no se cambia
+    const c = await this.prisma.clienteEmpresa.update({ where: { id }, data: datos });
+    await this.auditoria.registrar({ usuarioId: u.id, accion: 'CLIENTE_EMPRESA_EDITADO', entidad: 'ClienteEmpresa', entidadId: id, datos: datos as Prisma.InputJsonValue });
     return c;
   }
 

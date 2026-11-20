@@ -6,11 +6,13 @@ import { api, ApiError } from '@/lib/api';
 import { cedula, fecha, initials, usd } from '@/lib/format';
 import type { Paciente } from '@/lib/tipos';
 import { useVenta } from '@/store/venta';
+import { EditarCliente } from '@/features/gestion/Gestion';
 import RegistrarCliente from './RegistrarCliente';
 
 export default function PacientesPage() {
   const [q, setQ] = useState('');
   const [p, setP] = useState<Paciente | null>(null);
+  const [editar, setEditar] = useState(false);
   const [estado, setEstado] = useState<'inicio' | 'cargando' | 'no-existe' | 'error' | 'listo'>('inicio');
   const [error, setError] = useState('');
   const [registrar, setRegistrar] = useState(false);
@@ -66,6 +68,7 @@ export default function PacientesPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="primary" icon={<ShoppingCart className="h-4 w-4" />} onClick={() => { ponerCliente(p); navigate('/vender'); }}>Venderle</Button>
+              <Button onClick={() => setEditar(true)}>Editar</Button>
               <a className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-line bg-surface px-3.5 text-sm font-semibold hover:bg-surface2" href={`https://wa.me/58${p.telefono.replace(/\D/g, '').replace(/^0/, '')}`} target="_blank" rel="noreferrer"><MessageCircle className="h-4 w-4" />WhatsApp</a>
             </div>
           </Card>
@@ -99,6 +102,7 @@ export default function PacientesPage() {
           </Card>
         </div>
       )}
+      <EditarCliente p={editar ? p : null} onCerrar={() => setEditar(false)} onListo={setP} />
       <RegistrarCliente abierto={registrar} cedulaInicial={q} onCerrar={() => setRegistrar(false)} onListo={(n) => { setRegistrar(false); setP({ ...n, habituales: [], recipes: [], esperas: [] }); setEstado('listo'); }} />
     </div>
   );

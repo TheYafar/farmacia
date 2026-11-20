@@ -44,6 +44,8 @@ function CargarCompra({ abierto, onCerrar, onListo }: { abierto: boolean; onCerr
   const [proveedor, setProveedor] = useState('');
   const [factura, setFactura] = useState('');
   const [credito, setCredito] = useState('0');
+  const [droguerias, setDroguerias] = useState<string[]>([]);
+  useEffect(() => { if (abierto) api<string[]>('/proveedores/lista').then(setDroguerias).catch(() => {}); }, [abierto]);
   const [lineas, setLineas] = useState<LineaCompra[]>([nueva()]);
   const [error, setError] = useState<string | null>(null);
   const cambiar = (i: number, c: Partial<LineaCompra>) => setLineas((ls) => ls.map((l, j) => (j === i ? { ...l, ...c } : l)));
@@ -70,7 +72,8 @@ function CargarCompra({ abierto, onCerrar, onListo }: { abierto: boolean; onCerr
         }
       }}>
         <div className="grid grid-cols-2 gap-2">
-          <Campo etiqueta="Droguería"><input required value={proveedor} onChange={(e) => setProveedor(e.target.value)} className={claseInput} /></Campo>
+          <Campo etiqueta="Droguería"><input required list="droguerias" value={proveedor} onChange={(e) => setProveedor(e.target.value)} className={claseInput} />
+            <datalist id="droguerias">{droguerias.map((d) => <option key={d} value={d} />)}</datalist></Campo>
           <Campo etiqueta="N.º de factura"><input required value={factura} onChange={(e) => setFactura(e.target.value)} className={claseInput} /></Campo>
           <Campo etiqueta="Días de crédito" ayuda="0 si se pagó de contado"><input inputMode="numeric" value={credito} onChange={(e) => setCredito(e.target.value.replace(/\D/g, ''))} className={claseInput} /></Campo>
         </div>

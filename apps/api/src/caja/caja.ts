@@ -24,18 +24,20 @@ export class CajaService {
    */
   async esperado(turnoId: string, cliente: Cliente = this.prisma): Promise<MontosPorMetodo & { ventas: number; totalUsd: string }> {
     const turno = await cliente.turno.findUniqueOrThrow({ where: { id: turnoId } });
-    const [pagos, vueltos, ventas] = await Promise.all([
+    const [pagos, vueltos, ventas, devs] = await Promise.all([
       cliente.pago.groupBy({ by: ['metodo'], where: { venta: { turnoId, estado: 'COMPLETADA' } }, _sum: { monto: true } }),
       cliente.venta.groupBy({ by: ['vueltoMoneda'], where: { turnoId, estado: 'COMPLETADA', vueltoMoneda: { not: null } }, _sum: { vueltoMonto: true } }),
       cliente.venta.aggregate({ where: { turnoId, estado: 'COMPLETADA' }, _count: true, _sum: { totalUsd: true } }),
+      cliente.devolucion.groupBy({ by: ['metodo'], where: { turnoId }, _sum: { monto: true } }),
     ]);
+    const devuelto = (m: MetodoPago) => devs.find((d) => d.metodo === m)?._sum.monto ?? D(0);
     const cobrado = (m: MetodoPago) => pagos.find((p) => p.metodo === m)?._sum.monto ?? D(0);
     const vuelto = (mon: 'USD' | 'BS') => vueltos.find((v) => v.vueltoMoneda === mon)?._sum.vueltoMonto ?? D(0);
     return {
-      EFECTIVO_USD: turno.fondoUsd.add(cobrado('EFECTIVO_USD')).sub(vuelto('USD')).toNumber(),
-      EFECTIVO_BS: turno.fondoBs.add(cobrado('EFECTIVO_BS')).sub(vuelto('BS')).toNumber(),
-      PAGO_MOVIL: cobrado('PAGO_MOVIL').toNumber(),
-      PUNTO_DE_VENTA: cobrado('PUNTO_DE_VENTA').toNumber(),
+      EFECTIVO_USD: turno.fondoUsd.add(cobrado('EFECTIVO_USD')).sub(vuelto('USD')).sub(devuelto('EFECTIVO_USD')).toNumber(),
+      EFECTIVO_BS: turno.fondoBs.add(cobrado('EFECTIVO_BS')).sub(vuelto('BS')).sub(devuelto('EFECTIVO_BS')).toNumber(),
+      PAGO_MOVIL: cobrado('PAGO_MOVIL').sub(devuelto('PAGO_MOVIL')).toNumber(),
+      PUNTO_DE_VENTA: cobrado('PUNTO_DE_VENTA').sub(devuelto('PUNTO_DE_VENTA')).toNumber(),
       ventas: ventas._count,
       totalUsd: (ventas._sum.totalUsd ?? D(0)).toFixed(2),
     };

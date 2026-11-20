@@ -1,5 +1,6 @@
 import { ScanBarcode, Search } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Escaner } from '@/features/gestion/Gestion';
 import { Card, Cargando, EmptyState, ErrorCarga, SearchInput, Sheet } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
 import type { Grupo, Opcion, Principio } from '@/lib/tipos';
@@ -57,8 +58,8 @@ export default function MostradorPage() {
   useCobrarShortcut(abrirCobro, unidades > 0 && !!tasa && !!turno);
 
   // El lector USB "escribe" el código y envía Enter: si es un código exacto, va directo a la cuenta.
-  const onEnter = async () => {
-    const codigo = q.trim();
+  const onEnter = async (leido?: string) => {
+    const codigo = (leido ?? q).trim();
     if (!/^\d{8,14}$/.test(codigo)) return;
     try {
       const p = await api<Opcion & { principioActivo: Principio }>(`/catalogo/codigo/${codigo}`);
@@ -94,6 +95,7 @@ export default function MostradorPage() {
             autoComplete="off"
             autoFocus
           />
+          <Escaner onCodigo={(c) => void onEnter(c)} />
           <button className="grid w-12 shrink-0 place-items-center rounded-xl border border-line bg-surface text-muted hover:text-fg xl:hidden" aria-label="Escanear código de barras" onClick={() => avisar('El escáner con la cámara llega en la siguiente versión. Escribe el código o usa el lector', 'info')}>
             <ScanBarcode className="h-5 w-5" />
           </button>

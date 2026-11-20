@@ -72,3 +72,52 @@ describe('Compras, venta al mayor y reportes', () => {
     }
   });
 });
+
+describe('Descuentos, devoluciones y ajustes', () => {
+  let app: INestApplication;
+  let d: Awaited<ReturnType<typeof escenario>>;
+  let admin: ReturnType<typeof como>;
+  let cajero: ReturnType<typeof como>;
+  before(async () => { app = await levantar(); });
+  after(async () => { await app.close(); await prisma.$disconnect(); });
+  beforeEach(async () => {
+    d = await escenario();
+    admin = como(app, (await entrar(app, 'admin')).token);
+    cajero = como(app, (await entrar(app, 'cajero')).token);
+  });
+
+  it('el cajero da hasta 10 % de descuento; más, no', async () => {
+    const mal = await cajero.post('/ventas', { lineas: [{ productoId: d.generico.id, cantidad: 2 }], metodoPago: 'EFECTIVO_USD', descuentoPct: 20, descuentoMotivo: 'Tercera edad' });
+    assert.equal(mal.status, 403);
+    const ok = await cajero.post('/ventas', { lineas: [{ productoId: d.generico.id, cantidad: 2 }], metodoPago: 'EFECTIVO_USD', descuentoPct: 10, descuentoMotivo: 'Tercera edad' });
+    assert.equal(ok.status, 201, JSON.stringify(ok.body));
+    assert.equal(ok.body.totalUsd, '1.53'); // 1,70 − 10 %
+  });
+
+  it('devolución parcial: vuelve el stock, se descuenta de la caja y no deja devolver de más', async () => {
+    const v = await admin.post('/ventas', { lineas: [{ productoId: d.generico.id, cantidad: 3 }], metodoPago: 'EFECTIVO_USD' });
+    const linea = v.body.lineas[0];
+    assert.equal((await cajero.post(`/ventas/${v.body.id}/devoluciones`, { lineas: [{ lineaId: linea.id, cantidad: 1 }], motivo: 'x', metodo: 'EFECTIVO_USD' })).status, 403);
+    const r = await admin.post(`/ventas/${v.body.id}/devoluciones`, { lineas: [{ lineaId: linea.id, cantidad: 1 }], motivo: 'Cambió de opinión', metodo: 'EFECTIVO_USD' });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    assert.equal(r.body.montoUsd, '0.85');
+    assert.equal((await admin.post(`/ventas/${v.body.id}/devoluciones`, { lineas: [{ lineaId: linea.id, cantidad: linea.cantidad }], motivo: 'x', metodo: 'EFECTIVO_USD' })).status, 409);
+    const caja = (await admin.get('/caja/actual')).body;
+    assert.equal(caja.esperado.EFECTIVO_USD, 1.7); // 2,55 cobrado − 0,85 devuelto
+  });
+
+  it('ajuste de inventario con motivo, sin dejar el lote en negativo', async () => {
+    const lote = await prisma.lote.findFirstOrThrow({ where: { productoId: d.generico.id, numero: 'TARDE' } });
+    assert.equal((await admin.post('/inventario/ajustes', { loteId: lote.id, cantidad: -11, motivo: 'ROTO' })).status, 409);
+    assert.equal((await admin.post('/inventario/ajustes', { loteId: lote.id, cantidad: -2, motivo: 'ROTO' })).status, 201);
+    assert.equal((await prisma.lote.findUniqueOrThrow({ where: { id: lote.id } })).stockLibre, 8);
+  });
+
+  it('marcar un principio como psicotrópico y anotar el médico', async () => {
+    const p = await admin.post('/catalogo/principios', { nombre: 'Clonazepam', riesgo: 'PSICOTROPICO' });
+    assert.equal(p.status, 201);
+    assert.equal((await admin.patch(`/catalogo/principios/${p.body.id}`, { familia: 'benzodiacepinas' })).body.familia, 'benzodiacepinas');
+    const lista = (await admin.get('/catalogo/productos?q=acetamin')).body;
+    assert.ok(lista.length >= 1 && typeof lista[0].stock === 'number');
+  });
+});

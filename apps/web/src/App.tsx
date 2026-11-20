@@ -14,6 +14,7 @@ import InventarioPage from '@/features/inventario/InventarioPage';
 import ResumenPage from '@/features/panel/PanelPage';
 import UsuariosPage from '@/features/usuarios/UsuariosPage';
 import { ComprasPage, LibroPage, MayoristaPage, ReportesPage, WhatsappPage } from '@/features/negocio/Negocio';
+import { AuditoriaPage, CatalogoPage, VentasPage } from '@/features/gestion/Gestion';
 import CajaPage from '@/features/caja/CajaPage';
 import { useCaja } from '@/store/caja';
 
@@ -40,7 +41,7 @@ export default function App() {
   const paginas: [string, ReactNode][] = [
     ['/vender', <VenderPage />], ['/caja', <CajaPage />], ['/recipe', <RecipePage />], ['/clientes', <ClientesPage />],
     ['/revisar', <RevisarPage />], ['/encargos', <EncargosPage />], ['/inventario', <InventarioPage />],
-    ['/resumen', <ResumenPage />], ['/usuarios', <UsuariosPage />],
+    ['/resumen', <ResumenPage />], ['/usuarios', <UsuariosPage />], ['/ventas', <VentasPage />], ['/catalogo', <CatalogoPage />], ['/auditoria', <AuditoriaPage />],
     ['/compras', <ComprasPage />], ['/mayor', <MayoristaPage />], ['/whatsapp', <WhatsappPage />], ['/controlados', <LibroPage />], ['/reportes', <ReportesPage />],
   ];
   return (

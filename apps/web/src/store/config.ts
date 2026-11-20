@@ -12,6 +12,7 @@ export interface Configuracion {
   farmacia: { nombre: string; rif: string; direccion: string; telefono: string };
   ticketPie: string | null; ticketAncho: 58 | 80; ticketLetra: number; ticketCopias: number;
   ticketAuto: boolean; ticketMostrarBs: boolean; ticketMostrarTasa: boolean;
+  recipeRetencionDias: number;
 }
 
 /** Configuración de la farmacia (tasa, ticket, impresora). Se carga al entrar y al guardar. */

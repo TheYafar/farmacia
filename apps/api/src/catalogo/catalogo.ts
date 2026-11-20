@@ -16,9 +16,9 @@ export class CatalogoService {
    * Búsqueda por marca, principio activo, concentración, laboratorio o código de barras.
    * Agrupa por molécula + concentración + forma (bioequivalentes) y ordena de menor a mayor precio.
    */
-  async buscar(q: string) {
+  async buscar(q: string, todo = false) {
     const palabras = q.trim().split(/\s+/).filter(Boolean).slice(0, 6);
-    if (!palabras.length) return { grupos: [] };
+    if (!palabras.length && !todo) return { grupos: [] };
 
     const condiciones = palabras.map(
       (p) => Prisma.sql`unaccent(lower(p."nombreComercial" || ' ' || pa."nombre" || ' ' || p."concentracion" || ' ' || p."forma" || ' ' || p."laboratorio" || ' ' || coalesce(p."codigoBarras", '')))
@@ -27,8 +27,8 @@ export class CatalogoService {
     const claves = await this.prisma.$queryRaw<{ principioActivoId: string; concentracion: string; forma: string }[]>`
       SELECT DISTINCT p."principioActivoId", p."concentracion", p."forma"
       FROM "Producto" p JOIN "PrincipioActivo" pa ON pa.id = p."principioActivoId"
-      WHERE p.activo AND ${Prisma.join(condiciones, ' AND ')}
-      LIMIT 20`;
+      WHERE p.activo AND ${todo ? Prisma.sql`TRUE` : Prisma.join(condiciones, ' AND ')}
+      LIMIT ${todo ? 20000 : 20}`;
     if (!claves.length) return { grupos: [] };
 
     const productos = await this.prisma.producto.findMany({
@@ -64,6 +64,12 @@ export class CatalogoController {
   @Get('buscar')
   buscar(@Query('q') q = '') {
     return this.catalogo.buscar(q.slice(0, 100));
+  }
+
+  /** Catálogo completo para vender sin internet (la app lo guarda en el equipo cada pocos minutos). */
+  @Get('sin-conexion')
+  sinConexion() {
+    return this.catalogo.buscar('', true);
   }
 
   /** Lector de código de barras: devuelve el producto exacto. */

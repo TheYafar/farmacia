@@ -275,6 +275,8 @@ export const crearVentaSchema = z
     descuentoMotivo: z.string().trim().max(60).optional(),
     /** Identificador que genera la app por cada cobro: evita guardar dos veces la misma venta. */
     clave: z.string().uuid().optional(),
+    /** Venta hecha sin internet: cuándo se cobró de verdad (se envía después). Máximo 3 días atrás. */
+    hechaEn: z.coerce.date().refine((d) => d.getTime() <= Date.now() + 60_000 && d.getTime() > Date.now() - 3 * 86_400_000, 'Fecha de venta sin conexión inválida').optional(),
   })
   .refine((v) => !v.descuentoPct || !!v.descuentoMotivo, { message: 'El descuento necesita un motivo', path: ['descuentoMotivo'] })
   .refine((v) => !!v.pagos?.length || !!v.metodoPago, { message: 'Falta el pago', path: ['pagos'] })

@@ -11,6 +11,9 @@ import { Sheet, Toaster } from '@/components/ui';
 import { useCaja } from '@/store/caja';
 import { useConexion } from '@/lib/api';
 import { useConfig } from '@/store/config';
+import { descartarRechazada, enviarPendientes, guardarCatalogo, useSinConexion } from '@/lib/sinConexion';
+import { avisar } from '@/store/avisos';
+const usdF = (v: number) => `$${v.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /** Números rojos del menú: lo que espera al farmacéutico o al dueño. Se actualiza cada 20 segundos. */
 function useBadges(rol: string): Record<string, number> {
@@ -182,11 +185,35 @@ export default function AppShell() {
 /** Barra roja cuando se cae el internet o el servidor no responde. Se quita sola al volver. */
 function SinConexion() {
   const enLinea = useConexion((s) => s.enLinea);
+  const { pendientes, rechazadas } = useSinConexion();
+  // Al volver la conexión (y cada minuto): enviar ventas pendientes. Cada 10 min: copia del catálogo para vender sin internet.
+  useEffect(() => {
+    if (!enLinea) return;
+    void enviarPendientes().then((n) => { if (n) avisar(`${n} ${n === 1 ? 'venta hecha' : 'ventas hechas'} sin conexión ya se ${n === 1 ? 'envió' : 'enviaron'}`, 'ok'); });
+    const t = setInterval(() => void enviarPendientes(), 60_000);
+    return () => clearInterval(t);
+  }, [enLinea]);
+  useEffect(() => {
+    const copia = () => { void guardarCatalogo().catch(() => {}); };
+    copia();
+    const t = setInterval(copia, 10 * 60_000);
+    return () => clearInterval(t);
+  }, []);
   useEffect(() => {
     if (enLinea) return;
     const t = setInterval(() => { void fetch('/api/v1/salud').then((r) => { if (r.ok) useConexion.setState({ enLinea: true }); }).catch(() => {}); }, 5000);
     return () => clearInterval(t);
   }, [enLinea]);
-  if (enLinea) return null;
-  return <div role="alert" className="bg-bad px-4 py-1.5 text-center text-[13px] font-semibold text-white">Sin conexión con el servidor. Lo que estabas haciendo no se pierde: reintenta cuando vuelva el internet.</div>;
+  return (
+    <>
+      {!enLinea && <div role="alert" className="bg-bad px-4 py-1.5 text-center text-[13px] font-semibold text-white">Sin conexión. Puedes seguir vendiendo productos sin récipe: se guardan en este equipo y se envían solos al volver el internet.</div>}
+      {pendientes.length > 0 && <div className="bg-warn-soft px-4 py-1.5 text-center text-[13px] font-semibold text-warn">{pendientes.length} {pendientes.length === 1 ? 'venta' : 'ventas'} por enviar ({usdF(pendientes.reduce((a, p) => a + p.totalUsd, 0))})</div>}
+      {rechazadas.map((r) => (
+        <div key={r.clave} role="alert" className="flex flex-wrap items-center justify-center gap-2 bg-bad-soft px-4 py-1.5 text-[13px] text-bad">
+          <span><b>Venta sin conexión no aceptada</b> ({r.resumen}, {usdF(r.totalUsd)}): {r.motivo}</span>
+          <button className="font-semibold underline" onClick={() => descartarRechazada(r.clave)}>Ya lo resolví</button>
+        </div>
+      ))}
+    </>
+  );
 }

@@ -10,6 +10,7 @@ import { useCaja } from '@/store/caja';
 import { avisar } from '@/store/avisos';
 import { useRol, useSesion } from '@/store/sesion';
 import { useVenta, type Linea } from '@/store/venta';
+import { encolar } from '@/lib/sinConexion';
 import PacienteBar from './PacienteBar';
 
 export function useResumenVenta() {
@@ -244,6 +245,20 @@ export function CobroSheet({ open, onClose, onVendida }: { open: boolean; onClos
       let v: Venta | undefined;
       for (let intento = 0; !v; intento++) {
         try { v = await enviar(); } catch (e) {
+          if (e instanceof ApiError && e.status === 0 && intento >= 2) {
+            // Sigue sin internet: se guarda en el equipo y se envía sola al volver la conexión.
+            const delicado = lineas.some((l) => l.producto.requiereRecipe || l.principio.riesgo !== 'NORMAL');
+            if (delicado) throw new ApiError(0, 'Sin internet no se pueden vender productos con récipe o controlados. Espera a que vuelva la conexión');
+            if (!confirm('No hay internet. ¿Guardar esta venta en el equipo? Se enviará sola cuando vuelva la conexión.')) throw e;
+            encolar({
+              clave, hechaEn: new Date().toISOString(), totalUsd: total,
+              resumen: lineas.map((l) => `${l.cantidad} ${l.producto.nombreComercial}`).join(', '),
+              body: { cedula: cliente?.cedula, pagos, vueltoMoneda: vueltoEn, descuentoPct: desc, descuentoMotivo: desc ? descMotivo : undefined, lineas: lineas.map((l) => ({ productoId: l.producto.id, cantidad: l.cantidad })) },
+            });
+            vaciar(); onClose();
+            avisar('Venta guardada sin conexión. Se enviará sola al volver el internet', 'ok');
+            return;
+          }
           if (!(e instanceof ApiError) || e.status !== 0 || intento >= 4) throw e;
           setError(`Sin conexión. Reintentando (${intento + 1}/4)…`);
           await new Promise((r) => setTimeout(r, 2500));

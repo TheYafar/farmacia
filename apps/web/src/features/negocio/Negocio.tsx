@@ -6,7 +6,11 @@ import { api, ApiError } from '@/lib/api';
 import { useCargar } from '@/lib/useCargar';
 import type { Opcion } from '@/lib/tipos';
 import { avisar } from '@/store/avisos';
+import { descargarExcel as descargarXlsx } from '@/lib/excel';
+import { useConfig } from '@/store/config';
 import { ElegirProducto } from '@/features/inventario/InventarioPage';
+import { NOMBRE_METODO as NM } from '@/features/caja/Ticket';
+const NOMBRE_METODO = NM as Record<string, string>;
 
 /* ───────── utilidades ───────── */
 const usd = (v: string | number) => `$${Number(v).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -14,16 +18,7 @@ const fecha = (d: string | null) => (d ? new Date(d).toLocaleDateString('es-VE',
 const msg = (e: unknown) => (e instanceof ApiError ? [e.message, ...e.errores.map((x) => x.mensaje)].join('. ') : 'No se pudo completar');
 const mono = (s: ReactNode) => <span className="font-mono tabular">{s}</span>;
 
-/** Descarga una tabla como archivo que Excel abre directo (CSV con «;» y acentos). */
-function descargarExcel(nombre: string, cabecera: string[], filas: (string | number | null)[][]) {
-  const cel = (v: string | number | null) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const csv = '﻿' + [cabecera, ...filas].map((f) => f.map(cel).join(';')).join('\r\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-  a.download = `${nombre}-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
+const descargarExcel = (n: string, c: string[], f: (string | number | null)[][]) => void descargarXlsx(n, c, f);
 
 function Tabs<T extends string>({ tabs, value, onChange }: { tabs: T[]; value: T; onChange: (t: T) => void }) {
   return (
@@ -96,8 +91,103 @@ function HojaPago({ titulo, saldo, ruta, onCerrar, onListo }: { titulo: string; 
 interface Sugerido { productoId: string; nombre: string; vendidos30: number; stock: number; espera: number; pedir: number; proveedor: string | null; costoUnidadUsd: string | null }
 interface Factura { id: string; proveedor: string; numeroFactura: string; venceEn: string | null; totalUsd: string; saldoUsd: string; vencida: boolean }
 
+interface Orden { id: string; numero: number; proveedor: string; estado: 'ABIERTA' | 'RECIBIDA' | 'ANULADA'; creadaEn: string; lineas: { id: string; productoId: string; nombre: string; cantidad: number; recibido: number | null }[] }
+interface CompraF { id: string; proveedor: string; numeroFactura: string; creadaEn: string; totalUsd: string; pagadoUsd: string; devueltoUsd: string; anulada: boolean; lineas: { id: string; numeroLote: string; cantidad: number; factorVenta: number; costoUsd: string; producto: { nombreComercial: string; concentracion: string } }[] }
+
+function RecibirOrden({ o, onCerrar, onListo }: { o: Orden | null; onCerrar: () => void; onListo: () => void }) {
+  const [factura, setFactura] = useState('');
+  const [credito, setCredito] = useState('0');
+  const [l, setL] = useState<Record<string, { recibido: string; lote: string; vence: string; costo: string }>>({});
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { if (o) { setL(Object.fromEntries(o.lineas.map((x) => [x.id, { recibido: String(x.cantidad), lote: '', vence: '', costo: '' }]))); setFactura(''); setError(null); } }, [o]);
+  const c = (id: string, k: string, v: string) => setL({ ...l, [id]: { ...l[id]!, [k]: v } });
+  return (
+    <Sheet open={!!o} onClose={onCerrar} title={`Recibir orden #${o?.numero ?? ''} · ${o?.proveedor ?? ''}`}>
+      <form className="flex flex-col gap-3" onSubmit={async (e) => {
+        e.preventDefault(); setError(null);
+        try {
+          const r = await api<{ diferencias: number; clientesAvisados: number }>(`/inventario/ordenes/${o!.id}/recibir`, { body: {
+            numeroFactura: factura, diasCredito: Number(credito) || 0,
+            lineas: o!.lineas.map((x) => ({ lineaId: x.id, recibido: Number(l[x.id]?.recibido) || 0, numeroLote: l[x.id]?.lote || undefined, vence: l[x.id]?.vence || undefined, costoUsd: Number(l[x.id]?.costo.replace(',', '.')) || 0 })),
+          } });
+          avisar(`Mercancía recibida${r.diferencias ? ` con ${r.diferencias} diferencia(s)` : ''}${r.clientesAvisados ? `. Se avisó a ${r.clientesAvisados} clientes` : ''}`, 'ok');
+          onListo(); onCerrar();
+        } catch (err) { setError(msg(err)); }
+      }}>
+        <div className="grid grid-cols-2 gap-2">
+          <Campo etiqueta="N.º de factura"><input required value={factura} onChange={(e) => setFactura(e.target.value)} className={claseInput} /></Campo>
+          <Campo etiqueta="Días de crédito"><input inputMode="numeric" value={credito} onChange={(e) => setCredito(e.target.value.replace(/\D/g, ''))} className={claseInput} /></Campo>
+        </div>
+        {o?.lineas.map((x) => {
+          const v = l[x.id]; if (!v) return null;
+          const dif = Number(v.recibido) !== x.cantidad;
+          return (
+            <div key={x.id} className="flex flex-col gap-2 rounded-xl border border-line p-3">
+              <div className="flex justify-between text-sm font-semibold"><span>{x.nombre}</span><span className="text-muted">Pedido: {x.cantidad}</span></div>
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                <Campo etiqueta="Llegaron"><input inputMode="numeric" value={v.recibido} onChange={(e) => c(x.id, 'recibido', e.target.value.replace(/\D/g, ''))} className={clsx(claseInput, dif && 'border-warn')} /></Campo>
+                <Campo etiqueta="Lote"><input value={v.lote} onChange={(e) => c(x.id, 'lote', e.target.value)} className={claseInput} /></Campo>
+                <Campo etiqueta="Vence"><input type="date" value={v.vence} onChange={(e) => c(x.id, 'vence', e.target.value)} className={claseInput} /></Campo>
+                <Campo etiqueta="Costo caja $"><input inputMode="decimal" value={v.costo} onChange={(e) => c(x.id, 'costo', e.target.value)} className={claseInput} /></Campo>
+              </div>
+              {dif && <span className="text-xs font-semibold text-warn">Diferencia: {Number(v.recibido) - x.cantidad > 0 ? '+' : ''}{Number(v.recibido) - x.cantidad}</span>}
+            </div>
+          );
+        })}
+        {error && <Alert tone="bad">{error}</Alert>}
+        <Button type="submit" variant="primary" size="lg">Confirmar recepción</Button>
+      </form>
+    </Sheet>
+  );
+}
+
+function DevolverDrogueria({ c, onCerrar, onListo }: { c: CompraF | null; onCerrar: () => void; onListo: () => void }) {
+  const [lineaId, setLineaId] = useState('');
+  const [cant, setCant] = useState('');
+  const [motivo, setMotivo] = useState('Vencido');
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { setLineaId(c?.lineas[0]?.id ?? ''); setCant(''); setError(null); }, [c]);
+  return (
+    <Sheet open={!!c} onClose={onCerrar} title={`Devolver a ${c?.proveedor ?? ''} · factura ${c?.numeroFactura ?? ''}`}>
+      <form className="flex flex-col gap-3" onSubmit={async (e) => {
+        e.preventDefault(); setError(null);
+        try {
+          const r = await api<{ montoUsd: string }>('/inventario/devoluciones-proveedor', { body: { compraId: c!.id, compraLineaId: lineaId, cantidad: Number(cant), motivo } });
+          avisar(`Devuelto. Se descontaron ${usd(r.montoUsd)} de la deuda`, 'ok'); onListo(); onCerrar();
+        } catch (err) { setError(msg(err)); }
+      }}>
+        <Campo etiqueta="Producto">
+          <select value={lineaId} onChange={(e) => setLineaId(e.target.value)} className={claseInput}>
+            {c?.lineas.map((l) => <option key={l.id} value={l.id}>{l.producto.nombreComercial} {l.producto.concentracion} · lote {l.numeroLote} ({l.cantidad * l.factorVenta} unidades)</option>)}
+          </select>
+        </Campo>
+        <Campo etiqueta="Unidades a devolver"><input required inputMode="numeric" value={cant} onChange={(e) => setCant(e.target.value.replace(/\D/g, ''))} className={claseInput} /></Campo>
+        <Campo etiqueta="Motivo"><select value={motivo} onChange={(e) => setMotivo(e.target.value)} className={claseInput}>{['Vencido', 'Por vencer', 'Dañado', 'Equivocado', 'Otro'].map((m) => <option key={m}>{m}</option>)}</select></Campo>
+        {error && <Alert tone="bad">{error}</Alert>}
+        <Button type="submit" variant="primary" size="lg">Devolver</Button>
+      </form>
+    </Sheet>
+  );
+}
+
 export function ComprasPage() {
-  const [tab, setTab] = useState<'Pedido sugerido' | 'Cuentas por pagar'>('Pedido sugerido');
+  const [tab, setTab] = useState<'Pedido sugerido' | 'Órdenes' | 'Facturas' | 'Cuentas por pagar'>('Pedido sugerido');
+  const ords = useCargar(() => api<Orden[]>('/proveedores/ordenes'), []);
+  const facts = useCargar(() => api<CompraF[]>('/inventario/compras'), []);
+  const [recibir, setRecibir] = useState<Orden | null>(null);
+  const [devolver, setDevolver] = useState<CompraF | null>(null);
+  const crearOrden = async (prov: string) => {
+    const items = (sug.datos ?? []).filter((x) => (x.proveedor ?? 'Sin droguería') === prov);
+    try {
+      const o = await api<{ numero: number }>('/proveedores/ordenes', { body: { proveedor: prov === 'Sin droguería' ? 'Por definir' : prov, lineas: items.map((x) => ({ productoId: x.productoId, cantidad: x.pedir })) } });
+      avisar(`Orden #${o.numero} creada para ${prov}`, 'ok'); ords.recargar(); setTab('Órdenes');
+    } catch (e) { avisar(msg(e), 'bad'); }
+  };
+  const anular = async (ruta: string, texto: string) => {
+    if (!confirm(texto)) return;
+    try { await api(ruta, { body: {} }); avisar('Anulada', 'ok'); ords.recargar(); facts.recargar(); cxp.recargar(); sug.recargar(); } catch (e) { avisar(msg(e), 'bad'); }
+  };
+  const recargarTodo = () => { ords.recargar(); facts.recargar(); cxp.recargar(); sug.recargar(); };
   const sug = useCargar(() => api<Sugerido[]>('/proveedores/sugerido'), []);
   const cxp = useCargar(() => api<{ facturas: Factura[]; porProveedor: { proveedor: string; saldoUsd: string }[] }>('/proveedores/cuentas'), []);
   const [pagar, setPagar] = useState<Factura | null>(null);
@@ -112,14 +202,14 @@ export function ComprasPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Compras a droguerías" subtitle="Qué pedir y cuánto se debe. Las compras se cargan en Inventario." />
+      <PageHeader title="Compras a droguerías" subtitle="Qué pedir, qué llegó y cuánto se debe" />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Kpi k="Productos por pedir" v={String(sug.datos?.length ?? '—')} />
         <Kpi k="Agotados" v={String(sug.datos?.filter((s) => s.stock === 0).length ?? '—')} tone="bad" />
         <Kpi k="Deuda con droguerías" v={usd(deuda)} />
         <Kpi k="Facturas vencidas" v={String(vencidas)} tone={vencidas ? 'bad' : undefined} />
       </div>
-      <Tabs tabs={['Pedido sugerido', 'Cuentas por pagar']} value={tab} onChange={setTab} />
+      <Tabs tabs={['Pedido sugerido', 'Órdenes', 'Facturas', 'Cuentas por pagar']} value={tab} onChange={setTab} />
       {tab === 'Pedido sugerido' && (
         <Estado c={sug}>{(d) => (
           <>
@@ -134,7 +224,10 @@ export function ComprasPage() {
               <div className="flex flex-wrap justify-end gap-2">
                 <Button onClick={() => descargarExcel('pedido-sugerido', ['Producto', 'Droguería', 'Existencia', 'Vendió 30 días', 'Esperando', 'Pedir'], d.map((s) => [s.nombre, s.proveedor, s.stock, s.vendidos30, s.espera, s.pedir]))}>Descargar Excel</Button>
                 {grupos.map((g) => (
-                  <Button key={g} variant="primary" onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(textoPedido(g))}`, '_blank')}>Enviar a {g} por WhatsApp</Button>
+                  <span key={g} className="flex gap-1">
+                    <Button variant="primary" onClick={() => void crearOrden(g)}>Crear orden · {g}</Button>
+                    <Button onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(textoPedido(g))}`, '_blank')}>WhatsApp</Button>
+                  </span>
                 ))}
               </div>
             )}
@@ -154,6 +247,35 @@ export function ComprasPage() {
           </>
         )}</Estado>
       )}
+      {tab === 'Órdenes' && (
+        <Estado c={ords}>{(d) => (
+          <Tabla vacio="Sin órdenes. Créalas desde el pedido sugerido." head={['N.º', 'Droguería', 'Fecha', 'Productos', 'Estado', '']} rows={d.map((o) => [
+            mono(`#${o.numero}`), <span className="font-semibold">{o.proveedor}</span>, mono(fecha(o.creadaEn)),
+            <span className="text-xs">{o.lineas.map((l) => `${l.cantidad} ${l.nombre}${l.recibido != null && l.recibido !== l.cantidad ? ` (llegaron ${l.recibido})` : ''}`).join(' · ')}</span>,
+            <Chip tone={o.estado === 'ABIERTA' ? 'warn' : o.estado === 'RECIBIDA' ? 'ok' : 'neutral'}>{o.estado === 'ABIERTA' ? 'Por llegar' : o.estado === 'RECIBIDA' ? 'Recibida' : 'Anulada'}</Chip>,
+            o.estado === 'ABIERTA' && <div className="flex gap-1">
+              <Button size="sm" variant="primary" onClick={() => setRecibir(o)}>Recibir</Button>
+              <Button size="sm" onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(`Buenos días, orden #${o.numero}:\n${o.lineas.map((l) => `• ${l.nombre}: ${l.cantidad}`).join('\n')}\nGracias.`)}`, '_blank')}>WhatsApp</Button>
+              <Button size="sm" variant="ghost" onClick={() => void anular(`/proveedores/ordenes/${o.id}/anular`, `¿Anular la orden #${o.numero}?`)}>Anular</Button>
+            </div>,
+          ])} />
+        )}</Estado>
+      )}
+      {tab === 'Facturas' && (
+        <Estado c={facts}>{(d) => (
+          <Tabla vacio="Aún no hay compras cargadas." head={['Droguería', 'Factura', 'Fecha', 'Total', 'Devuelto', 'Estado', '']} rows={d.map((c) => [
+            <span className="font-semibold">{c.proveedor}</span>, mono(c.numeroFactura), mono(fecha(c.creadaEn)), mono(usd(c.totalUsd)),
+            Number(c.devueltoUsd) ? mono(usd(c.devueltoUsd)) : '—',
+            c.anulada ? <Chip tone="bad">Anulada</Chip> : <Chip tone="ok">Cargada</Chip>,
+            !c.anulada && <div className="flex gap-1">
+              <Button size="sm" onClick={() => setDevolver(c)}>Devolver</Button>
+              <Button size="sm" variant="ghost" onClick={() => void anular(`/inventario/compras/${c.id}/anular`, `¿Anular la factura ${c.numeroFactura} de ${c.proveedor}? Su mercancía sale del inventario. Úsalo solo si se cargó por error.`)}>Anular</Button>
+            </div>,
+          ])} />
+        )}</Estado>
+      )}
+      <RecibirOrden o={recibir} onCerrar={() => setRecibir(null)} onListo={recargarTodo} />
+      <DevolverDrogueria c={devolver} onCerrar={() => setDevolver(null)} onListo={recargarTodo} />
       <HojaPago titulo={`Pago a ${pagar?.proveedor ?? ''}`} saldo={pagar?.saldoUsd ?? '0'} ruta={pagar ? `/proveedores/cuentas/${pagar.id}/pagos` : null} onCerrar={() => setPagar(null)} onListo={cxp.recargar} />
     </div>
   );
@@ -161,7 +283,7 @@ export function ComprasPage() {
 
 /* ───────── Venta al mayor ───────── */
 interface Cliente { id: string; rif: string; nombre: string; telefono: string | null; limiteUsd: string; diasCredito: number; descuentoPct: string; deudaUsd: string; vencidoUsd: string }
-interface Pedido { id: string; numero: number; estado: string; totalUsd: string; saldoUsd: string; venceEn: string | null; creadoEn: string; cliente: { nombre: string; rif: string }; lineas: { nombre: string; cantidad: number; precioUsd: string }[] }
+interface Pedido { validaHasta: string | null; empleado: string | null; id: string; numero: number; estado: string; totalUsd: string; saldoUsd: string; venceEn: string | null; creadoEn: string; cliente: { nombre: string; rif: string }; lineas: { nombre: string; cantidad: number; precioUsd: string }[] }
 const PASOS = ['COTIZACION', 'PEDIDO', 'DESPACHADO', 'ENTREGADO'];
 const NOMBRE_PASO: Record<string, string> = { COTIZACION: 'Cotización', PEDIDO: 'Pedido', DESPACHADO: 'Despachado', ENTREGADO: 'Entregado', ANULADO: 'Anulado' };
 
@@ -203,6 +325,8 @@ function NuevoCliente({ abierto, c, onCerrar, onListo }: { abierto: boolean; c?:
 
 function NuevaCotizacion({ clientes, abierto, onCerrar, onListo }: { clientes: Cliente[]; abierto: boolean; onCerrar: () => void; onListo: () => void }) {
   const [clienteId, setClienteId] = useState('');
+  const [validez, setValidez] = useState('7');
+  const [empleado, setEmpleado] = useState('');
   const [lineas, setLineas] = useState<{ producto: Opcion | null; cantidad: string }[]>([{ producto: null, cantidad: '' }]);
   const [error, setError] = useState<string | null>(null);
   const cli = clientes.find((c) => c.id === clienteId);
@@ -213,7 +337,7 @@ function NuevaCotizacion({ clientes, abierto, onCerrar, onListo }: { clientes: C
         e.preventDefault(); setError(null);
         if (lineas.some((l) => !l.producto || !Number(l.cantidad))) { setError('Elige producto y cantidad en cada línea'); return; }
         try {
-          const r = await api<{ numero: number; totalUsd: string }>('/mayorista/pedidos', { body: { clienteId, lineas: lineas.map((l) => ({ productoId: l.producto!.id, cantidad: Number(l.cantidad) })) } });
+          const r = await api<{ numero: number; totalUsd: string }>('/mayorista/pedidos', { body: { clienteId, validezDias: Number(validez) || 7, empleado: empleado || undefined, lineas: lineas.map((l) => ({ productoId: l.producto!.id, cantidad: Number(l.cantidad) })) } });
           avisar(`Cotización #${r.numero} por ${usd(r.totalUsd)}`, 'ok');
           setLineas([{ producto: null, cantidad: '' }]); onListo(); onCerrar();
         } catch (err) { setError(msg(err)); }
@@ -233,12 +357,38 @@ function NuevaCotizacion({ clientes, abierto, onCerrar, onListo }: { clientes: C
           </div>
         ))}
         <Button type="button" icon={<Plus className="h-4 w-4" />} onClick={() => setLineas([...lineas, { producto: null, cantidad: '' }])}>Otro producto</Button>
+        <div className="grid grid-cols-2 gap-2">
+          <Campo etiqueta="Vale por (días)"><input inputMode="numeric" value={validez} onChange={(e) => setValidez(e.target.value.replace(/\D/g, ''))} className={claseInput} /></Campo>
+          <Campo etiqueta="Convenio: empleado (opcional)" ayuda="Si retira un empleado y se le cobra a la empresa"><input value={empleado} onChange={(e) => setEmpleado(e.target.value)} placeholder="Nombre y cédula" className={claseInput} /></Campo>
+        </div>
         <div className="flex justify-between font-semibold"><span>Total con precio de mayor</span>{mono(usd(total))}</div>
         {error && <Alert tone="bad">{error}</Alert>}
         <Button type="submit" variant="primary" size="lg">Crear cotización</Button>
       </form>
     </Sheet>
   );
+}
+
+/** Abre la cotización o la nota de entrega lista para imprimir o «Guardar como PDF». */
+function imprimirDocumento(p: Pedido, c?: Cliente) {
+  const farmacia = useConfig.getState().config?.farmacia;
+  const esc = (t: string) => t.replace(/[&<>"]/g, (x) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[x]!));
+  const titulo = p.estado === 'COTIZACION' ? 'COTIZACIÓN' : 'NOTA DE ENTREGA';
+  const filas = p.lineas.map((l) => `<tr><td>${esc(l.nombre)}</td><td class="n">${l.cantidad}</td><td class="n">${usd(l.precioUsd)}</td><td class="n">${usd(Number(l.precioUsd) * l.cantidad)}</td></tr>`).join('');
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${titulo} ${p.numero}</title><style>
+    body{font-family:system-ui,sans-serif;margin:32px;color:#111}h1{font-size:20px;margin:0}table{width:100%;border-collapse:collapse;margin-top:16px}
+    th,td{border-bottom:1px solid #ccc;padding:6px;text-align:left;font-size:13px}.n{text-align:right}.g{display:flex;justify-content:space-between;gap:24px;margin-top:12px;font-size:13px}
+    .firma{margin-top:64px;display:flex;gap:48px}.firma div{flex:1;border-top:1px solid #111;padding-top:4px;font-size:12px;text-align:center}</style></head><body>
+    <div class="g"><div><h1>${esc(farmacia?.nombre ?? 'Farmacia')}</h1>${farmacia?.rif ? `RIF ${esc(farmacia.rif)}<br>` : ''}${esc(farmacia?.direccion ?? '')}<br>${esc(farmacia?.telefono ?? '')}</div>
+    <div style="text-align:right"><h1>${titulo} N.º ${p.numero}</h1>Fecha: ${fecha(p.creadoEn)}${p.estado === 'COTIZACION' && p.validaHasta ? `<br>Válida hasta: ${fecha(p.validaHasta)}` : ''}${p.venceEn ? `<br>Vence el pago: ${fecha(p.venceEn)}` : ''}</div></div>
+    <div class="g"><div><b>Cliente:</b> ${esc(p.cliente.nombre)}<br><b>RIF:</b> ${esc(p.cliente.rif)}${c?.telefono ? `<br><b>Tel.:</b> ${esc(c.telefono)}` : ''}${p.empleado ? `<br><b>Convenio · retira:</b> ${esc(p.empleado)}` : ''}</div></div>
+    <table><thead><tr><th>Producto</th><th class="n">Cant.</th><th class="n">Precio</th><th class="n">Total</th></tr></thead><tbody>${filas}</tbody>
+    <tfoot><tr><td colspan="3" class="n"><b>TOTAL</b></td><td class="n"><b>${usd(p.totalUsd)}</b></td></tr></tfoot></table>
+    ${p.estado === 'COTIZACION' ? '<p style="font-size:12px">Precios de mayor sujetos a disponibilidad hasta la fecha indicada.</p>' : '<div class="firma"><div>Entregado por</div><div>Recibido conforme (nombre, cédula y firma)</div></div>'}
+    <script>window.onload=()=>window.print()</script></body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { avisar('Permite las ventanas emergentes para imprimir', 'bad'); return; }
+  w.document.write(html); w.document.close();
 }
 
 export function MayoristaPage() {
@@ -278,13 +428,16 @@ export function MayoristaPage() {
           {d.map((p) => (
             <Card key={p.id} className="flex flex-col gap-2 p-4">
               <div className="flex justify-between gap-2"><div><div className="font-semibold">#{p.numero} · {p.cliente.nombre}</div>
-                <div className="text-xs text-muted">{p.lineas.map((l) => `${l.cantidad} × ${l.nombre}`).join(' · ')}</div></div>
+                <div className="text-xs text-muted">{p.lineas.map((l) => `${l.cantidad} × ${l.nombre}`).join(' · ')}</div>
+                {p.empleado && <div className="text-xs text-muted">Convenio · retira {p.empleado}</div>}
+                {p.estado === 'COTIZACION' && p.validaHasta && (new Date(p.validaHasta) < new Date() ? <Chip tone="bad">Vencida</Chip> : <span className="text-xs text-muted">Vale hasta {fecha(p.validaHasta)}</span>)}</div>
                 <div className="text-right">{mono(<b>{usd(p.totalUsd)}</b>)}{Number(p.saldoUsd) > 0 && ['DESPACHADO', 'ENTREGADO'].includes(p.estado) && <div className="text-xs text-bad">Debe {usd(p.saldoUsd)}</div>}</div></div>
               <div className="flex flex-wrap gap-1">{p.estado === 'ANULADO' ? <Chip tone="bad">Anulado</Chip> : PASOS.map((s, i) => { const k = PASOS.indexOf(p.estado); return <Chip key={s} tone={i < k || (i === k && s === 'ENTREGADO') ? 'ok' : i === k ? 'accent' : 'neutral'}>{i <= k ? '✓ ' : ''}{NOMBRE_PASO[s]}</Chip>; })}</div>
               <div className="flex flex-wrap gap-2">
                 {p.estado !== 'ENTREGADO' && p.estado !== 'ANULADO' && <Button size="sm" variant="primary" onClick={() => accion(p, 'avanzar')}>Marcar «{NOMBRE_PASO[PASOS[PASOS.indexOf(p.estado) + 1]]}»</Button>}
                 {['COTIZACION', 'PEDIDO'].includes(p.estado) && <Button size="sm" variant="ghost" onClick={() => accion(p, 'anular')}>Anular</Button>}
                 {['DESPACHADO', 'ENTREGADO'].includes(p.estado) && Number(p.saldoUsd) > 0 && <Button size="sm" onClick={() => setAbonar(p)}>Registrar abono</Button>}
+                {p.estado !== 'ANULADO' && <Button size="sm" variant="ghost" onClick={() => imprimirDocumento(p, cli.datos?.find((c) => c.rif === p.cliente.rif))}>{p.estado === 'COTIZACION' ? 'Cotización PDF' : 'Nota de entrega PDF'}</Button>}
               </div>
             </Card>
           ))}
@@ -375,28 +528,54 @@ interface Rotacion { masVendidos: { producto: string; vendidos30: number; stock:
 interface Cajero { cajero: string; ventas: number; totalUsd: string; cierres: number; conDiferencia: number }
 
 export function ReportesPage() {
-  const [tab, setTab] = useState<'Ganancia' | 'Rotación' | 'Cajeros'>('Ganancia');
-  const gan = useCargar(() => api<Ganancia>('/reportes/ganancia'), []);
-  const rot = useCargar(() => api<Rotacion>('/reportes/rotacion'), []);
-  const caj = useCargar(() => api<Cajero[]>('/reportes/cajeros'), []);
+  const [tab, setTab] = useState<'Ganancia' | 'Rotación' | 'Cajeros' | 'Horas y pagos'>('Ganancia');
+  const hoyS = new Date().toISOString().slice(0, 10);
+  const [desde, setDesde] = useState(new Date(Date.now() - 29 * 86_400_000).toISOString().slice(0, 10));
+  const [hasta, setHasta] = useState(hoyS);
+  const q = `?desde=${desde}&hasta=${hasta}`;
+  const gan = useCargar(() => api<Ganancia>(`/reportes/ganancia${q}`), [q]);
+  const rot = useCargar(() => api<Rotacion>(`/reportes/rotacion${q}`), [q]);
+  const caj = useCargar(() => api<Cajero[]>(`/reportes/cajeros${q}`), [q]);
+  const det = useCargar(() => api<{ porHora: { hora: number; ventas: number; usd: string }[]; porMetodo: { metodo: string; pagos: number; usd: string; monto: string }[]; devueltoUsd: string }>(`/reportes/ventas-detalle${q}`), [q]);
+  const atajo = (dias: number) => { setDesde(new Date(Date.now() - (dias - 1) * 86_400_000).toISOString().slice(0, 10)); setHasta(hoyS); };
   const porLab = Object.entries((gan.datos?.productos ?? []).reduce<Record<string, number>>((a, p) => ({ ...a, [p.laboratorio]: (a[p.laboratorio] ?? 0) + Number(p.ventaUsd) }), {})).sort((a, b) => b[1] - a[1]).slice(0, 8);
   const max = Math.max(1, ...porLab.map((l) => l[1]));
   const exportar = () => {
     if (tab === 'Ganancia') descargarExcel('ganancia', ['Laboratorio', 'Producto', 'Unidades', 'Venta $', 'Costo $', 'Ganancia $'], (gan.datos?.productos ?? []).map((p) => [p.laboratorio, p.producto, p.unidades, p.ventaUsd, p.costoUsd, p.gananciaUsd]));
     if (tab === 'Rotación') descargarExcel('rotacion', ['Producto', 'Vendidos 30 días', 'Existencia', 'Días sin venta'], [...(rot.datos?.masVendidos ?? []).map((p) => [p.producto, p.vendidos30, p.stock, 0]), ...(rot.datos?.sinMovimiento ?? []).map((p) => [p.producto, 0, p.stock, p.diasSinVenta])]);
+    if (tab === 'Horas y pagos') descargarExcel('ventas-por-hora-y-metodo', ['Tipo', 'Detalle', 'Cantidad', 'Monto $'], [...(det.datos?.porHora ?? []).map((h) => ['Hora', `${h.hora}:00`, h.ventas, h.usd]), ...(det.datos?.porMetodo ?? []).map((m) => ['Método', NOMBRE_METODO[m.metodo] ?? m.metodo, m.pagos, m.usd])]);
     if (tab === 'Cajeros') descargarExcel('cajeros', ['Cajero', 'Ventas', 'Monto $', 'Cierres', 'Cierres con diferencia'], (caj.datos ?? []).map((c) => [c.cajero, c.ventas, c.totalUsd, c.cierres, c.conDiferencia]));
   };
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Reportes" subtitle="Últimos 30 días" actions={<Button variant="primary" onClick={exportar}>Descargar Excel</Button>} />
+      <PageHeader title="Reportes" subtitle={`Del ${fecha(desde)} al ${fecha(hasta)}`} actions={<Button variant="primary" onClick={exportar}>Descargar Excel</Button>} />
+      <div className="flex flex-wrap items-end gap-2">
+        <Campo etiqueta="Desde"><input type="date" value={desde} max={hasta} onChange={(e) => setDesde(e.target.value)} className={claseInput} /></Campo>
+        <Campo etiqueta="Hasta"><input type="date" value={hasta} min={desde} max={hoyS} onChange={(e) => setHasta(e.target.value)} className={claseInput} /></Campo>
+        {[['Hoy', 1], ['7 días', 7], ['30 días', 30], ['90 días', 90]].map(([t, n]) => <Button key={t} size="sm" className="h-11" onClick={() => atajo(n as number)}>{t}</Button>)}
+      </div>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi k="Ventas" v={gan.datos ? usd(gan.datos.totalVentaUsd) : '—'} />
+        <Kpi k="Ventas netas" v={gan.datos ? usd(gan.datos.totalVentaUsd) : '—'} />
         <Kpi k="Ganancia" v={gan.datos ? usd(gan.datos.gananciaUsd) : '—'} tone="ok" />
         <Kpi k="Margen" v={gan.datos?.margenPct != null ? `${gan.datos.margenPct} %` : '—'} />
         <Kpi k="Productos sin costo" v={String(gan.datos?.sinCosto ?? '—')} tone={gan.datos?.sinCosto ? 'bad' : undefined} />
       </div>
-      {!!gan.datos?.sinCosto && <Alert tone="warn">{gan.datos.sinCosto} productos vendidos no tienen costo cargado: su ganancia no se cuenta. Carga el costo en la próxima compra.</Alert>}
-      <Tabs tabs={['Ganancia', 'Rotación', 'Cajeros']} value={tab} onChange={setTab} />
+      {!!gan.datos?.sinCosto && <Alert tone="warn">{gan.datos.sinCosto} {gan.datos.sinCosto === 1 ? "producto vendido no tiene" : "productos vendidos no tienen"} costo cargado: su ganancia no se cuenta. Carga el costo en la próxima compra.</Alert>}
+      <Tabs tabs={['Ganancia', 'Rotación', 'Cajeros', 'Horas y pagos']} value={tab} onChange={setTab} />
+      {tab === 'Horas y pagos' && <Estado c={det}>{(d) => {
+        const maxH = Math.max(1, ...d.porHora.map((h) => Number(h.usd)));
+        return (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card className="flex flex-col gap-1.5 p-4"><div className="mb-1 text-sm font-semibold">Ventas por hora</div>
+              {d.porHora.length ? d.porHora.map((h) => <div key={h.hora} className="grid grid-cols-[48px_1fr_auto] items-center gap-2 text-sm"><span className="font-mono">{String(h.hora).padStart(2, '0')}:00</span><div className="h-3 rounded-full bg-surface2"><div className="h-3 rounded-full bg-accent" style={{ width: `${(Number(h.usd) / maxH) * 100}%` }} /></div><span className="font-mono text-xs">{usd(h.usd)} · {h.ventas}</span></div>) : <span className="text-sm text-muted">Sin ventas.</span>}
+            </Card>
+            <div className="flex flex-col gap-2"><div className="text-sm font-semibold">Por método de pago</div>
+              <Tabla vacio="Sin pagos." head={['Método', 'Pagos', 'En $']} rows={d.porMetodo.map((m) => [NOMBRE_METODO[m.metodo] ?? m.metodo, mono(m.pagos), mono(usd(m.usd))])} />
+              {Number(d.devueltoUsd) > 0 && <p className="text-xs text-muted">Ya se restaron {usd(d.devueltoUsd)} en devoluciones.</p>}
+            </div>
+          </div>
+        );
+      }}</Estado>}
       {tab === 'Ganancia' && <Estado c={gan}>{(d) => (
         <>
           {porLab.length > 0 && <Card className="flex flex-col gap-2.5 p-4"><div className="text-sm font-semibold">Ventas por laboratorio</div>
@@ -411,7 +590,7 @@ export function ReportesPage() {
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="flex flex-col gap-2"><h2 className="font-semibold">Lo que más se vende</h2>
             <Tabla vacio="Sin ventas." head={['Producto', 'Vendidos', 'Existencia']} rows={d.masVendidos.map((p) => [p.producto, mono(p.vendidos30), p.stock < p.vendidos30 / 4 ? <Chip tone="warn">{p.stock}</Chip> : mono(p.stock)])} /></div>
-          <div className="flex flex-col gap-2"><h2 className="font-semibold">No se mueve (30 días sin vender)</h2>
+          <div className="flex flex-col gap-2"><h2 className="font-semibold">No se vendió en estas fechas</h2>
             <Tabla vacio="Todo se está moviendo." head={['Producto', 'Existencia', 'Última venta']} rows={d.sinMovimiento.map((p) => [p.producto, mono(p.stock), <Chip tone="bad">{p.diasSinVenta == null ? 'Nunca' : `Hace ${p.diasSinVenta} días`}</Chip>])} /></div>
         </div>
       )}</Estado>}

@@ -1,4 +1,4 @@
-import { BarChart3, ClipboardList, Receipt, Tags, BookLock, Building2, Camera, Clock, MessageCircle, Package, PieChart, ShieldCheck, ShoppingCart, Truck, Users } from 'lucide-react';
+import { BarChart3, Settings, ClipboardList, Receipt, Tags, BookLock, Building2, Camera, Clock, MessageCircle, Package, PieChart, ShieldCheck, ShoppingCart, Truck, Users } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Role } from '@/data/types';
 
@@ -20,6 +20,7 @@ export const NAV: NavItem[] = [
   { to: '/libro', label: 'Controlados', short: 'Libro', icon: BookLock, roles: ['regente', 'admin'] },
   { to: '/reportes', label: 'Reportes', short: 'Reportes', icon: PieChart, roles: ['admin'] },
   { to: '/auditoria', label: 'Auditoría', short: 'Auditoría', icon: ClipboardList, roles: ['admin'] },
+  { to: '/configuracion', label: 'Configuración', short: 'Ajustes', icon: Settings, roles: ['admin'] },
   { to: '/panel', label: 'Resumen', short: 'Resumen', icon: BarChart3, roles: ['admin'] },
 ];
 

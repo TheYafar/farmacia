@@ -318,3 +318,41 @@ export function AuditoriaPage() {
     </div>
   );
 }
+
+/* ───────── Configuración ───────── */
+export function ConfiguracionPage() {
+  const toast = useToast();
+  const [modo, setModo] = useState<'usd' | 'eur' | 'manual'>('usd');
+  const [ajuste, setAjuste] = useState<'no' | 'bs' | 'pct'>('bs');
+  const [valor, setValor] = useState(1);
+  const base = modo === 'eur' ? 1009.07 : 918.77;
+  const final = ajuste === 'bs' ? base + valor : ajuste === 'pct' ? base * (1 + valor / 100) : base;
+  const n2 = (v: number) => v.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const op = (k: typeof modo, t: string, d: string) => (
+    <button onClick={() => setModo(k)} className={`flex flex-col items-start rounded-xl border p-3 text-left ${modo === k ? 'border-accent bg-accent-soft/60' : 'border-line'}`}><b>{t}</b><span className="text-sm text-muted">{d}</span></button>
+  );
+  return (
+    <div className="flex flex-col gap-4">
+      <PageHeader title="Configuración" subtitle="Tasa del dólar, impuestos, ticket e impresora" />
+      <Card className="flex flex-col gap-3 p-4">
+        <h2 className="text-lg font-bold">Tasa del día</h2>
+        <div className="grid gap-2 md:grid-cols-3">{op('usd', 'BCV dólar (automática)', '918,77 Bs')}{op('eur', 'BCV euro (automática)', '1.009,07 Bs')}{op('manual', 'Personalizada', 'La escribes tú')}</div>
+        {modo !== 'manual' && (
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              {([['no', 'Sin ajuste'], ['bs', 'Sumar Bs'], ['pct', 'Sumar %']] as const).map(([k, t]) => <button key={k} onClick={() => setAjuste(k)} className={`rounded-lg border px-3 py-1.5 text-sm font-semibold ${ajuste === k ? 'border-accent bg-accent-soft text-accent' : 'border-line'}`}>{t}</button>)}
+              {ajuste !== 'no' && <input type="number" value={valor} onChange={(e) => setValor(Number(e.target.value) || 0)} className="h-10 w-24 rounded-lg border border-line bg-surface px-2 font-mono" />}
+            </div>
+            <div className="rounded-xl bg-surface2 p-3 font-mono text-sm">BCV {n2(base)}{ajuste === 'bs' ? ` + ${n2(valor)} Bs` : ajuste === 'pct' ? ` + ${n2(valor)} %` : ''} = <b>{n2(final)} Bs</b></div>
+            <Button variant="primary" onClick={() => toast('Tasa automática activada. Se revisa el BCV cada 30 minutos', 'ok')}>Guardar y usar esta tasa</Button>
+          </>
+        )}
+      </Card>
+      <Card className="flex flex-col gap-2 p-4">
+        <h2 className="text-lg font-bold">Ticket e impresora</h2>
+        <p className="text-sm text-muted">Papel 80 o 58 mm · tamaño de letra · 1 a 3 copias · imprimir solo al cobrar · datos de la farmacia y mensaje final.</p>
+        <Button onClick={() => toast('Página de prueba enviada a la impresora', 'ok')}>Imprimir prueba</Button>
+      </Card>
+    </div>
+  );
+}

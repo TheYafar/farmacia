@@ -1,6 +1,8 @@
 import { ScanBarcode, Search } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Escaner } from '@/features/gestion/Gestion';
+import { buscarLocal } from '@/lib/sinConexion';
+import { useConexion } from '@/lib/api';
 import { Card, Cargando, EmptyState, ErrorCarga, SearchInput, Sheet } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
 import type { Grupo, Opcion, Principio } from '@/lib/tipos';
@@ -41,7 +43,9 @@ export default function MostradorPage() {
         const r = await api<{ grupos: Grupo[] }>(`/catalogo/buscar?q=${encodeURIComponent(q)}`);
         if (vivo) { setGrupos(r.grupos); setError(null); }
       } catch (e) {
-        if (vivo) setError(e instanceof ApiError ? e.message : 'No se pudo buscar');
+        // Sin internet: se busca en la copia del catálogo guardada en este equipo.
+        if (vivo && e instanceof ApiError && e.status === 0) { setGrupos(buscarLocal(q)); setError(null); }
+        else if (vivo) setError(e instanceof ApiError ? e.message : 'No se pudo buscar');
       } finally {
         if (vivo) setCargando(false);
       }
@@ -61,6 +65,12 @@ export default function MostradorPage() {
   const onEnter = async (leido?: string) => {
     const codigo = (leido ?? q).trim();
     if (!/^\d{8,14}$/.test(codigo)) return;
+    if (!useConexion.getState().enLinea) {
+      const g = buscarLocal(codigo).find((x) => x.opciones.some((o) => o.codigoBarras === codigo));
+      const o = g?.opciones.find((x) => x.codigoBarras === codigo);
+      if (g && o) { agregar(o, g.principio); avisar(`Escaneado: ${o.nombreComercial}`, 'ok'); setQ(''); } else avisar('Código no encontrado en el catálogo guardado', 'bad');
+      return;
+    }
     try {
       const p = await api<Opcion & { principioActivo: Principio }>(`/catalogo/codigo/${codigo}`);
       const r = await api<{ grupos: Grupo[] }>(`/catalogo/buscar?q=${codigo}`);

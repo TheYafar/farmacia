@@ -9,6 +9,7 @@ import { CATEGORIAS } from '@farmacia/shared';
 import { avisar } from '@/store/avisos';
 import { useRol } from '@/store/sesion';
 import Ticket from '@/features/caja/Ticket';
+import { useConfig } from '@/store/config';
 
 const usd = (v: string | number) => `$${Number(v).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fechaHora = (d: string) => new Date(d).toLocaleString('es-VE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -109,6 +110,8 @@ function DetalleVenta({ id, onCerrar, onCambio }: { id: string | null; onCerrar:
   const rol = useRol();
   const v = useCargar(() => (id ? api<VentaDet>(`/ventas/${id}`) : Promise.resolve(null)), [id]);
   const [modo, setModo] = useState<'ver' | 'devolver' | 'ticket'>('ver');
+  const [comp, setComp] = useState<{ monto: string; metodo: string; motivo: string; items: string[]; fecha: string } | null>(null);
+  const farmacia = useConfig((s) => s.config?.farmacia);
   const [cant, setCant] = useState<Record<string, number>>({});
   const [motivo, setMotivo] = useState('');
   const [metodo, setMetodo] = useState('EFECTIVO_USD');
@@ -117,6 +120,24 @@ function DetalleVenta({ id, onCerrar, onCambio }: { id: string | null; onCerrar:
   const d = v.datos;
   if (!id) return null;
   if (modo === 'ticket' && d) return <Ticket venta={d} onCerrar={() => setModo('ver')} />;
+  if (comp && d) return (
+    <Sheet open onClose={() => setComp(null)} title="Comprobante de devolución">
+      <div className="flex flex-col gap-4">
+        <div id="ticket" className="mx-auto w-full max-w-[320px] rounded-lg border border-line bg-white p-4 font-mono text-[12px] leading-snug text-black">
+          <div className="text-center"><div className="text-[14px] font-bold">{farmacia?.nombre ?? 'Farmacia'}</div>{farmacia?.rif && <div>RIF {farmacia.rif}</div>}
+            <div className="mt-1 font-bold">DEVOLUCIÓN · VENTA N.º {d.numero}</div><div>{fechaHora(comp.fecha)}</div></div>
+          <div className="my-2 border-t border-dashed border-black" />
+          {comp.items.map((t) => <div key={t}>{t}</div>)}
+          <div className="my-2 border-t border-dashed border-black" />
+          <div className="flex justify-between font-bold"><span>DEVUELTO</span><span>{comp.monto}</span></div>
+          <div>Forma: {METODOS.find((m) => m[0] === comp.metodo)?.[1]}</div>
+          <div>Motivo: {comp.motivo}</div>
+          <div className="mt-8 border-t border-black pt-1 text-center">Firma del cliente</div>
+        </div>
+        <div className="grid grid-cols-2 gap-2"><Button size="lg" onClick={() => window.print()}>Imprimir</Button><Button size="lg" variant="primary" onClick={() => setComp(null)}>Listo</Button></div>
+      </div>
+    </Sheet>
+  );
   const factor = 1 - Number(d?.descuentoPct ?? 0) / 100;
   const aDevolver = d ? d.lineas.reduce((a, l) => a + (cant[l.id] ?? 0) * Number(l.precioUsd) * factor, 0) : 0;
 
@@ -152,7 +173,9 @@ function DetalleVenta({ id, onCerrar, onCambio }: { id: string | null; onCerrar:
               if (!lineas.length) { setError('Elige qué productos devuelve'); return; }
               try {
                 const r = await api<{ monto: string; metodo: string }>(`/ventas/${d.id}/devoluciones`, { body: { lineas, motivo, metodo } });
-                avisar(`Devolución hecha: entregar ${r.metodo.endsWith('BS') || r.metodo === 'PAGO_MOVIL' || r.metodo === 'PUNTO_DE_VENTA' ? 'Bs ' : '$'}${r.monto}`, 'ok');
+                const monto = `${r.metodo === 'EFECTIVO_USD' ? '$' : 'Bs '}${Number(r.monto).toLocaleString('es-VE', { minimumFractionDigits: 2 })}`;
+                avisar(`Devolución hecha: entregar ${monto}`, 'ok');
+                setComp({ monto, metodo, motivo, fecha: new Date().toISOString(), items: lineas.map((x) => { const l = d.lineas.find((y) => y.id === x.lineaId)!; return `${x.cantidad} x ${l.producto.nombreComercial} ${l.producto.concentracion ?? ''}`; }) });
                 setModo('ver'); setCant({}); v.recargar(); onCambio();
               } catch (err) { setError(msg(err)); }
             }}>

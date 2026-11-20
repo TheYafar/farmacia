@@ -1,6 +1,8 @@
 # Hoja de ruta
 
-Detalle técnico de cada módulo: [ESPECIFICACION.md](ESPECIFICACION.md).
+Detalle técnico de cada módulo: [ESPECIFICACION.md](ESPECIFICACION.md). Rutas de la API: [API.md](API.md).
+
+> **Estado al 20/11/2026:** hechas las etapas 0, 1, 2, 7, 8, 9 y 10, más configuración (tasa automática del BCV, ticket e impresora), clave de dos pasos y venta sin conexión. Pendientes: 3 (instalar y capacitar), 4 (fiscal, si aplica), 5 (IA: falta la clave y las fotos), 6 (WhatsApp automático: falta Meta) y 11.
 
 El sistema se construye **por etapas**: cada una termina con algo que la farmacia puede usar, probado de punta a punta, antes de empezar la siguiente. El orden importa: varias etapas dependen de las anteriores.
 
@@ -11,16 +13,16 @@ El sistema se construye **por etapas**: cada una termina con algo que la farmaci
 | Etapa | Qué resuelve | Plan comercial | Tamaño | Estado |
 |---|---|---|---|---|
 | 0 · Base | Vender, clientes, récipes, permisos, encargos, inventario, Excel | Mostrador | — | ✅ Hecha |
-| 1 · Caja y cobro | Cierre de caja, pagos mixtos, vuelto, devoluciones, ticket | Mostrador | M | 🟡 1A hecha, falta 1B |
-| 2 · Productos y ganancia | Productos desde la app, categorías, IVA, costo y margen, ajustes | Mostrador | M | Pendiente |
-| 3 · Puesta en marcha | Instalar en la farmacia fundadora y capacitar | Mostrador | S | Pendiente |
+| 1 · Caja y cobro | Cierre de caja, pagos mixtos, vuelto, devoluciones, ticket | Mostrador | M | ✅ Hecha |
+| 2 · Productos y ganancia | Productos desde la app, categorías, IVA, costo y margen, ajustes | Mostrador | M | ✅ Hecha |
+| 3 · Puesta en marcha | Instalar en la farmacia fundadora y capacitar | Mostrador | S | 🟡 Software listo (2FA, sin conexión, respaldos); falta instalar y capacitar |
 | 4 · Facturación fiscal | Máquina fiscal o factura homologada (si la farmacia la necesita) | Extra | L | Por definir |
 | 5 · IA de récipes | Leer la letra del médico con IA, medida con récipes reales | Completo | M | Pendiente |
-| 6 · WhatsApp y recompra | Avisos automáticos, recordatorio de recompra, domicilio | Completo | M | Pendiente |
-| 7 · Compras a droguerías | Proveedores, órdenes de compra, sugerido, cuentas por pagar | Mostrador | M | Pendiente |
-| 8 · Cumplimiento | Libro de psicotrópicos, privacidad de datos de salud | Mostrador | S | Pendiente |
-| 9 · Reportes | Ganancia, rotación, cajeros, cierres, exportar a Excel | Mostrador | M | Pendiente |
-| 10 · Mayorista | Farmacia como proveedor: precios al mayor, crédito, pedidos, despacho | Mayorista | L | Pendiente |
+| 6 · WhatsApp y recompra | Avisos automáticos, recordatorio de recompra, domicilio | Completo | M | 🟡 Recompra con WhatsApp manual; falta envío automático (Meta) y domicilio |
+| 7 · Compras a droguerías | Proveedores, órdenes de compra, sugerido, cuentas por pagar | Mostrador | M | ✅ Hecha |
+| 8 · Cumplimiento | Libro de psicotrópicos, privacidad de datos de salud | Mostrador | S | ✅ Hecha (falta confirmar el formato con el regente) |
+| 9 · Reportes | Ganancia, rotación, cajeros, cierres, exportar a Excel | Mostrador | M | ✅ Hecha |
+| 10 · Mayorista | Farmacia como proveedor: precios al mayor, crédito, pedidos, despacho | Mayorista | L | ✅ Hecha |
 | 11 · Crecimiento | Sucursales, portal de pedidos, multi-farmacia | Sucursales | L | Pendiente |
 
 ```mermaid

@@ -189,6 +189,16 @@ export default function ConfiguracionPage() {
           </div>
         </div>
       </Seccion>
+      <Seccion titulo="Privacidad" sub="Las fotos de récipes son datos de salud. Se borran solas al cumplirse el plazo; los datos de la venta se conservan.">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span>Guardar las fotos de récipes durante</span>
+          <select value={f.recipeRetencionDias} onChange={(e) => cambiar({ recipeRetencionDias: Number(e.target.value) })} className="h-9 rounded-lg border border-line bg-surface px-2">
+            {[[180, '6 meses'], [365, '1 año'], [730, '2 años'], [1825, '5 años']].map(([d, t]) => <option key={d} value={d}>{t}</option>)}
+          </select>
+          <Button size="sm" onClick={() => void guardar({ recipeRetencionDias: f.recipeRetencionDias }, 'Plazo guardado')}>Guardar</Button>
+        </div>
+        <p className="text-xs text-muted">Pregúntale al regente cuánto tiempo exige guardar los récipes de controlados.</p>
+      </Seccion>
       {prueba && <Ticket venta={{ ...PRUEBA, totalBs: String(9.86 * (tasa ?? 0)), tasa: String(tasa ?? 0) }} onCerrar={() => setPrueba(false)} />}
     </div>
   );

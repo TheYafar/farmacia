@@ -28,3 +28,6 @@ dist-demo
 infra/.env
 apps/api/uploads
 apps/api/dist-test
+
+# Material de venta (precios y guía interna): no se publica
+propuesta/

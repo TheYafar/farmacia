@@ -10,7 +10,7 @@ Capturas de la app real en [`docs/pantallas`](docs/pantallas).
 
 | Documento | Contenido |
 |---|---|
-| [docs/PLAN.md](docs/PLAN.md) | Fases, qué está hecho, qué falta y qué definir con el cliente |
+| [docs/PLAN.md](docs/PLAN.md) | Hoja de ruta por etapas: qué está hecho, qué sigue y qué definir con el cliente |
 | [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md) | Cómo está armado: diagramas, modelo de datos y flujos |
 | [docs/SEGURIDAD.md](docs/SEGURIDAD.md) | Cada control de seguridad y dónde está en el código |
 | [docs/API.md](docs/API.md) | Todas las rutas de la API y quién puede usarlas |

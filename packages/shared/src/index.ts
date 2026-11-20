@@ -162,6 +162,8 @@ export type ProductoInput = z.infer<typeof productoSchema>;
 export const tasaSchema = z.object({
   valor: z.number().positive().max(1_000_000),
   fuente: z.string().trim().max(40).default('BCV'),
+  /** Confirma una tasa muy distinta de la actual (más de 3 veces mayor o menor). */
+  confirmar: z.boolean().optional(),
 });
 export type TasaInput = z.infer<typeof tasaSchema>;
 

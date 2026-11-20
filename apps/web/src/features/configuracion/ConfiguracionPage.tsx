@@ -3,8 +3,8 @@ import { clsx } from 'clsx';
 import { Printer, RefreshCw } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Alert, Button, Campo, Card, Cargando, PageHeader, claseInput } from '@/components/ui';
-import { api, ApiError } from '@/lib/api';
-import { num2 } from '@/lib/format';
+import { api, guardarTasa, ApiError } from '@/lib/api';
+import { leerMonto, num2 } from '@/lib/format';
 import { redondearBs } from '@farmacia/shared';
 import type { Venta } from '@/lib/tipos';
 import { avisar } from '@/store/avisos';
@@ -123,9 +123,9 @@ export default function ConfiguracionPage() {
         ) : (
           <form className="flex flex-wrap items-end gap-2" onSubmit={async (e) => {
             e.preventDefault();
-            const v = Number(manual.replace(/\./g, '').replace(',', '.'));
+            const v = leerMonto(manual);
             if (!(v > 0)) { setError('Escribe la tasa'); return; }
-            try { await api('/tasa', { body: { valor: v, fuente: 'Manual' } }); await cargar(); await cargarTasa(); setManual(''); avisar('Tasa guardada', 'ok'); } catch (err) { setError(msg(err)); }
+            try { await guardarTasa(v, 'Manual'); await cargar(); await cargarTasa(); setManual(''); avisar('Tasa guardada', 'ok'); } catch (err) { setError(msg(err)); }
           }}>
             <Campo etiqueta="Bs por dólar (o por euro, si así cobras)"><input inputMode="decimal" value={manual} onChange={(e) => setManual(e.target.value)} placeholder={tasa ? num2(tasa) : '0,00'} className={claseInput + ' w-40 font-mono'} /></Campo>
             <Button type="submit" variant="primary" className="h-11">Guardar tasa</Button>

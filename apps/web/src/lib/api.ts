@@ -103,3 +103,15 @@ export async function imagen(ruta: string): Promise<string> {
   const r = await api<Response>(ruta, { crudo: true });
   return URL.createObjectURL(await r.blob());
 }
+
+/** Guarda una tasa a mano. Si el servidor la ve muy distinta de la actual, pide confirmación antes. */
+export async function guardarTasa(valor: number, fuente?: string) {
+  try {
+    return await api('/tasa', { body: { valor, fuente } });
+  } catch (e) {
+    if (e instanceof ApiError && e.codigo === 'TASA_RARA' && confirm(`${e.message}.\n\n¿Guardar ${valor.toLocaleString('es-VE')} Bs de todas formas?`)) {
+      return api('/tasa', { body: { valor, fuente, confirmar: true } });
+    }
+    throw e;
+  }
+}

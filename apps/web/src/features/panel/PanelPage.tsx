@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button, Card, Cargando, ErrorCarga, PageHeader } from '@/components/ui';
-import { api, ApiError } from '@/lib/api';
-import { bs, num2, usd } from '@/lib/format';
+import { api, guardarTasa, ApiError } from '@/lib/api';
+import { bs, leerMonto, num2, usd } from '@/lib/format';
 import type { Resumen } from '@/lib/tipos';
 import { useCargar } from '@/lib/useCargar';
 import { Link } from 'react-router-dom';
@@ -195,9 +195,9 @@ export default function PanelPage() {
         <p className="text-xs text-muted">Al guardar, los precios en bolívares se actualizan en todas las cajas. Para usar la tasa automática del BCV (dólar o euro, con ajuste), ve a <Link to="/configuracion" className="font-semibold text-accent underline">Configuración</Link>.</p>
         <form className="flex gap-2" onSubmit={async (e) => {
           e.preventDefault();
-          const v = parseFloat(nueva.replace(/\./g, '').replace(',', '.'));
+          const v = leerMonto(nueva);
           if (!(v > 0)) { avisar('Escribe un número válido, por ejemplo 236,40', 'bad'); return; }
-          try { await api('/tasa', { body: { valor: v } }); await cargarTasa(); await cargarConfig(); setNueva(''); avisar('Tasa actualizada', 'ok'); }
+          try { await guardarTasa(v); await cargarTasa(); await cargarConfig(); setNueva(''); avisar('Tasa actualizada', 'ok'); }
           catch (err) { avisar(err instanceof ApiError ? err.message : 'No se pudo guardar', 'bad'); }
         }}>
           <input id="tasa" value={nueva} onChange={(e) => setNueva(e.target.value)} inputMode="decimal" placeholder="236,40" className="h-10 min-w-0 flex-1 rounded-lg border border-line bg-bg px-3 font-mono outline-none focus:border-accent" />

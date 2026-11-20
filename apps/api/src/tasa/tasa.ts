@@ -124,6 +124,12 @@ export class TasaController {
   @Post()
   @Roles('ADMIN')
   async fijar(@Body(new Validar(tasaSchema)) b: TasaInput, @Usuario() yo: UsuarioActual) {
+    // Una tasa 3 veces mayor o menor que la actual casi siempre es un error al escribir (un punto o un cero de más).
+    const actual = await this.prisma.tasaCambio.findFirst({ where: { creadaEn: { lte: new Date() } }, orderBy: { creadaEn: 'desc' } });
+    if (actual && !b.confirmar) {
+      const razon = b.valor / actual.valor.toNumber();
+      if (razon > 3 || razon < 1 / 3) throw new BadRequestException({ mensaje: `La tasa nueva (${b.valor}) es muy distinta de la actual (${actual.valor.toNumber()}). Revisa que esté bien escrita`, codigo: 'TASA_RARA' });
+    }
     const t = await this.prisma.tasaCambio.create({ data: { valor: b.valor, fuente: b.fuente === 'BCV' ? 'Manual' : b.fuente, creadaPorId: yo.id } });
     await this.prisma.configuracion.upsert({ where: { id: 1 }, create: { tasaModo: 'MANUAL' }, update: { tasaModo: 'MANUAL' } });
     await this.auditoria.registrar({ usuarioId: yo.id, accion: 'TASA_CAMBIADA', entidad: 'TasaCambio', entidadId: t.id, datos: { valor: b.valor } });

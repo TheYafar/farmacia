@@ -24,3 +24,24 @@ export function alergiaQueChoca(alergias: string[], principio: { nombre: string;
   const objetivo = [principio.nombre, principio.familia].filter(Boolean).map((x) => normalizar(x!));
   return alergias.find((a) => objetivo.includes(normalizar(a))) ?? null;
 }
+
+/**
+ * Lee un monto escrito a mano, con coma o con punto decimal:
+ * «1.250,50» → 1250.5 · «1250,5» → 1250.5 · «264.52» → 264.52 · «0.85» → 0.85 · «1.250» → 1250 (punto de miles).
+ * Vacío o inválido → NaN.
+ */
+export function leerMonto(texto: string): number {
+  let s = texto.trim().replace(/\s|Bs|\$/gi, '');
+  if (!s) return NaN;
+  const coma = s.lastIndexOf(','), punto = s.lastIndexOf('.');
+  if (coma >= 0 && punto >= 0) {
+    // El que va de último es el decimal; el otro, de miles.
+    s = coma > punto ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
+  } else if (coma >= 0) {
+    s = s.replace(/\./g, '').replace(',', '.');
+  } else if (punto >= 0 && /^\d{1,3}(\.\d{3})+$/.test(s)) {
+    // «1.250» o «12.345.678»: puntos de miles.
+    s = s.replace(/\./g, '');
+  }
+  return /^-?\d+(\.\d+)?$/.test(s) ? Number(s) : NaN;
+}

@@ -4,9 +4,11 @@ import { Alert, Button, Campo, Card, claseInput } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
 import { avisar } from '@/store/avisos';
 import { useCaja } from '@/store/caja';
+import { leerMonto as leerTexto } from '@/lib/format';
 import { CajaDelEquipo } from '@/features/cajas/Cajas';
 
-export const leerMonto = (s: string) => (s.trim() ? Number(s.trim().replace(/\./g, '').replace(',', '.')) : 0);
+/** Monto escrito a mano (vacío = 0). Acepta coma o punto decimal. */
+export const leerMonto = (s: string) => (s.trim() ? leerTexto(s) : 0);
 
 /** Abrir la caja con el fondo inicial (sencillo para dar vuelto). */
 export default function AbrirCaja() {

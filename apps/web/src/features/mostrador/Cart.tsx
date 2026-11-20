@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ES_EFECTIVO, monedaDe, redondearBs, type MetodoPago, type Moneda } from '@farmacia/shared';
 import { Alert, Button, Chip, EmptyState, Kbd, Sheet } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
-import { alergiaQueChoca, bs, num2, usd } from '@/lib/format';
+import { alergiaQueChoca, bs, leerMonto, num2, usd } from '@/lib/format';
 import type { Autorizacion, Venta } from '@/lib/tipos';
 import { useCaja } from '@/store/caja';
 import { avisar } from '@/store/avisos';
@@ -178,7 +178,7 @@ const METODOS: { id: MetodoPago; label: string; icon: typeof Smartphone }[] = [
 ];
 const BILLETES = [1, 5, 10, 20, 50, 100];
 const r2 = (n: number) => Math.round(n * 100) / 100;
-const leer = (s: string) => Number(s.trim().replace(/\./g, '').replace(',', '.'));
+const leer = leerMonto;
 
 interface PagoUI { metodo: MetodoPago; monto: number; referencia?: string }
 
@@ -213,19 +213,30 @@ export function CobroSheet({ open, onClose, onVendida }: { open: boolean; onClos
 
   useEffect(() => { if (open) { setPagos([]); setMonto(''); setRef(''); setError(null); setDesc(0); } }, [open]);
 
+  // Al abrir el cobro se vuelve a leer la tasa: si cambió mientras el equipo estaba abierto, el monto en Bs sale bien.
+  useEffect(() => { if (open) void useSesion.getState().cargarTasa(); }, [open]);
+
+  // Lo que está escrito en el campo cuenta como pago aunque no se haya tocado «Agregar».
+  const montoEscrito = leer(monto);
+  const borrador: PagoUI | null = montoEscrito > 0 && (metodo !== 'PAGO_MOVIL' || /^\d{4,20}$/.test(ref)) ? { metodo, monto: r2(montoEscrito), referencia: metodo === 'PAGO_MOVIL' ? ref : undefined } : null;
+  const registrados = pagos;
   const enBs = (p: PagoUI) => (monedaDe(p.metodo) === 'USD' ? r2(p.monto * tasa) : p.monto);
   const pIgtf = igtf.igtfActivo ? igtf.igtfPct / 100 : 0;
-  const enDivisas = pagos.filter((p) => p.metodo === 'EFECTIVO_USD').reduce((a, p) => a + p.monto, 0);
+  const todos = borrador ? [...registrados, borrador] : registrados;
+  const enDivisas = todos.filter((p) => p.metodo === 'EFECTIVO_USD').reduce((a, p) => a + p.monto, 0);
   const igtfUsd = r2(Math.min(enDivisas, base) * pIgtf);
   const total = r2(base + igtfUsd);
   // Redondeo de Bs (Configuración): se cobra el monto redondeado, pero se acepta cualquier pago entre el exacto y el redondeado (igual que el servidor).
   const exactoBs = r2(total * tasa);
   const totalBs = r2(redondearBs(exactoBs, paso));
-  const pagadoBs = r2(pagos.reduce((a, p) => a + enBs(p), 0));
+  const pagadoBs = r2(todos.reduce((a, p) => a + enBs(p), 0));
   const faltaBs = r2(Math.min(exactoBs, totalBs) - pagadoBs) > 0.01 ? r2(totalBs - pagadoBs) : 0;
+  // Lo que falta sin contar lo escrito: decide si se sigue mostrando el campo para pagar.
+  const pagadoRegistradoBs = r2(registrados.reduce((a, p) => a + enBs(p), 0));
+  const faltaRegistradoBs = r2(Math.min(exactoBs, totalBs) - pagadoRegistradoBs) > 0.01 ? r2(totalBs - pagadoRegistradoBs) : 0;
   const sobraBs = r2(pagadoBs - Math.max(exactoBs, totalBs));
   const vueltoBs = sobraBs > 0.01 ? sobraBs : 0;
-  const efectivoBs = pagos.filter((p) => ES_EFECTIVO(p.metodo)).reduce((a, p) => a + enBs(p), 0);
+  const efectivoBs = todos.filter((p) => ES_EFECTIVO(p.metodo)).reduce((a, p) => a + enBs(p), 0);
   const vueltoInvalido = vueltoBs > 0 && efectivoBs + 0.01 < vueltoBs;
   const enMoneda = (bs: number, m: MetodoPago) =>
     m === 'EFECTIVO_USD' && pIgtf ? Math.ceil((bs / tasa / (1 - pIgtf)) * 100) / 100 : monedaDe(m) === 'USD' ? r2(bs / tasa) : r2(bs);
@@ -245,7 +256,7 @@ export function CobroSheet({ open, onClose, onVendida }: { open: boolean; onClos
     try {
       // Si se cae el internet al cobrar, se reintenta con la misma clave: el servidor nunca guarda la venta dos veces.
       const enviar = () => api<Venta>('/ventas', {
-        body: { clave, cedula: cliente?.cedula, pagos, vueltoMoneda: vueltoEn, descuentoPct: desc, descuentoMotivo: desc ? descMotivo : undefined, lineas: lineas.map((l) => ({ productoId: l.producto.id, cantidad: l.cantidad })) },
+        body: { clave, cedula: cliente?.cedula, pagos: todos, vueltoMoneda: vueltoEn, descuentoPct: desc, descuentoMotivo: desc ? descMotivo : undefined, lineas: lineas.map((l) => ({ productoId: l.producto.id, cantidad: l.cantidad })) },
       });
       let v: Venta | undefined;
       for (let intento = 0; !v; intento++) {
@@ -258,7 +269,7 @@ export function CobroSheet({ open, onClose, onVendida }: { open: boolean; onClos
             encolar({
               clave, hechaEn: new Date().toISOString(), totalUsd: total,
               resumen: lineas.map((l) => `${l.cantidad} ${l.producto.nombreComercial}`).join(', '),
-              body: { cedula: cliente?.cedula, pagos, vueltoMoneda: vueltoEn, descuentoPct: desc, descuentoMotivo: desc ? descMotivo : undefined, lineas: lineas.map((l) => ({ productoId: l.producto.id, cantidad: l.cantidad })) },
+              body: { cedula: cliente?.cedula, pagos: todos, vueltoMoneda: vueltoEn, descuentoPct: desc, descuentoMotivo: desc ? descMotivo : undefined, lineas: lineas.map((l) => ({ productoId: l.producto.id, cantidad: l.cantidad })) },
             });
             vaciar(); onClose();
             avisar('Venta guardada sin conexión. Se enviará sola al volver el internet', 'ok');
@@ -273,12 +284,17 @@ export function CobroSheet({ open, onClose, onVendida }: { open: boolean; onClos
       vaciar();
       onClose();
       void cargarCaja();
+      setMonto('');
       onVendida(v);
     } catch (e) {
       if (e instanceof ApiError && e.bloqueos.length) {
         ponerBloqueos(e.bloqueos);
         onClose();
         avisar('Hay productos que necesitan revisión', 'bad');
+      } else if (e instanceof ApiError && e.codigo === 'PAGO_INCOMPLETO') {
+        // Lo más probable: la tasa cambió. Se lee de nuevo y la pantalla muestra lo que falta con la tasa nueva.
+        await useSesion.getState().cargarTasa();
+        setError(`${e.message}. La tasa pudo haber cambiado: revisa lo que falta y agrega la diferencia`);
       } else {
         setError(e instanceof ApiError ? e.message : 'No se pudo cobrar');
       }
@@ -324,7 +340,7 @@ export function CobroSheet({ open, onClose, onVendida }: { open: boolean; onClos
           </ul>
         )}
 
-        {faltaBs > 0.01 && (
+        {faltaRegistradoBs > 0.01 && (
           <div className="flex flex-col gap-2 rounded-xl border border-line p-3">
             <div className="grid grid-cols-4 gap-1.5">
               {METODOS.map((m) => (
@@ -336,7 +352,7 @@ export function CobroSheet({ open, onClose, onVendida }: { open: boolean; onClos
             <div className="flex gap-2">
               <label className="flex h-12 min-w-0 flex-1 items-center gap-2 rounded-lg border border-line bg-surface px-3 focus-within:border-accent">
                 <span className="font-mono text-muted">{simbolo(metodo)}</span>
-                <input id="monto-pago" inputMode="decimal" value={monto} onChange={(e) => setMonto(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') agregar(); }} placeholder={num2(enMoneda(faltaBs, metodo))} className="min-w-0 flex-1 bg-transparent font-mono text-lg outline-none" aria-label="Monto" />
+                <input id="monto-pago" inputMode="decimal" value={monto} onChange={(e) => setMonto(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') agregar(); }} placeholder={num2(enMoneda(faltaRegistradoBs, metodo))} className="min-w-0 flex-1 bg-transparent font-mono text-lg outline-none" aria-label="Monto" />
               </label>
               <Button size="lg" onClick={() => agregar()}>Agregar</Button>
             </div>
@@ -344,7 +360,7 @@ export function CobroSheet({ open, onClose, onVendida }: { open: boolean; onClos
               <input id="ref-pm" value={ref} onChange={(e) => setRef(e.target.value.replace(/\D/g, '').slice(0, 20))} inputMode="numeric" placeholder="Número de referencia" className="h-11 rounded-lg border border-line bg-surface px-3 font-mono outline-none focus:border-accent" />
             )}
             <div className="flex flex-wrap gap-1.5">
-              <Button size="sm" variant="primary" onClick={() => agregar(enMoneda(faltaBs, metodo))}>Lo que falta: {simbolo(metodo) === '$' ? usd(enMoneda(faltaBs, metodo)) : `Bs ${num2(enMoneda(faltaBs, metodo))}`}</Button>
+              <Button size="sm" variant="primary" onClick={() => agregar(enMoneda(faltaRegistradoBs, metodo))}>Lo que falta: {simbolo(metodo) === '$' ? usd(enMoneda(faltaRegistradoBs, metodo)) : `Bs ${num2(enMoneda(faltaRegistradoBs, metodo))}`}</Button>
               {metodo === 'EFECTIVO_USD' && BILLETES.map((b) => <Button key={b} size="sm" onClick={() => agregar(b)}>{b} $</Button>)}
             </div>
           </div>
@@ -370,8 +386,10 @@ export function CobroSheet({ open, onClose, onVendida }: { open: boolean; onClos
           </div>
         )}
 
+        {montoEscrito > 0 && !borrador && metodo === 'PAGO_MOVIL' && <Alert tone="warn">Escribe la referencia del Pago Móvil (4 a 20 números) para que cuente.</Alert>}
+        {monto.trim() !== '' && !(montoEscrito > 0) && <Alert tone="warn">No entiendo ese monto. Escríbelo así: 224,50 o 224.50</Alert>}
         {error && <Alert tone="bad">{error}</Alert>}
-        <Button variant="primary" size="lg" disabled={enviando || faltaBs > 0.01 || vueltoInvalido || pagos.length === 0} onClick={cobrar}>
+        <Button variant="primary" size="lg" disabled={enviando || faltaBs > 0.01 || vueltoInvalido || todos.length === 0} onClick={cobrar}>
           {enviando ? 'Guardando…' : faltaBs > 0.01 ? 'Falta por pagar' : 'Listo, cobrar'}
         </Button>
       </div>

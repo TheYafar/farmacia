@@ -149,4 +149,12 @@ describe('Lógica del negocio (revisión)', () => {
     assert.match(r.body.nota, /Cerrada por Dueño/);
     assert.equal((await admin.post(`/caja/turnos/${t.id}/cerrar`, cero)).status, 409);
   });
+
+  it('una tasa 100 veces mayor (un punto de más) pide confirmación', async () => {
+    const r = await admin.post('/tasa', { valor: 23640 });
+    assert.equal(r.status, 400);
+    assert.equal(r.body.codigo, 'TASA_RARA');
+    assert.equal((await admin.post('/tasa', { valor: 240 })).status, 201);
+    assert.equal((await admin.post('/tasa', { valor: 23640, confirmar: true })).status, 201);
+  });
 });

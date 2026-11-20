@@ -1,5 +1,7 @@
 # Hoja de ruta
 
+Detalle técnico de cada módulo: [ESPECIFICACION.md](ESPECIFICACION.md).
+
 El sistema se construye **por etapas**: cada una termina con algo que la farmacia puede usar, probado de punta a punta, antes de empezar la siguiente. El orden importa: varias etapas dependen de las anteriores.
 
 **Tamaño:** S = unos días · M = una a dos semanas · L = más de dos semanas (trabajando a tiempo parcial). Son estimaciones para planificar, no promesas al cliente.

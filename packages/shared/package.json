@@ -17,7 +17,7 @@
     "build": "tsc -p tsconfig.esm.json && tsc -p tsconfig.cjs.json && node -e \"require('fs').writeFileSync('dist/cjs/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\""
   },
   "dependencies": {
-    "zod": "3.23.8"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "typescript": "5.6.3"

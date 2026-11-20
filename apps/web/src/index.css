@@ -41,9 +41,11 @@ h1, h2, h3, h4 { @apply font-display; text-wrap: balance; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 
 /* Al imprimir solo sale el ticket, al ancho de una impresora térmica de 80 mm. */
+/* Con un ticket abierto se imprime solo el ticket (papel térmico). Sin ticket, la página normal (ej. libro de controlados) en A4, sin menús. */
 @media print {
-  @page { size: 80mm auto; margin: 0; }
-  body * { visibility: hidden !important; }
+  body:has(#ticket) * { visibility: hidden !important; }
   #ticket, #ticket * { visibility: visible !important; }
   #ticket { position: absolute; left: 0; top: 0; width: 72mm; max-width: none; border: 0; padding: 2mm; }
+  body:not(:has(#ticket)) nav, body:not(:has(#ticket)) header, body:not(:has(#ticket)) button { display: none !important; }
+  body:not(:has(#ticket)) main { overflow: visible !important; padding: 0 !important; }
 }

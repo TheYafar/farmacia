@@ -1,6 +1,7 @@
 import { ScanBarcode, Search } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Escaner } from '@/features/gestion/Gestion';
+import InventarioVenta from './InventarioVenta';
 import { buscarLocal } from '@/lib/sinConexion';
 import { useConexion } from '@/lib/api';
 import { Card, Cargando, EmptyState, ErrorCarga, SearchInput, Sheet } from '@/components/ui';
@@ -32,6 +33,8 @@ export default function MostradorPage() {
   const cajaCargada = useCaja((s) => s.cargada);
   const cargarCaja = useCaja((s) => s.cargar);
   const [ticket, setTicket] = useState<Venta | null>(null);
+  // Cada venta cobrada vuelve a cargar el inventario (la existencia cambió).
+  const [vendidas, setVendidas] = useState(0);
   useEffect(() => { void cargarCaja(); }, [cargarCaja]);
 
   // Busca mientras escribe, esperando 250 ms después de la última tecla.
@@ -112,11 +115,7 @@ export default function MostradorPage() {
           </button>
         </div>
 
-        {error ? <ErrorCarga mensaje={error} /> : !q.trim() ? (
-          <EmptyState icon={<Search className="h-8 w-8" />} title="¿Qué medicamento busca el cliente?">
-            Escribe el nombre, el principio activo o los mg, o escanea la caja.
-          </EmptyState>
-        ) : cargando && !grupos ? <Cargando texto="Buscando…" /> : grupos && grupos.length === 0 ? (
+        {error ? <ErrorCarga mensaje={error} /> : !q.trim() ? <InventarioVenta version={vendidas} /> : cargando && !grupos ? <Cargando texto="Buscando…" /> : grupos && grupos.length === 0 ? (
           <EmptyState icon={<Search className="h-8 w-8" />} title={`No encontramos «${q}»`}>
             Revisa cómo está escrito o prueba con otro nombre.
           </EmptyState>
@@ -137,7 +136,7 @@ export default function MostradorPage() {
       <Sheet open={cartOpen} onClose={() => setCartOpen(false)} title="Cuenta">
         <CartBody onCobrar={abrirCobro} />
       </Sheet>
-      <CobroSheet open={cobroOpen} onClose={() => setCobroOpen(false)} onVendida={setTicket} />
+      <CobroSheet open={cobroOpen} onClose={() => setCobroOpen(false)} onVendida={(v) => { setTicket(v); setVendidas((n) => n + 1); }} />
       <Ticket venta={ticket} auto onCerrar={() => setTicket(null)} />
     </div>
   );

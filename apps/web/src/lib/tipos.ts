@@ -16,6 +16,8 @@ export interface Opcion {
   requiereRecipe: boolean;
   stockLibre: number;
   stockReservado: number;
+  categoria?: string;
+  stockMinimo?: number;
 }
 
 export interface Principio { id: string; nombre: string; familia: string | null; riesgo: CategoriaRiesgo; uso: string | null }

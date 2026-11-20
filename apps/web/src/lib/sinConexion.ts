@@ -31,6 +31,9 @@ export async function guardarCatalogo() {
   if (escribir(CATALOGO, { fecha, grupos: r.grupos })) useSinConexion.setState({ catalogoEn: fecha });
 }
 
+/** La copia completa del catálogo guardada en este equipo (para mostrar el inventario sin internet). */
+export const catalogoLocal = (): Grupo[] => leer<{ grupos: Grupo[] } | null>(CATALOGO, null)?.grupos ?? [];
+
 /** Búsqueda en la copia guardada (misma lógica que el servidor: todas las palabras). */
 export function buscarLocal(q: string): Grupo[] {
   const cat = leer<{ grupos: Grupo[] } | null>(CATALOGO, null);

@@ -91,6 +91,9 @@ export default function AppShell() {
   const current = NAV.filter((n) => n.roles.includes(rol)).find((n) => pathname === n.to || pathname.startsWith(`${n.to}/`));
   const [moreOpen, setMoreOpen] = useState(false);
   const cerrar = async () => { await salir(); navigate('/'); };
+  const nombreFarmacia = useCaja((s) => s.farmacia.nombre);
+  // Título de la pestaña del navegador: la página y la farmacia.
+  useEffect(() => { document.title = `${current?.label ?? (pathname.startsWith('/privacidad') ? 'Privacidad y cookies' : 'Inicio')} · ${nombreFarmacia}`; }, [current, pathname, nombreFarmacia]);
 
   // Grupos del menú: abiertos el de «Vender» y el de la página actual; el resto se abre con un toque y se recuerda.
   const grupos = GRUPOS.map((grupo) => ({ grupo, items: nav.filter((n) => n.grupo === grupo) })).filter((g) => g.items.length);

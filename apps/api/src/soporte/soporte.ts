@@ -4,7 +4,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { statfs } from 'node:fs/promises';
 import { z } from 'zod';
 import {
-  accesoSoporteSchema, enlaceCentralSchema, mensajeSoporteSchema, ticketNuevoSchema,
+  accesoSoporteSchema, enlaceCentralSchema, esUrlWeb, mensajeSoporteSchema, ticketNuevoSchema,
   type MensajeSoporteInput, type TicketNuevoInput,
 } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
@@ -31,7 +31,7 @@ export function leerCodigo(codigo: string): { url: string; clave: string } {
     if (!codigo.startsWith(PREFIJO)) throw new Error();
     const d = JSON.parse(Buffer.from(codigo.slice(PREFIJO.length), 'base64url').toString('utf8')) as { u?: string; c?: string };
     const url = new URL(d.u ?? '');
-    const local = ['localhost', '127.0.0.1'].includes(url.hostname);
+    const local = ['localhost', '127.0.0.1'].includes(url.hostname) && process.env.NODE_ENV !== 'production';
     if (url.protocol !== 'https:' && !(local && url.protocol === 'http:')) throw new Error();
     if (!d.c || d.c.length < 20) throw new Error();
     return { url: url.origin, clave: d.c };
@@ -207,7 +207,7 @@ export class SoporteService {
   }
 }
 
-const accesoBody = accesoSoporteSchema.extend({ url: z.string().url().max(200).optional() });
+const accesoBody = accesoSoporteSchema.extend({ url: z.string().max(200).refine(esUrlWeb, 'Dirección inválida').optional() });
 
 @Controller('soporte')
 export class SoporteController {

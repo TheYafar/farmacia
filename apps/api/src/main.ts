@@ -17,6 +17,8 @@ export async function crearApp(config: Config): Promise<INestApplication> {
   app.disable('x-powered-by');
   app.use(helmet());
   app.use(cookieParser());
+  // Las respuestas tienen datos de clientes y ventas: que el navegador no las guarde en su memoria.
+  app.use((_req: unknown, res: { setHeader: (k: string, v: string) => void }, next: () => void) => { res.setHeader('Cache-Control', 'no-store'); next(); });
   // 2 MB: alcanza para importar 5.000 filas de inventario; el resto de las rutas envía mucho menos.
   app.useBodyParser('json', { limit: '2mb' });
   app.enableCors({ origin: config.corsOrigins, credentials: true, methods: ['GET', 'POST', 'PATCH', 'DELETE'] });

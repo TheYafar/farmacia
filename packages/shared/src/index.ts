@@ -530,6 +530,13 @@ export function riesgoSugerido(principio: string): CategoriaRiesgo | null {
 
 // ---------- Panel central y soporte en línea ----------
 
+/** Solo direcciones web normales (https, o http en la propia máquina). Nunca javascript: ni data:. */
+export const esUrlWeb = (v: string) => {
+  try {
+    const u = new URL(v);
+    return u.protocol === 'https:' || (u.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(u.hostname));
+  } catch { return false; }
+};
 const opc = (max: number) => z.string().trim().max(max).optional().transform((v) => v || undefined);
 
 export const farmaciaRegistradaSchema = z.object({
@@ -537,7 +544,7 @@ export const farmaciaRegistradaSchema = z.object({
   rif: opc(20),
   contacto: opc(80),
   telefono: opc(40),
-  url: z.string().trim().url('Dirección inválida. Ejemplo: https://mifarmacia.com').max(200).optional().or(z.literal('').transform(() => undefined)),
+  url: z.string().trim().max(200).refine(esUrlWeb, 'Dirección inválida. Ejemplo: https://mifarmacia.com').optional().or(z.literal('').transform(() => undefined)),
   notas: opc(1000),
   activa: z.boolean().optional(),
   /** Plan contratado (vacío = sin plan: todo disponible). */

@@ -3,7 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import {
-  PLANES_INICIALES, planSchema, type PlanInput,
+  esUrlWeb, PLANES_INICIALES, planSchema, type PlanInput,
   farmaciaRegistradaSchema, mensajeSoporteSchema, miembroEquipoSchema, ticketNuevoSchema,
   type FarmaciaRegistradaInput, type MensajeSoporteInput, type MiembroEquipoInput, type TicketNuevoInput,
 } from '@farmacia/shared';
@@ -23,16 +23,18 @@ const sha256 = (v: string) => createHash('sha256').update(v).digest('hex');
 /** Si no se reporta en 15 minutos, se muestra «Sin conexión». */
 const EN_LINEA_MS = 15 * 60_000;
 
+/** El estado que manda cada farmacia: un objeto chico (máximo 50 KB). */
+const estadoSchema = z.record(z.unknown()).refine((v) => JSON.stringify(v).length <= 50_000, 'Estado demasiado grande');
 const reporteSchema = z.object({
   version: z.string().max(120).optional(),
-  estado: z.record(z.unknown()).optional(),
+  estado: estadoSchema.optional(),
 });
-const ticketFarmaciaSchema = ticketNuevoSchema.extend({ autor: z.string().trim().min(1).max(80), diagnostico: z.record(z.unknown()).optional() });
+const ticketFarmaciaSchema = ticketNuevoSchema.extend({ autor: z.string().trim().min(1).max(80), diagnostico: estadoSchema.optional() });
 const mensajeFarmaciaSchema = mensajeSoporteSchema.extend({ autor: z.string().trim().min(1).max(80) });
 const accesoFarmaciaSchema = z.object({
   token: z.string().min(20).max(100).nullable(),
   vence: z.string().datetime().nullable(),
-  url: z.string().url().max(200).optional(),
+  url: z.string().max(200).refine(esUrlWeb, 'Dirección inválida').optional(),
 });
 
 @Injectable()
@@ -175,7 +177,7 @@ export class CentralController {
     const f = await this.prisma.farmaciaRegistrada.findUnique({ where: { id } });
     if (!f) throw new NotFoundException('La farmacia no existe');
     if (!this.central.accesoVigente(f)) throw new BadRequestException('El dueño no ha dado acceso o ya venció. Pídele que lo dé desde Soporte');
-    if (!f.url) throw new BadRequestException('Falta la dirección web de la farmacia');
+    if (!f.url || !esUrlWeb(f.url)) throw new BadRequestException('Falta la dirección web de la farmacia, o no es válida');
     await this.central.registrar(u, 'SOPORTE_ENTRA_A_FARMACIA', id);
     return { url: `${f.url.replace(/\/+$/, '')}/?soporte=${encodeURIComponent(this.central.descifrarToken(f.accesoToken!))}` };
   }

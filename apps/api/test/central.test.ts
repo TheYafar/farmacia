@@ -162,4 +162,21 @@ describe('Panel central y soporte', () => {
     assert.equal((await admin.get('/mayorista/clientes')).status, 200);
     assert.equal((await central.get('/central/planes')).body[0].farmacias, 1);
   });
+
+  it('seguridad: direcciones javascript: rechazadas, soporte no toca usuarios y nada se guarda en caché', async () => {
+    assert.equal((await central.post('/central/farmacias', { nombre: 'Mala', url: 'javascript:alert(1)' })).status, 400);
+    const r = await central.post('/central/farmacias', { nombre: 'Buena', url: 'https://farmacia.test' });
+    assert.equal(r.status, 201);
+    await admin.post('/soporte/enlazar', { codigo: codigo(r.body.clave) });
+    assert.equal((await admin.post('/soporte/acceso', { horas: 1, url: 'javascript:alert(1)' })).status, 400);
+    const a = await admin.post('/soporte/acceso', { horas: 1, url: 'https://farmacia.test' });
+    assert.equal(a.status, 200);
+    const ent = await central.post(`/central/farmacias/${r.body.farmacia.id}/entrar`);
+    const token = new URL(ent.body.url).searchParams.get('soporte')!;
+    const sop = como(app, (await request(app.getHttpServer()).post('/api/v1/auth/soporte').send({ token })).body.accessToken);
+    assert.equal((await sop.post('/usuarios', { nombre: 'Puerta trasera', usuario: 'atras', clave: 'clave-larga-123', rol: 'ADMIN' })).status, 403);
+    const dueno = await prisma.usuario.findUniqueOrThrow({ where: { usuario: 'admin' } });
+    assert.equal((await sop.patch(`/usuarios/${dueno.id}/clave`, { clave: 'otra-clave-larga' })).status, 403);
+    assert.equal((await admin.get('/auth/yo')).headers['cache-control'], 'no-store');
+  });
 });

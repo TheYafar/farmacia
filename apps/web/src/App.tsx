@@ -22,6 +22,7 @@ import { rutaIncluida, usePlan } from '@/store/plan';
 import { NoIncluido } from '@/features/plan/Plan';
 import SoportePage from '@/features/soporte/SoportePage';
 import CajasPage from '@/features/cajas/Cajas';
+import PrivacidadPage, { AvisoCookies } from '@/features/privacidad/Privacidad';
 import { CasosPage, EquipoPage, FarmaciasPage, PlanesPage } from '@/features/central/CentralPage';
 
 /** Esconde la ruta a quien no tiene el rol (el servidor igual lo rechazaría). */
@@ -42,9 +43,13 @@ export default function App() {
   if (!listo) return <Cargando texto="Abriendo…" />;
   if (!usuario) {
     return (
-      <Routes>
-        <Route path="*" element={<LoginPage />} />
-      </Routes>
+      <>
+        <Routes>
+          <Route path="/privacidad" element={<PrivacidadPage />} />
+          <Route path="*" element={<LoginPage />} />
+        </Routes>
+        <AvisoCookies />
+      </>
     );
   }
   const paginas: [string, ReactNode][] = [
@@ -55,11 +60,15 @@ export default function App() {
     ['/soporte', <SoportePage />], ['/cajas', <CajasPage />], ['/farmacias', <FarmaciasPage />], ['/casos', <CasosPage />], ['/equipo', <EquipoPage />], ['/planes', <PlanesPage />],
   ];
   return (
+    <>
+    <AvisoCookies />
     <Routes>
       <Route element={<AppShell />}>
         {paginas.map(([p, el]) => <Route key={p} path={p} element={<ConRol ruta={p}>{el}</ConRol>} />)}
+        <Route path="/privacidad" element={<PrivacidadPage />} />
         <Route path="*" element={<Navigate to={INICIO[usuario.rol]} replace />} />
       </Route>
     </Routes>
+    </>
   );
 }

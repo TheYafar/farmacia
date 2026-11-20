@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRightLeft, BarChart3, Eye, EyeOff, KeyRound, Lock, MessageCircle, MonitorSmartphone, PlayCircle, ShieldCheck, ShoppingCart, User } from 'lucide-react';
 import { Alert, Button } from '@/components/ui';
 import { INICIO } from '@/config/nav';
@@ -87,6 +87,10 @@ export default function LoginPage() {
   const errorEntrada = useSesion((s) => s.errorEntrada);
   const farmacia = useCaja((s) => s.farmacia);
   const navigate = useNavigate();
+  // Si abrieron un enlace a una página (por ejemplo /reportes) sin haber entrado, se vuelve a ella al entrar.
+  const { pathname, search } = useLocation();
+  const destino = pathname !== '/' && !pathname.startsWith('/privacidad') ? pathname + search : null;
+  useEffect(() => { document.title = `Entrar · ${farmacia.nombre}`; }, [farmacia.nombre]);
   const [usuario, setUsuario] = useState(leerUltimo);
   const [recordar, setRecordar] = useState(() => !!leerUltimo());
   const [clave, setClave] = useState('');
@@ -106,7 +110,7 @@ export default function LoginPage() {
       await entrar(usuario, clave, codigo);
       try { if (recordar) localStorage.setItem('ultimoUsuario', usuario.trim().toLowerCase()); else localStorage.removeItem('ultimoUsuario'); } catch { /* sin almacenamiento */ }
       const rol = useSesion.getState().usuario!.rol;
-      navigate(INICIO[rol], { replace: true });
+      navigate(destino ?? INICIO[rol], { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.codigo === 'REQUIERE_2FA') { setPideCodigo(true); setError(codigo ? err.message : null); return; }
       setError(err instanceof ApiError ? err.message : 'No se pudo entrar');
@@ -215,7 +219,7 @@ export default function LoginPage() {
               )}
             </div>
             {farmacia.hayDemo && <ProbarDemo />}
-            <p className="mt-6 flex items-center gap-1.5 text-xs text-muted"><Lock className="h-3.5 w-3.5" aria-hidden />Conexión segura. Tu sesión se cierra sola en los equipos que no uses.</p>
+            <p className="mt-6 flex flex-wrap items-center gap-1.5 text-xs text-muted"><Lock className="h-3.5 w-3.5" aria-hidden />Conexión segura. Tu sesión se cierra sola en los equipos que no uses. <Link to="/privacidad" className="font-semibold text-accent underline">Privacidad y cookies</Link></p>
           </div>
         </div>
       </main>

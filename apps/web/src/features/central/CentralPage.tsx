@@ -6,7 +6,7 @@ import { useCargar } from '@/lib/useCargar';
 import { normalizar, usd } from '@/lib/format';
 import { useRol } from '@/store/sesion';
 import { avisar } from '@/store/avisos';
-import { MODULOS_PLAN, NOMBRE_MODULO, type ModuloPlan } from '@farmacia/shared';
+import { esUrlWeb, MODULOS_PLAN, NOMBRE_MODULO, type ModuloPlan } from '@farmacia/shared';
 import { Conversacion, ESTADO_CASO, haceCuanto, type Caso } from '@/features/soporte/SoportePage';
 
 interface EstadoFarmacia {
@@ -116,6 +116,8 @@ export function Diagnostico({ e, version }: { e: EstadoFarmacia; version?: strin
 async function entrarComoSoporte(id: string) {
   try {
     const r = await api<{ url: string }>(`/central/farmacias/${id}/entrar`, { method: 'POST' });
+    // Solo direcciones web normales (nunca javascript:).
+    if (!esUrlWeb(r.url)) { avisar('La dirección de la farmacia no es válida', 'bad'); return; }
     window.open(r.url, '_blank', 'noopener');
   } catch (e) { avisar(e instanceof ApiError ? e.message : 'No se pudo entrar', 'bad'); }
 }
@@ -139,7 +141,7 @@ function DetalleFarmacia({ id, cerrar, abrirCaso }: { id: string; cerrar: () => 
             <div><b>Plan:</b> {f.plan ? `${f.plan.nombre} (${usd(f.plan.precioUsd)}/mes)` : 'sin plan (todo disponible)'}</div>
             {f.rif && <div>RIF {f.rif}</div>}
             {(f.contacto || f.telefono) && <div>{[f.contacto, f.telefono].filter(Boolean).join(' · ')}</div>}
-            {f.url && <a href={f.url} target="_blank" rel="noreferrer" className="text-accent hover:underline">{f.url}</a>}
+            {f.url && (esUrlWeb(f.url) ? <a href={f.url} target="_blank" rel="noreferrer" className="text-accent hover:underline">{f.url}</a> : <span>{f.url}</span>)}
             {f.notas && <p className="mt-1 whitespace-pre-wrap text-muted">{f.notas}</p>}
           </div>
           {f.acceso

@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Body, Controller, Get, HttpCode, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
 import { crearUsuarioSchema, editarUsuarioSchema, type CrearUsuarioInput, type EditarUsuarioInput } from '@farmacia/shared';
 import { z } from 'zod';
 import { PrismaService } from '../prisma/prisma.service';
@@ -17,6 +17,11 @@ const claveSchema = z.object({ clave: crearUsuarioSchema.shape.clave });
 export class UsuariosController {
   constructor(private readonly prisma: PrismaService, private readonly auditoria: AuditoriaService) {}
 
+  /** Soporte remoto no toca usuarios: así no puede dejarse una cuenta para entrar cuando vence su permiso. */
+  private noSoporte(yo: UsuarioActual) {
+    if (yo.soporte) throw new ForbiddenException('Soporte no puede crear ni cambiar usuarios. Pídeselo al dueño');
+  }
+
   /** Solo se administran los usuarios de la farmacia (no el de soporte ni el equipo del panel central). */
   private async deLaFarmacia(id: string) {
     const u = await this.prisma.usuario.findUnique({ where: { id }, select: { rol: true, sistema: true } });
@@ -30,6 +35,7 @@ export class UsuariosController {
 
   @Post()
   async crear(@Body(new Validar(crearUsuarioSchema)) b: CrearUsuarioInput, @Usuario() yo: UsuarioActual) {
+    this.noSoporte(yo);
     await revisarLimite(this.prisma, 'usuarios');
     const u = await this.prisma.usuario.create({
       data: { nombre: b.nombre, usuario: b.usuario, correo: b.correo, rol: b.rol, claveHash: await cifrarClave(b.clave) },
@@ -42,6 +48,7 @@ export class UsuariosController {
   /** Cambia nombre o rol. Al cambiar el rol se cierran sus sesiones para que entre con los permisos nuevos. */
   @Patch(':id')
   async editar(@Param('id', ParseUUIDPipe) id: string, @Body(new Validar(editarUsuarioSchema)) b: EditarUsuarioInput, @Usuario() yo: UsuarioActual) {
+    this.noSoporte(yo);
     const antes = await this.prisma.usuario.findUnique({ where: { id } });
     if (!antes || antes.sistema || !['CAJERO', 'REGENTE', 'ADMIN'].includes(antes.rol)) throw new NotFoundException('El usuario no existe');
     if (b.rol && b.rol !== 'ADMIN' && antes.rol === 'ADMIN') {
@@ -62,6 +69,7 @@ export class UsuariosController {
   @Post(':id/desactivar')
   @HttpCode(204)
   async desactivar(@Param('id', ParseUUIDPipe) id: string, @Usuario() yo: UsuarioActual) {
+    this.noSoporte(yo);
     await this.deLaFarmacia(id);
     await this.prisma.$transaction([
       this.prisma.usuario.update({ where: { id }, data: { activo: false } }),
@@ -73,6 +81,7 @@ export class UsuariosController {
   @Post(':id/activar')
   @HttpCode(204)
   async activar(@Param('id', ParseUUIDPipe) id: string, @Usuario() yo: UsuarioActual) {
+    this.noSoporte(yo);
     await this.deLaFarmacia(id);
     if (!(await this.prisma.usuario.findUnique({ where: { id } }))?.activo) await revisarLimite(this.prisma, 'usuarios');
     await this.prisma.usuario.update({ where: { id }, data: { activo: true, bloqueadoHasta: null, intentosFallidos: 0 } });
@@ -83,6 +92,7 @@ export class UsuariosController {
   @Patch(':id/clave')
   @HttpCode(204)
   async cambiarClave(@Param('id', ParseUUIDPipe) id: string, @Body(new Validar(claveSchema)) b: { clave: string }, @Usuario() yo: UsuarioActual) {
+    this.noSoporte(yo);
     await this.deLaFarmacia(id);
     await this.prisma.$transaction([
       this.prisma.usuario.update({ where: { id }, data: { claveHash: await cifrarClave(b.clave), intentosFallidos: 0, bloqueadoHasta: null } }),

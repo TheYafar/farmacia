@@ -88,3 +88,41 @@ export interface Resumen {
 }
 
 export interface Usuario { id: string; nombre: string; usuario: string; rol: Rol; activo: boolean; bloqueadoHasta: string | null }
+
+export interface Pago { id: string; metodo: import('@farmacia/shared').MetodoPago; moneda: 'USD' | 'BS'; monto: string; montoUsd: string; referencia: string | null }
+
+export interface Venta {
+  id: string;
+  numero: number;
+  creadaEn: string;
+  cedula: string | null;
+  totalUsd: string;
+  totalBs: string;
+  tasa: string;
+  vueltoMoneda: 'USD' | 'BS' | null;
+  vueltoMonto: string;
+  pagos: Pago[];
+  cajero?: { nombre: string };
+  lineas: { cantidad: number; precioUsd: string; producto: { nombreComercial: string; concentracion?: string } }[];
+}
+
+export type Montos = Record<import('@farmacia/shared').MetodoPago, number>;
+
+export interface Turno {
+  id: string;
+  estado: 'ABIERTO' | 'CERRADO';
+  fondoUsd: string;
+  fondoBs: string;
+  abiertoEn: string;
+  cerradoEn: string | null;
+  esperado: Montos | null;
+  contado: Montos | null;
+  diferencia: Montos | null;
+  nota: string | null;
+  revisadoEn: string | null;
+  cajero?: { nombre: string };
+  revisadoPor?: { nombre: string } | null;
+  _count?: { ventas: number };
+}
+
+export interface Farmacia { nombre: string; rif: string; direccion: string; telefono: string }

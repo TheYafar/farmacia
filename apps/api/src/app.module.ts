@@ -21,6 +21,7 @@ import { InventarioModule } from './inventario/inventario';
 import { RecipesModule } from './recipes/recipes';
 import { ReportesModule } from './reportes/reportes';
 import { SaludModule } from './salud/salud';
+import { CajaModule } from './caja/caja';
 import { Global } from '@nestjs/common';
 
 export function crearModulo(config: Config) {
@@ -38,7 +39,7 @@ export function crearModulo(config: Config) {
       ScheduleModule.forRoot(),
       AuditoriaModule, NotificacionesModule,
       AuthModule, UsuariosModule, CatalogoModule, TasaModule, PacientesModule, AutorizacionesModule,
-      VentasModule, EsperaModule, InventarioModule, RecipesModule, ReportesModule, SaludModule,
+      CajaModule, VentasModule, EsperaModule, InventarioModule, RecipesModule, ReportesModule, SaludModule,
     ],
     providers: [
       { provide: APP_GUARD, useClass: ThrottlerGuard },

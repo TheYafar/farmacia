@@ -13,6 +13,8 @@ import EncargosPage from '@/features/espera/EsperaPage';
 import InventarioPage from '@/features/inventario/InventarioPage';
 import ResumenPage from '@/features/panel/PanelPage';
 import UsuariosPage from '@/features/usuarios/UsuariosPage';
+import CajaPage from '@/features/caja/CajaPage';
+import { useCaja } from '@/store/caja';
 
 /** Esconde la ruta a quien no tiene el rol (el servidor igual lo rechazaría). */
 function ConRol({ ruta, children }: { ruta: string; children: ReactNode }) {
@@ -23,7 +25,8 @@ function ConRol({ ruta, children }: { ruta: string; children: ReactNode }) {
 
 export default function App() {
   const { usuario, listo, restaurar } = useSesion();
-  useEffect(() => { void restaurar(); }, [restaurar]);
+  const cargarFarmacia = useCaja((s) => s.cargarFarmacia);
+  useEffect(() => { void restaurar(); void cargarFarmacia(); }, [restaurar, cargarFarmacia]);
 
   if (!listo) return <Cargando texto="Abriendo…" />;
   if (!usuario) {
@@ -34,7 +37,7 @@ export default function App() {
     );
   }
   const paginas: [string, ReactNode][] = [
-    ['/vender', <VenderPage />], ['/recipe', <RecipePage />], ['/clientes', <ClientesPage />],
+    ['/vender', <VenderPage />], ['/caja', <CajaPage />], ['/recipe', <RecipePage />], ['/clientes', <ClientesPage />],
     ['/revisar', <RevisarPage />], ['/encargos', <EncargosPage />], ['/inventario', <InventarioPage />],
     ['/resumen', <ResumenPage />], ['/usuarios', <UsuariosPage />],
   ];

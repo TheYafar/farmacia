@@ -1,11 +1,12 @@
 import { AlertTriangle, Banknote, Camera, CheckCircle2, Clock, CreditCard, Minus, Plus, ShoppingCart, Smartphone, Trash2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useEffect, useRef, useState } from 'react';
-import type { MetodoPago } from '@farmacia/shared';
+import { ES_EFECTIVO, monedaDe, type MetodoPago, type Moneda } from '@farmacia/shared';
 import { Alert, Button, Chip, EmptyState, Kbd, Sheet } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
-import { alergiaQueChoca, bs, usd } from '@/lib/format';
-import type { Autorizacion } from '@/lib/tipos';
+import { alergiaQueChoca, bs, num2, usd } from '@/lib/format';
+import type { Autorizacion, Venta } from '@/lib/tipos';
+import { useCaja } from '@/store/caja';
 import { avisar } from '@/store/avisos';
 import { useRol, useSesion } from '@/store/sesion';
 import { useVenta, type Linea } from '@/store/venta';
@@ -168,38 +169,63 @@ export function CartBody({ onCobrar }: { onCobrar: () => void }) {
 
 const METODOS: { id: MetodoPago; label: string; icon: typeof Smartphone }[] = [
   { id: 'PAGO_MOVIL', label: 'Pago Móvil', icon: Smartphone },
-  { id: 'PUNTO_DE_VENTA', label: 'Punto de venta', icon: CreditCard },
+  { id: 'PUNTO_DE_VENTA', label: 'Punto', icon: CreditCard },
   { id: 'EFECTIVO_USD', label: 'Efectivo $', icon: Banknote },
   { id: 'EFECTIVO_BS', label: 'Efectivo Bs', icon: Banknote },
 ];
+const BILLETES = [1, 5, 10, 20, 50, 100];
+const r2 = (n: number) => Math.round(n * 100) / 100;
+const leer = (s: string) => Number(s.trim().replace(/\./g, '').replace(',', '.'));
 
-export function CobroSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+interface PagoUI { metodo: MetodoPago; monto: number; referencia?: string }
+
+/** Cobro con uno o varios pagos. Las cuentas se hacen en bolívares, igual que en el servidor. */
+export function CobroSheet({ open, onClose, onVendida }: { open: boolean; onClose: () => void; onVendida: (v: Venta) => void }) {
   const { lineas, total } = useResumenVenta();
   const cliente = useVenta((s) => s.cliente);
   const vaciar = useVenta((s) => s.vaciar);
   const ponerBloqueos = useVenta((s) => s.ponerBloqueos);
-  const tasa = useSesion((s) => s.tasa);
-  const [metodo, setMetodo] = useState<MetodoPago>('PAGO_MOVIL');
+  const tasa = useSesion((s) => s.tasa) ?? 0;
+  const cargarCaja = useCaja((s) => s.cargar);
+  const [pagos, setPagos] = useState<PagoUI[]>([]);
+  const [metodo, setMetodo] = useState<MetodoPago>('EFECTIVO_USD');
+  const [monto, setMonto] = useState('');
   const [ref, setRef] = useState('');
+  const [vueltoEn, setVueltoEn] = useState<Moneda>('BS');
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => { if (open) { setPagos([]); setMonto(''); setRef(''); setError(null); } }, [open]);
+
+  const enBs = (p: PagoUI) => (monedaDe(p.metodo) === 'USD' ? r2(p.monto * tasa) : p.monto);
+  const totalBs = r2(total * tasa);
+  const pagadoBs = r2(pagos.reduce((a, p) => a + enBs(p), 0));
+  const faltaBs = r2(totalBs - pagadoBs);
+  const vueltoBs = faltaBs < -0.01 ? -faltaBs : 0;
+  const efectivoBs = pagos.filter((p) => ES_EFECTIVO(p.metodo)).reduce((a, p) => a + enBs(p), 0);
+  const vueltoInvalido = vueltoBs > 0 && efectivoBs + 0.01 < vueltoBs;
+  const enMoneda = (bs: number, m: MetodoPago) => (monedaDe(m) === 'USD' ? r2(bs / tasa) : r2(bs));
+  const simbolo = (m: MetodoPago) => (monedaDe(m) === 'USD' ? '$' : 'Bs');
+
+  const agregar = (valor?: number) => {
+    const v = valor ?? leer(monto);
+    if (!(v > 0)) { setError('Escribe un monto mayor que cero'); return; }
+    if (metodo === 'PAGO_MOVIL' && !/^\d{4,20}$/.test(ref)) { setError('Escribe la referencia del Pago Móvil (4 a 20 números)'); return; }
+    setPagos((ps) => [...ps, { metodo, monto: r2(v), referencia: metodo === 'PAGO_MOVIL' ? ref : undefined }]);
+    setMonto(''); setRef(''); setError(null);
+  };
 
   const cobrar = async () => {
     setEnviando(true);
     setError(null);
     try {
-      const v = await api<{ numero: number }>('/ventas', {
-        body: {
-          cedula: cliente?.cedula,
-          metodoPago: metodo,
-          referenciaPago: metodo === 'PAGO_MOVIL' ? ref : undefined,
-          lineas: lineas.map((l) => ({ productoId: l.producto.id, cantidad: l.cantidad })),
-        },
+      const v = await api<Venta>('/ventas', {
+        body: { cedula: cliente?.cedula, pagos, vueltoMoneda: vueltoEn, lineas: lineas.map((l) => ({ productoId: l.producto.id, cantidad: l.cantidad })) },
       });
       vaciar();
-      setRef('');
       onClose();
-      avisar(`Venta N.º ${v.numero} registrada`, 'ok');
+      void cargarCaja();
+      onVendida(v);
     } catch (e) {
       if (e instanceof ApiError && e.bloqueos.length) {
         ponerBloqueos(e.bloqueos);
@@ -214,28 +240,75 @@ export function CobroSheet({ open, onClose }: { open: boolean; onClose: () => vo
   };
 
   return (
-    <Sheet open={open} onClose={onClose} title="¿Cómo paga?">
+    <Sheet open={open} onClose={onClose} title="Cobrar">
       <div className="flex flex-col gap-4">
-        <div className="rounded-xl bg-surface2 p-4 text-center font-mono tabular">
-          <div className="text-3xl font-medium">{usd(total)}</div>
-          <div className="text-muted">{bs(total, tasa)}</div>
+        <div className="grid grid-cols-2 gap-2 rounded-xl bg-surface2 p-3 text-center font-mono tabular">
+          <div><div className="text-xs font-sans text-muted">Total</div><div className="text-2xl font-medium">{usd(total)}</div></div>
+          <div><div className="text-xs font-sans text-muted">En bolívares</div><div className="text-2xl font-medium">Bs {num2(totalBs)}</div></div>
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          {METODOS.map((m) => (
-            <button key={m.id} onClick={() => setMetodo(m.id)} className={clsx('flex items-center gap-2 rounded-xl border p-3 text-sm font-semibold', metodo === m.id ? 'border-accent bg-accent-soft text-accent' : 'border-line bg-surface')}>
-              <m.icon className="h-5 w-5" /> {m.label}
-            </button>
-          ))}
-        </div>
-        {metodo === 'PAGO_MOVIL' && (
-          <label className="flex flex-col gap-1 text-sm font-semibold">
-            Número de referencia del pago
-            <input id="ref-pm" value={ref} onChange={(e) => setRef(e.target.value.replace(/\D/g, '').slice(0, 20))} inputMode="numeric" placeholder="004521" className="h-11 rounded-lg border border-line bg-surface px-3 font-mono outline-none focus:border-accent" />
-          </label>
+
+        {pagos.length > 0 && (
+          <ul className="flex flex-col divide-y divide-line rounded-xl border border-line">
+            {pagos.map((p, i) => (
+              <li key={i} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+                <span>{METODOS.find((m) => m.id === p.metodo)?.label}{p.referencia ? <span className="text-muted"> · ref. {p.referencia}</span> : null}</span>
+                <span className="flex items-center gap-2 font-mono">{simbolo(p.metodo) === '$' ? usd(p.monto) : `Bs ${num2(p.monto)}`}
+                  <button onClick={() => setPagos((ps) => ps.filter((_, j) => j !== i))} className="text-muted hover:text-bad" aria-label="Quitar pago"><Trash2 className="h-4 w-4" /></button>
+                </span>
+              </li>
+            ))}
+          </ul>
         )}
+
+        {faltaBs > 0.01 && (
+          <div className="flex flex-col gap-2 rounded-xl border border-line p-3">
+            <div className="grid grid-cols-4 gap-1.5">
+              {METODOS.map((m) => (
+                <button key={m.id} onClick={() => { setMetodo(m.id); setMonto(''); }} className={clsx('flex flex-col items-center gap-1 rounded-lg border p-2 text-xs font-semibold', metodo === m.id ? 'border-accent bg-accent-soft text-accent' : 'border-line bg-surface')}>
+                  <m.icon className="h-5 w-5" />{m.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <label className="flex h-12 min-w-0 flex-1 items-center gap-2 rounded-lg border border-line bg-surface px-3 focus-within:border-accent">
+                <span className="font-mono text-muted">{simbolo(metodo)}</span>
+                <input id="monto-pago" inputMode="decimal" value={monto} onChange={(e) => setMonto(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') agregar(); }} placeholder={num2(enMoneda(faltaBs, metodo))} className="min-w-0 flex-1 bg-transparent font-mono text-lg outline-none" aria-label="Monto" />
+              </label>
+              <Button size="lg" onClick={() => agregar()}>Agregar</Button>
+            </div>
+            {metodo === 'PAGO_MOVIL' && (
+              <input id="ref-pm" value={ref} onChange={(e) => setRef(e.target.value.replace(/\D/g, '').slice(0, 20))} inputMode="numeric" placeholder="Número de referencia" className="h-11 rounded-lg border border-line bg-surface px-3 font-mono outline-none focus:border-accent" />
+            )}
+            <div className="flex flex-wrap gap-1.5">
+              <Button size="sm" variant="primary" onClick={() => agregar(enMoneda(faltaBs, metodo))}>Lo que falta: {simbolo(metodo) === '$' ? usd(enMoneda(faltaBs, metodo)) : `Bs ${num2(enMoneda(faltaBs, metodo))}`}</Button>
+              {metodo === 'EFECTIVO_USD' && BILLETES.map((b) => <Button key={b} size="sm" onClick={() => agregar(b)}>{b} $</Button>)}
+            </div>
+          </div>
+        )}
+
+        <dl className="grid grid-cols-2 gap-1 text-sm">
+          <dt className="text-muted">Pagado</dt><dd className="text-right font-mono">Bs {num2(pagadoBs)} · {usd(r2(pagadoBs / (tasa || 1)))}</dd>
+          {faltaBs > 0.01 && (<><dt className="font-semibold text-bad">Falta</dt><dd className="text-right font-mono font-semibold text-bad">Bs {num2(faltaBs)} · {usd(r2(faltaBs / (tasa || 1)))}</dd></>)}
+        </dl>
+
+        {vueltoBs > 0 && (
+          <div className="flex flex-col gap-2 rounded-xl bg-ok-soft p-3">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-ok">Vuelto</span>
+              <div className="flex gap-1 rounded-lg bg-surface p-0.5">
+                {(['BS', 'USD'] as const).map((m) => (
+                  <button key={m} onClick={() => setVueltoEn(m)} className={clsx('rounded-md px-3 py-1 text-sm font-semibold', vueltoEn === m ? 'bg-accent text-accent-ink' : 'text-muted')}>{m === 'BS' ? 'Bs' : '$'}</button>
+                ))}
+              </div>
+            </div>
+            <div className="text-center font-mono text-3xl font-medium text-ok">{vueltoEn === 'BS' ? `Bs ${num2(vueltoBs)}` : usd(r2(vueltoBs / tasa))}</div>
+            {vueltoInvalido && <Alert tone="bad">Solo se da vuelto de lo pagado en efectivo. Quita o corrige el pago electrónico.</Alert>}
+          </div>
+        )}
+
         {error && <Alert tone="bad">{error}</Alert>}
-        <Button variant="primary" size="lg" disabled={enviando || (metodo === 'PAGO_MOVIL' && ref.length < 4)} onClick={cobrar}>
-          {enviando ? 'Guardando…' : 'Listo, ya pagó'}
+        <Button variant="primary" size="lg" disabled={enviando || faltaBs > 0.01 || vueltoInvalido || pagos.length === 0} onClick={cobrar}>
+          {enviando ? 'Guardando…' : faltaBs > 0.01 ? 'Falta por pagar' : 'Listo, cobrar'}
         </Button>
       </div>
     </Sheet>

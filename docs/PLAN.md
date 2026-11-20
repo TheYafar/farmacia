@@ -9,7 +9,7 @@ El sistema se construye **por etapas**: cada una termina con algo que la farmaci
 | Etapa | Qué resuelve | Plan comercial | Tamaño | Estado |
 |---|---|---|---|---|
 | 0 · Base | Vender, clientes, récipes, permisos, encargos, inventario, Excel | Mostrador | — | ✅ Hecha |
-| 1 · Caja y cobro | Cierre de caja, pagos mixtos, vuelto, devoluciones, ticket | Mostrador | M | Siguiente |
+| 1 · Caja y cobro | Cierre de caja, pagos mixtos, vuelto, devoluciones, ticket | Mostrador | M | 🟡 1A hecha, falta 1B |
 | 2 · Productos y ganancia | Productos desde la app, categorías, IVA, costo y margen, ajustes | Mostrador | M | Pendiente |
 | 3 · Puesta en marcha | Instalar en la farmacia fundadora y capacitar | Mostrador | S | Pendiente |
 | 4 · Facturación fiscal | Máquina fiscal o factura homologada (si la farmacia la necesita) | Extra | L | Por definir |
@@ -36,7 +36,7 @@ flowchart LR
 
 ## Etapa 0 · Base ✅ hecha
 
-- API completa con seguridad, 36 pruebas automáticas contra PostgreSQL real y CI en GitHub.
+- API completa con seguridad, pruebas automáticas contra PostgreSQL real y CI en GitHub.
 - App conectada: Vender (bioequivalentes, cliente por cédula, alergias, récipe, permiso al farmacéutico en vivo, cobro), Récipe, Por revisar, Clientes, Encargos, Inventario con compras y **carga desde Excel**, Resumen con tasa y Usuarios.
 - Despliegue con Docker y HTTPS, respaldos cifrados, **modo compartido** para un VPS con otro proyecto.
 - Demo pública con datos de ejemplo en GitHub Pages.
@@ -47,14 +47,16 @@ flowchart LR
 
 **Objetivo:** que la caja cuadre al final del día y cobrar sea rápido, como en cualquier farmacia venezolana.
 
-- [ ] **Apertura de caja:** el cajero abre su turno con un fondo inicial (en $ y en Bs).
-- [ ] **Pagos mixtos:** una venta se paga con varios métodos (ej. 5 $ en efectivo + el resto por Pago Móvil).
-- [ ] **Vuelto:** el sistema calcula el vuelto en Bs o en $ y lo registra.
-- [ ] **Pantalla de cobro rápida:** teclado numérico, botones de billetes (1, 5, 10, 20 $) y «monto exacto».
-- [ ] **Cierre de caja:** el cajero cuenta lo que tiene; el sistema muestra lo esperado por método de pago y la diferencia. El dueño ve y aprueba los cierres.
+**1A hecha** (apertura y cierre, pagos mixtos, vuelto, cobro rápido, ticket). **1B pendiente:** devoluciones, descuentos y escáner con cámara.
+
+- [x] **Apertura de caja:** el cajero abre su turno con un fondo inicial (en $ y en Bs).
+- [x] **Pagos mixtos:** una venta se paga con varios métodos (ej. 5 $ en efectivo + el resto por Pago Móvil).
+- [x] **Vuelto:** el sistema calcula el vuelto en Bs o en $ y lo registra.
+- [x] **Pantalla de cobro rápida:** teclado numérico, botones de billetes (1, 5, 10, 20 $) y «monto exacto».
+- [x] **Cierre de caja (a ciegas):** el cajero cuenta lo que tiene sin ver lo esperado; el sistema muestra la diferencia por método de pago. El farmacéutico y el dueño ven los cierres, y el dueño los marca como revisados.
 - [ ] **Devoluciones:** devolver toda o parte de una venta, con permiso del farmacéutico o del dueño, con motivo, y el stock vuelve a su lote.
 - [ ] **Descuentos:** por línea o por venta (tercera edad, convenio), con permiso y en la auditoría.
-- [ ] **Ticket:** comprobante para imprimir en impresora térmica o enviar en PDF (no fiscal).
+- [x] **Ticket:** comprobante para imprimir en impresora térmica o enviar en PDF (no fiscal).
 - [ ] **Escáner con la cámara** del teléfono para códigos de barras.
 
 **Listo cuando:** un cajero abre caja, hace ventas con pagos mixtos y vuelto, devuelve un producto y cierra, y la diferencia del cierre es cero cuando contó bien. Probado en el navegador y con pruebas automáticas.

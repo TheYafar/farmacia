@@ -7,6 +7,10 @@ import { avisar } from '@/store/avisos';
 import { useSesion } from '@/store/sesion';
 import { useVenta } from '@/store/venta';
 import ProductGroup from './ProductGroup';
+import AbrirCaja from '../caja/AbrirCaja';
+import Ticket from '../caja/Ticket';
+import { useCaja } from '@/store/caja';
+import type { Venta } from '@/lib/tipos';
 import { CartBody, CobroSheet, MobileCartBar, useCobrarShortcut, useResumenVenta } from './Cart';
 
 export default function MostradorPage() {
@@ -20,6 +24,11 @@ export default function MostradorPage() {
   const agregar = useVenta((s) => s.agregar);
   const tasa = useSesion((s) => s.tasa);
   const { unidades } = useResumenVenta();
+  const turno = useCaja((s) => s.turno);
+  const cajaCargada = useCaja((s) => s.cargada);
+  const cargarCaja = useCaja((s) => s.cargar);
+  const [ticket, setTicket] = useState<Venta | null>(null);
+  useEffect(() => { void cargarCaja(); }, [cargarCaja]);
 
   // Busca mientras escribe, esperando 250 ms después de la última tecla.
   useEffect(() => {
@@ -45,7 +54,7 @@ export default function MostradorPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
   const abrirCobro = useCallback(() => { setCartOpen(false); setCobroOpen(true); }, []);
-  useCobrarShortcut(abrirCobro, unidades > 0 && !!tasa);
+  useCobrarShortcut(abrirCobro, unidades > 0 && !!tasa && !!turno);
 
   // El lector USB "escribe" el código y envía Enter: si es un código exacto, va directo a la cuenta.
   const onEnter = async () => {
@@ -63,6 +72,9 @@ export default function MostradorPage() {
       avisar(e instanceof ApiError ? e.message : 'Código no encontrado', 'bad');
     }
   };
+
+  if (!cajaCargada) return <Cargando />;
+  if (!turno) return <div className="py-6"><AbrirCaja /></div>;
 
   return (
     <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_380px]">
@@ -109,7 +121,8 @@ export default function MostradorPage() {
       <Sheet open={cartOpen} onClose={() => setCartOpen(false)} title="Cuenta">
         <CartBody onCobrar={abrirCobro} />
       </Sheet>
-      <CobroSheet open={cobroOpen} onClose={() => setCobroOpen(false)} />
+      <CobroSheet open={cobroOpen} onClose={() => setCobroOpen(false)} onVendida={setTicket} />
+      <Ticket venta={ticket} onCerrar={() => setTicket(null)} />
     </div>
   );
 }

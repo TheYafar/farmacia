@@ -51,6 +51,8 @@ export async function escenario() {
     prisma.usuario.create({ data: { nombre: 'Ana', usuario: 'cajero', rol: 'CAJERO', claveHash: hash } }),
   ]);
   await prisma.tasaCambio.create({ data: { valor: 236.4, creadaPorId: admin.id } });
+  // Cada usuario empieza con su caja abierta (sin fondo) para poder vender.
+  await prisma.turno.createMany({ data: [admin, regente, cajero].map((u) => ({ cajeroId: u.id })) });
 
   const acetaminofen = await prisma.principioActivo.create({ data: { nombre: 'Acetaminofén' } });
   const amoxicilina = await prisma.principioActivo.create({ data: { nombre: 'Amoxicilina', familia: 'penicilinas', riesgo: 'ANTIBIOTICO' } });

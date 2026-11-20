@@ -4,9 +4,11 @@ import { Alert, Button, Campo, claseInput } from '@/components/ui';
 import { INICIO } from '@/config/nav';
 import { ApiError } from '@/lib/api';
 import { useSesion } from '@/store/sesion';
+import { useCaja } from '@/store/caja';
 
 export default function LoginPage() {
   const entrar = useSesion((s) => s.entrar);
+  const nombre = useCaja((s) => s.farmacia.nombre);
   const navigate = useNavigate();
   const [usuario, setUsuario] = useState('');
   const [clave, setClave] = useState('');
@@ -21,7 +23,7 @@ export default function LoginPage() {
             <svg viewBox="0 0 24 24" className="h-7 w-7" aria-hidden><path fill="white" d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z" /></svg>
           </span>
           <div>
-            <h1 className="text-2xl font-bold">Farmacia</h1>
+            <h1 className="text-2xl font-bold">{nombre}</h1>
             <p className="text-sm text-muted">Entra con tu usuario</p>
           </div>
         </div>

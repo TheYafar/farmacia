@@ -43,7 +43,20 @@ Roles: **C** = Cajero · **R** = Regente · **A** = Dueño (Administrador). «To
 
 Si la venta no lleva `recipeId` ni `autorizacionId`, el servidor usa el récipe más reciente del cliente (30 días) y un permiso aprobado y vigente para ese cliente y producto.
 
-Motivos de bloqueo: `FALTA_CEDULA`, `FALTA_RECIPE`, `ALERGIA`, `CONTROLADO`.
+Motivos de bloqueo: `FALTA_CEDULA`, `FALTA_RECIPE`, `ALERGIA`, `CONTROLADO`. Otros errores de cobro: `CAJA_CERRADA` (409), `PAGO_INCOMPLETO` y `VUELTO_INVALIDO` (422).
+
+**Pagos:** `pagos: [{ metodo, monto, referencia? }]`, con el monto en la moneda del método (dólares para `EFECTIVO_USD`, bolívares para los demás). Si la suma pasa del total, la diferencia es vuelto, solo si hubo efectivo, en `vueltoMoneda` (`BS` o `USD`). La forma corta `metodoPago` + `referenciaPago` cobra el monto exacto con un solo método.
+
+## Caja
+
+| Método | Ruta | Quién | Qué hace |
+|---|---|---|---|
+| POST | `/caja/abrir` | Todos | `{ fondoUsd, fondoBs }`. Una caja abierta por usuario; sin caja abierta no se vende |
+| GET | `/caja/actual` | Todos | Mi caja abierta, ventas y total. Lo esperado solo lo ven Regente y dueño (cierre a ciegas) |
+| POST | `/caja/cerrar` | Todos | `{ contado: { EFECTIVO_USD, EFECTIVO_BS, PAGO_MOVIL, PUNTO_DE_VENTA }, nota? }` → esperado, contado y diferencia |
+| GET | `/caja/turnos` | R, A | Turnos de los últimos 14 días con sus diferencias |
+| POST | `/caja/turnos/:id/revisar` | A | Marcar un cierre como revisado |
+| GET | `/farmacia` | Público | Nombre, RIF, dirección y teléfono (para el ticket) |
 
 Ejemplo de venta con récipe y permiso:
 
@@ -51,8 +64,11 @@ Ejemplo de venta con récipe y permiso:
 POST /api/v1/ventas
 {
   "cedula": "V-14582307",
-  "metodoPago": "PAGO_MOVIL",
-  "referenciaPago": "004521",
+  "pagos": [
+    { "metodo": "EFECTIVO_USD", "monto": 5 },
+    { "metodo": "PAGO_MOVIL", "monto": 1276.56, "referencia": "004521" }
+  ],
+  "vueltoMoneda": "BS",
   "lineas": [
     { "productoId": "…", "cantidad": 1, "recipeId": "…", "autorizacionId": "…" }
   ]

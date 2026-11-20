@@ -39,3 +39,11 @@ h1, h2, h3, h4 { @apply font-display; text-wrap: balance; }
   background: repeating-linear-gradient(0deg, transparent 0 26px, rgb(120 140 130 / 0.18) 26px 27px), #f8f6ef;
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* Al imprimir solo sale el ticket, al ancho de una impresora térmica de 80 mm. */
+@media print {
+  @page { size: 80mm auto; margin: 0; }
+  body * { visibility: hidden !important; }
+  #ticket, #ticket * { visibility: visible !important; }
+  #ticket { position: absolute; left: 0; top: 0; width: 72mm; max-width: none; border: 0; padding: 2mm; }
+}

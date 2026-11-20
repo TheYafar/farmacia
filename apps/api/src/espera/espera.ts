@@ -98,6 +98,7 @@ export class EsperaService {
           cajeroId: u.id, cedula: s.cedula, metodoPago: 'PAGO_MOVIL', referenciaPago: b.referenciaPagoMovil,
           totalUsd: s.producto.precioUsd, tasa: tasa.valor, totalBs: s.producto.precioUsd.mul(tasa.valor).toDecimalPlaces(2),
           lineas: { create: { productoId: s.productoId, loteId: s.loteId, cantidad: 1, precioUsd: s.producto.precioUsd } },
+          pagos: { create: { metodo: 'PAGO_MOVIL', moneda: 'BS', monto: s.producto.precioUsd.mul(tasa.valor).toDecimalPlaces(2), montoUsd: s.producto.precioUsd, referencia: b.referenciaPagoMovil } },
         },
       });
       const r = await tx.solicitudEspera.update({ where: { id }, data: { estado: 'PAGADO_CUSTODIA', referenciaPagoMovil: b.referenciaPagoMovil, gaveta: b.gaveta, ventaId: venta.id } });

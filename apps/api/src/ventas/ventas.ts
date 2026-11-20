@@ -1,6 +1,6 @@
 import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Post, Query, UnprocessableEntityException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { crearVentaSchema, type CrearVentaInput } from '@farmacia/shared';
+import { crearVentaSchema, ES_EFECTIVO, monedaDe, type CrearVentaInput } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
 import { TasaService, TasaModule } from '../tasa/tasa';
@@ -8,13 +8,14 @@ import { Roles, Usuario, type UsuarioActual } from '../common/seguridad';
 import { Validar } from '../common/validacion';
 import { alergiaQueChoca } from '../common/texto';
 import { descontarFefo } from '../inventario/stock';
+import { CajaModule, CajaService } from '../caja/caja';
 
 /** Motivo por el que una línea no se puede vender sin más. El mensaje lo lee el cajero. */
 interface Bloqueo { productoId: string; motivo: 'ALERGIA' | 'CONTROLADO' | 'FALTA_RECIPE' | 'FALTA_CEDULA'; mensaje: string }
 
 @Injectable()
 export class VentasService {
-  constructor(private readonly prisma: PrismaService, private readonly tasa: TasaService, private readonly auditoria: AuditoriaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly tasa: TasaService, private readonly auditoria: AuditoriaService, private readonly caja: CajaService) {}
 
   async crear(b: CrearVentaInput, cajero: UsuarioActual) {
     // Un producto por línea; siempre en el mismo orden para que dos ventas no se bloqueen entre sí.
@@ -23,6 +24,8 @@ export class VentasService {
     const lineas = [...b.lineas].sort((x, y) => x.productoId.localeCompare(y.productoId));
 
     return this.prisma.$transaction(async (tx) => {
+      const turno = await this.caja.turnoAbierto(cajero.id, tx);
+      if (!turno) throw new ConflictException({ mensaje: 'Abre la caja antes de vender', codigo: 'CAJA_CERRADA' });
       const productos = await tx.producto.findMany({ where: { id: { in: ids }, activo: true }, include: { principioActivo: true } });
       if (productos.length !== ids.length) throw new NotFoundException('Algún producto no existe o está inactivo');
       const paciente = b.cedula ? await tx.paciente.findUnique({ where: { cedula: b.cedula } }) : null;
@@ -75,7 +78,7 @@ export class VentasService {
       // 2. Precio y tasa del momento: la venta guarda ambos para siempre.
       const tasa = await this.tasa.actual(tx);
       const venta = await tx.venta.create({
-        data: { cajeroId: cajero.id, cedula: b.cedula, metodoPago: b.metodoPago, referenciaPago: b.referenciaPago, totalUsd: 0, tasa: tasa.valor, totalBs: 0 },
+        data: { cajeroId: cajero.id, cedula: b.cedula, metodoPago: b.pagos?.[0]?.metodo ?? b.metodoPago!, totalUsd: 0, tasa: tasa.valor, totalBs: 0, turnoId: turno.id },
       });
 
       // 3. Descontar stock (FEFO) con los lotes bloqueados.
@@ -95,10 +98,46 @@ export class VentasService {
         if (r.count !== autorizacionesUsadas.length) throw new ConflictException('Una autorización ya fue usada en otra venta');
       }
 
+      // 4. Pagos y vuelto. Todo se compara en bolívares con 2 decimales para no perder céntimos al convertir.
+      const totalBs = total.mul(tasa.valor).toDecimalPlaces(2);
+      const pagos = b.pagos?.length
+        ? b.pagos
+        : [{ metodo: b.metodoPago!, monto: (monedaDe(b.metodoPago!) === 'USD' ? total : totalBs).toNumber(), referencia: b.referenciaPago }];
+      const enBs = (p: { metodo: typeof pagos[number]['metodo']; monto: number }) =>
+        monedaDe(p.metodo) === 'USD' ? new Prisma.Decimal(p.monto).mul(tasa.valor).toDecimalPlaces(2) : new Prisma.Decimal(p.monto);
+      const pagadoBs = pagos.reduce((a, p) => a.add(enBs(p)), new Prisma.Decimal(0));
+      const faltaBs = totalBs.sub(pagadoBs);
+      if (faltaBs.gt(0.01)) {
+        throw new UnprocessableEntityException({ mensaje: `Falta por pagar Bs ${faltaBs.toFixed(2)} (${faltaBs.div(tasa.valor).toFixed(2)} $)`, codigo: 'PAGO_INCOMPLETO' });
+      }
+      const excesoBs = faltaBs.neg().gt(0.01) ? faltaBs.neg() : new Prisma.Decimal(0);
+      if (excesoBs.gt(0)) {
+        const efectivoBs = pagos.filter((p) => ES_EFECTIVO(p.metodo)).reduce((a, p) => a.add(enBs(p)), new Prisma.Decimal(0));
+        if (efectivoBs.lt(excesoBs)) {
+          throw new UnprocessableEntityException({ mensaje: 'Solo se da vuelto de lo pagado en efectivo. Ajusta el monto de los pagos electrónicos', codigo: 'VUELTO_INVALIDO' });
+        }
+      }
+      const vueltoMonto = b.vueltoMoneda === 'USD' ? excesoBs.div(tasa.valor).toDecimalPlaces(2) : excesoBs;
+      await tx.pago.createMany({
+        data: pagos.map((p) => ({
+          ventaId: venta.id, metodo: p.metodo, moneda: monedaDe(p.metodo), monto: p.monto, referencia: p.referencia,
+          montoUsd: monedaDe(p.metodo) === 'USD' ? new Prisma.Decimal(p.monto) : new Prisma.Decimal(p.monto).div(tasa.valor).toDecimalPlaces(2),
+        })),
+      });
+      const principal = [...pagos].sort((x, y) => enBs(y).cmp(enBs(x)))[0]!;
+
       const final = await tx.venta.update({
         where: { id: venta.id },
-        data: { totalUsd: total, totalBs: total.mul(tasa.valor).toDecimalPlaces(2) },
-        include: { lineas: { include: { producto: { select: { nombreComercial: true, concentracion: true } }, lote: { select: { numero: true, vence: true } } } } },
+        data: {
+          totalUsd: total, totalBs, metodoPago: principal.metodo,
+          referenciaPago: pagos.find((p) => p.referencia)?.referencia,
+          vueltoMoneda: excesoBs.gt(0) ? b.vueltoMoneda : null, vueltoMonto,
+        },
+        include: {
+          lineas: { include: { producto: { select: { nombreComercial: true, concentracion: true } }, lote: { select: { numero: true, vence: true } } } },
+          pagos: true,
+          cajero: { select: { nombre: true } },
+        },
       });
       await this.auditoria.registrar({ usuarioId: cajero.id, accion: 'VENTA', entidad: 'Venta', entidadId: venta.id, datos: { totalUsd: total.toFixed(2), autorizaciones: autorizacionesUsadas } }, tx);
       return final;
@@ -136,13 +175,13 @@ export class VentasController {
       where: { creadaEn: { gte: inicio }, cajeroId: u.rol === 'CAJERO' ? u.id : undefined },
       orderBy: { creadaEn: 'desc' },
       take: 200,
-      include: { cajero: { select: { nombre: true } }, lineas: { select: { cantidad: true, precioUsd: true, producto: { select: { nombreComercial: true } } } } },
+      include: { cajero: { select: { nombre: true } }, pagos: true, lineas: { select: { cantidad: true, precioUsd: true, producto: { select: { nombreComercial: true } } } } },
     });
   }
 
   @Get(':id')
   async ver(@Param('id', ParseUUIDPipe) id: string, @Usuario() u: UsuarioActual) {
-    const v = await this.prisma.venta.findUnique({ where: { id }, include: { lineas: { include: { producto: true, lote: true } }, cajero: { select: { nombre: true } } } });
+    const v = await this.prisma.venta.findUnique({ where: { id }, include: { lineas: { include: { producto: true, lote: true } }, pagos: true, cajero: { select: { nombre: true } } } });
     if (!v) throw new NotFoundException('La venta no existe');
     if (u.rol === 'CAJERO' && v.cajeroId !== u.id) throw new ForbiddenException('Solo puedes ver tus ventas');
     return v;
@@ -156,5 +195,5 @@ export class VentasController {
   }
 }
 
-@Module({ imports: [TasaModule], providers: [VentasService], controllers: [VentasController] })
+@Module({ imports: [TasaModule, CajaModule], providers: [VentasService], controllers: [VentasController] })
 export class VentasModule {}

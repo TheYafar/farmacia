@@ -8,6 +8,7 @@ import { num2 } from '@/lib/format';
 import { useCargar } from '@/lib/useCargar';
 import { useRol, useSesion } from '@/store/sesion';
 import { Sheet, Toaster } from '@/components/ui';
+import { useCaja } from '@/store/caja';
 
 /** Números rojos del menú: lo que espera al farmacéutico o al dueño. Se actualiza cada 20 segundos. */
 function useBadges(rol: string): Record<string, number> {
@@ -24,12 +25,13 @@ function useBadges(rol: string): Record<string, number> {
 }
 
 function Brand({ full }: { full?: boolean }) {
+  const nombre = useCaja((s) => s.farmacia.nombre);
   return (
     <div className="flex items-center gap-2.5">
       <span className="grid h-9 w-9 place-items-center rounded-lg bg-accent">
         <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden><path fill="white" d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z" /></svg>
       </span>
-      {full && <span className="font-display text-base font-bold">Farmacia</span>}
+      {full && <span className="truncate font-display text-base font-bold">{nombre}</span>}
     </div>
   );
 }

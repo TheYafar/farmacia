@@ -191,25 +191,53 @@ export const responderAutorizacionSchema = z.object({
 });
 export type ResponderAutorizacionInput = z.infer<typeof responderAutorizacionSchema>;
 
-export const crearVentaSchema = z.object({
-  cedula: cedulaSchema.optional(),
-  lineas: z
-    .array(
-      z.object({
-        productoId: z.string().uuid(),
-        cantidad: z.number().int().positive().max(1000),
-        autorizacionId: z.string().uuid().optional(),
-        recipeId: z.string().uuid().optional(),
-      }),
-    )
-    .min(1)
-    .max(100),
-  metodoPago: z.enum(METODOS_PAGO),
-  referenciaPago: z.string().trim().regex(/^\d{4,20}$/).optional(),
-}).refine((v) => v.metodoPago !== 'PAGO_MOVIL' || !!v.referenciaPago, {
-  message: 'El Pago Móvil necesita el número de referencia',
-  path: ['referenciaPago'],
-});
+export const MONEDAS = ['USD', 'BS'] as const;
+export type Moneda = (typeof MONEDAS)[number];
+
+/** En qué moneda se cuenta cada método: solo el efectivo en dólares es en USD. */
+export const monedaDe = (m: MetodoPago): Moneda => (m === 'EFECTIVO_USD' ? 'USD' : 'BS');
+/** Métodos que pueden dar vuelto (lo electrónico se cobra exacto). */
+export const ES_EFECTIVO = (m: MetodoPago) => m === 'EFECTIVO_USD' || m === 'EFECTIVO_BS';
+
+const referencia = z.string().trim().regex(/^\d{4,20}$/, 'La referencia son de 4 a 20 números');
+
+export const pagoSchema = z
+  .object({
+    metodo: z.enum(METODOS_PAGO),
+    /** En la moneda del método: dólares para efectivo $, bolívares para todo lo demás. */
+    monto: z.number().positive().max(100_000_000).multipleOf(0.01),
+    referencia: referencia.optional(),
+  })
+  .refine((p) => p.metodo !== 'PAGO_MOVIL' || !!p.referencia, { message: 'El Pago Móvil necesita el número de referencia', path: ['referencia'] });
+export type PagoInput = z.infer<typeof pagoSchema>;
+
+export const crearVentaSchema = z
+  .object({
+    cedula: cedulaSchema.optional(),
+    lineas: z
+      .array(
+        z.object({
+          productoId: z.string().uuid(),
+          cantidad: z.number().int().positive().max(1000),
+          autorizacionId: z.string().uuid().optional(),
+          recipeId: z.string().uuid().optional(),
+        }),
+      )
+      .min(1)
+      .max(100),
+    /** Uno o varios pagos. Si la suma pasa del total, la diferencia es vuelto (solo si hubo efectivo). */
+    pagos: z.array(pagoSchema).min(1).max(10).optional(),
+    /** En qué moneda se da el vuelto. */
+    vueltoMoneda: z.enum(MONEDAS).default('BS'),
+    /** Forma corta: un solo método por el monto exacto. */
+    metodoPago: z.enum(METODOS_PAGO).optional(),
+    referenciaPago: referencia.optional(),
+  })
+  .refine((v) => !!v.pagos?.length || !!v.metodoPago, { message: 'Falta el pago', path: ['pagos'] })
+  .refine((v) => v.pagos?.length || v.metodoPago !== 'PAGO_MOVIL' || !!v.referenciaPago, {
+    message: 'El Pago Móvil necesita el número de referencia',
+    path: ['referenciaPago'],
+  });
 export type CrearVentaInput = z.infer<typeof crearVentaSchema>;
 
 export const crearEsperaSchema = z.object({
@@ -282,3 +310,24 @@ export const COLUMNAS_IMPORTACION: { clave: keyof FilaImportacion; titulo: strin
   { clave: 'vence', titulo: 'Vence', ejemplo: '2027-08-21' },
   { clave: 'cantidad', titulo: 'Cantidad', ejemplo: 18 },
 ];
+
+// ---------- Caja ----------
+
+export const abrirCajaSchema = z.object({
+  fondoUsd: z.number().min(0).max(100_000).multipleOf(0.01).default(0),
+  fondoBs: z.number().min(0).max(100_000_000).multipleOf(0.01).default(0),
+});
+export type AbrirCajaInput = z.infer<typeof abrirCajaSchema>;
+
+/** Lo que cuenta el cajero al cerrar, por método, en la moneda de cada uno. */
+export const cerrarCajaSchema = z.object({
+  contado: z.object({
+    EFECTIVO_USD: z.number().min(0).max(100_000_000).multipleOf(0.01),
+    EFECTIVO_BS: z.number().min(0).max(100_000_000).multipleOf(0.01),
+    PAGO_MOVIL: z.number().min(0).max(100_000_000).multipleOf(0.01),
+    PUNTO_DE_VENTA: z.number().min(0).max(100_000_000).multipleOf(0.01),
+  }),
+  nota: z.string().trim().max(500).optional(),
+});
+export type CerrarCajaInput = z.infer<typeof cerrarCajaSchema>;
+export type MontosPorMetodo = Record<MetodoPago, number>;

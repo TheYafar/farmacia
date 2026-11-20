@@ -22,6 +22,11 @@ const esquema = z.object({
   BLOQUEO_MINUTOS: z.coerce.number().int().positive().default(15),
   /** 'log' escribe los mensajes en el registro; 'whatsapp' usa la API de WhatsApp Business (fase 3). */
   NOTIFICADOR: z.enum(['log', 'whatsapp']).default('log'),
+  /** Datos de la farmacia para el ticket y la pantalla de inicio. */
+  FARMACIA_NOMBRE: z.string().trim().max(80).default('Farmacia'),
+  FARMACIA_RIF: z.string().trim().max(20).default(''),
+  FARMACIA_DIRECCION: z.string().trim().max(160).default(''),
+  FARMACIA_TELEFONO: z.string().trim().max(40).default(''),
   /** Cuántos intermediarios (proxies) hay delante de la API: 1 = solo Caddy; 2 = Nginx/Caddy del VPS + Caddy. */
   TRUST_PROXY: z.coerce.number().int().min(0).max(3).default(1),
 });

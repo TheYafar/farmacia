@@ -72,6 +72,8 @@ else
   [ -n "$DOMINIO" ] || { rojo "El dominio es obligatorio."; exit 1; }
   preguntar SEED_ADMIN_USUARIO "Usuario del dueño" "dueno"
   preguntar SEED_ADMIN_NOMBRE "Nombre del dueño" "Administrador"
+  preguntar FARMACIA_NOMBRE "Nombre de la farmacia (sale en el ticket)" "Farmacia"
+  preguntar FARMACIA_RIF "RIF de la farmacia (opcional)" ""
   preguntar SEED_DEMO "¿Cargar datos de ejemplo para probar? (true/false)" "true"
   SEED_ADMIN_CLAVE=$(aleatorio 16)
   SEED_DEMO_CLAVE=$( [ "$SEED_DEMO" = true ] && aleatorio 12 || echo "")
@@ -96,6 +98,10 @@ SEED_ADMIN_CLAVE=$SEED_ADMIN_CLAVE
 SEED_DEMO=$SEED_DEMO
 SEED_DEMO_CLAVE=$SEED_DEMO_CLAVE
 NOTIFICADOR=log
+FARMACIA_NOMBRE="$FARMACIA_NOMBRE"
+FARMACIA_RIF="$FARMACIA_RIF"
+FARMACIA_DIRECCION=""
+FARMACIA_TELEFONO=""
 PUERTO_LOCAL=$PUERTO_LOCAL
 IP_LOCAL=$IP_LOCAL
 EOF

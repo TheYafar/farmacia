@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import { api, renovar, sesionToken } from '@/lib/api';
 import type { UsuarioSesion } from '@/lib/tipos';
+import { useCaja } from './caja';
+
+const olvidarCaja = () => useCaja.setState({ turno: null, cargada: false, ventas: 0, totalUsd: '0.00' });
 
 interface Sesion {
   usuario: UsuarioSesion | null;
@@ -31,6 +34,7 @@ export const useSesion = create<Sesion>((set, get) => ({
   entrar: async (usuario, clave) => {
     const r = await api<{ accessToken: string; usuario: UsuarioSesion }>('/auth/login', { body: { usuario, clave } });
     sesionToken.poner(r.accessToken);
+    olvidarCaja();
     set({ usuario: r.usuario });
     await get().cargarTasa();
   },
@@ -38,6 +42,7 @@ export const useSesion = create<Sesion>((set, get) => ({
   salir: async () => {
     try { await api('/auth/salir', { method: 'POST' }); } catch { /* ya estaba cerrada */ }
     sesionToken.poner(null);
+    olvidarCaja();
     set({ usuario: null });
   },
 
@@ -53,6 +58,7 @@ export const useSesion = create<Sesion>((set, get) => ({
 
 sesionToken.alExpirar(() => {
   sesionToken.poner(null);
+  olvidarCaja();
   useSesion.setState({ usuario: null });
 });
 

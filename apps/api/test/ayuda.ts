@@ -13,6 +13,7 @@ import { PrismaClient } from '@prisma/client';
 import { cargarConfig } from '../src/config';
 import { crearApp } from '../src/main';
 import { cifrarClave } from '../src/auth/auth';
+import { olvidarPlan } from '../src/common/plan';
 
 export const DB = process.env.DATABASE_URL_TEST ?? 'postgresql://farmacia:farmacia@localhost:5433/farmacia_test?host=/tmp';
 process.env.DATABASE_URL = DB;
@@ -41,6 +42,7 @@ export const prisma = new PrismaClient({ datasources: { db: { url: DB } } });
 
 /** Deja la base vacía y carga un escenario conocido. */
 export async function escenario() {
+  olvidarPlan();
   const tablas = await prisma.$queryRaw<{ tablename: string }[]>`SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'`;
   await prisma.$executeRawUnsafe(`TRUNCATE ${tablas.map((t) => `"${t.tablename}"`).join(', ')} CASCADE`);
 

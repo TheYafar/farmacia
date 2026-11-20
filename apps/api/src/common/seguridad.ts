@@ -2,7 +2,8 @@ import { CanActivate, ExecutionContext, Inject, Injectable, SetMetadata, Unautho
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
-import { esRolCentral, type Rol } from '@farmacia/shared';
+import { esRolCentral, type ModuloPlan, type Rol } from '@farmacia/shared';
+import { incluye, noIncluido, planActual } from './plan';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface UsuarioActual {
@@ -23,6 +24,10 @@ const ROLES = 'roles';
 
 /** La ruta no necesita sesión (login, salud). Todo lo demás está cerrado por defecto. */
 export const Publico = () => SetMetadata(PUBLICO, true);
+
+const MODULO = 'modulo';
+/** La ruta es de un módulo que depende del plan. `false` en un método lo deja libre aunque la clase tenga módulo. */
+export const Modulo = (m: ModuloPlan | false) => SetMetadata(MODULO, m);
 
 /** Solo estos roles pueden usar la ruta. Sin este decorador, cualquier usuario con sesión. */
 export const Roles = (...roles: Rol[]) => SetMetadata(ROLES, roles);
@@ -78,6 +83,11 @@ export class GuardiaAcceso implements CanActivate {
     }
     if (permitidos && !permitidos.includes(req.usuario.rol)) {
       throw new ForbiddenException('Tu usuario no tiene permiso para esto');
+    }
+    const modulo = this.reflector.getAllAndOverride<ModuloPlan | false | undefined>(MODULO, objetivos);
+    if (modulo) {
+      const plan = await planActual(this.prisma);
+      if (!incluye(plan, modulo)) throw noIncluido(plan!, modulo);
     }
     return true;
   }

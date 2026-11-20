@@ -226,6 +226,16 @@ export const GUIAS: Record<string, GuiaModulo> = {
     para: 'Responder lo que piden las farmacias.',
     pasos: ['Abre un caso para ver la conversación y el estado del sistema cuando escribieron.', 'Responde. Si ya se resolvió, toca «Responder y cerrar».'],
   },
+  '/planes': {
+    para: 'Decidir qué trae cada plan que vendes y cuánto cuesta.',
+    pasos: [
+      'Cada tarjeta muestra el precio, los módulos que trae, cuántas cajas y usuarios permite y cuántas farmacias lo tienen.',
+      'Toca «Cambiar» para marcar o desmarcar módulos, el precio y los límites (0 = sin límite).',
+      'Para darle un plan a una farmacia: Farmacias → la farmacia → Editar → Plan.',
+      'La farmacia recibe el cambio en menos de 5 minutos: los módulos que no trae desaparecen de su menú.',
+    ],
+    consejos: ['Vender, Caja, Récipes, Controlados e Inventario van en todos los planes: sin ellos la farmacia no puede operar.', 'En Farmacias ves cuánto cobras al mes sumando los planes.'],
+  },
   '/equipo': {
     para: 'Quiénes entran al panel central.',
     pasos: ['Toca «Agregar» y elige el rol: Soporte (ve farmacias y responde casos) o Super admin (además registra farmacias).', 'Desactiva a quien ya no trabaje contigo.'],

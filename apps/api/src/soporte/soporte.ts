@@ -14,6 +14,8 @@ import { Roles, Usuario, type UsuarioActual } from '../common/seguridad';
 import { Validar } from '../common/validacion';
 import { cifrar, descifrar } from '../common/totp';
 import { ERRORES_RECIENTES } from '../common/errores';
+import { olvidarPlan, planActual } from '../common/plan';
+import { Prisma } from '@prisma/client';
 
 /**
  * Soporte en línea, del lado de la farmacia: se enlaza con el panel central,
@@ -75,6 +77,12 @@ export class SoporteService {
     return datos as T;
   }
 
+  /** El plan que mandó el panel central. Si no manda ninguno (respuesta vieja), se deja el que había. */
+  private planDe(r: { plan?: unknown }) {
+    if (r.plan === undefined) return undefined;
+    return r.plan === null ? Prisma.JsonNull : (r.plan as Prisma.InputJsonValue);
+  }
+
   /** Foto del estado de la farmacia: lo que soporte necesita ver cuando algo falla. */
   async diagnostico() {
     const ahora = Date.now();
@@ -128,8 +136,9 @@ export class SoporteService {
     const e = await this.enlace();
     if (!e) return;
     try {
-      const r = await this.llamar<{ telefono: string | null }>('reporte', await this.diagnostico(), e);
-      await this.prisma.configuracion.update({ where: { id: 1 }, data: { centralUltimo: new Date(), centralError: null, centralTelefono: r.telefono } });
+      const r = await this.llamar<{ telefono: string | null; plan?: unknown }>('reporte', await this.diagnostico(), e);
+      await this.prisma.configuracion.update({ where: { id: 1 }, data: { centralUltimo: new Date(), centralError: null, centralTelefono: r.telefono, plan: this.planDe(r) } });
+      olvidarPlan();
     } catch (err) {
       const msj = err instanceof Error ? err.message : String(err);
       this.log.warn(`No se pudo reportar al panel central: ${msj}`);
@@ -155,12 +164,13 @@ export class SoporteService {
   async enlazar(codigo: string, u: UsuarioActual) {
     const e = leerCodigo(codigo);
     // Primero se prueba: si el código no sirve, no se guarda nada.
-    const r = await this.llamar<{ nombre: string; telefono: string | null }>('reporte', await this.diagnostico(), e);
+    const r = await this.llamar<{ nombre: string; telefono: string | null; plan?: unknown }>('reporte', await this.diagnostico(), e);
     await this.prisma.configuracion.upsert({
       where: { id: 1 },
-      update: { centralUrl: e.url, centralClave: cifrar(e.clave, this.config.JWT_SECRET), centralUltimo: new Date(), centralError: null, centralTelefono: r.telefono },
-      create: { id: 1, centralUrl: e.url, centralClave: cifrar(e.clave, this.config.JWT_SECRET), centralUltimo: new Date(), centralTelefono: r.telefono },
+      update: { centralUrl: e.url, centralClave: cifrar(e.clave, this.config.JWT_SECRET), centralUltimo: new Date(), centralError: null, centralTelefono: r.telefono, plan: this.planDe(r) },
+      create: { id: 1, centralUrl: e.url, centralClave: cifrar(e.clave, this.config.JWT_SECRET), centralUltimo: new Date(), centralTelefono: r.telefono, plan: this.planDe(r) },
     });
+    olvidarPlan();
     await this.auditoria.registrar({ usuarioId: u.id, accion: 'SOPORTE_ENLAZADO', entidad: 'Configuracion', datos: { central: e.url } });
     return this.estado();
   }
@@ -265,5 +275,21 @@ export class SoporteController {
   }
 }
 
-@Module({ providers: [SoporteService], controllers: [SoporteController] })
+/** El plan de esta farmacia y cuánto usa de él (lo ve cualquier usuario: el menú se arma con esto). */
+@Controller('plan')
+export class PlanController {
+  constructor(private readonly prisma: PrismaService) {}
+
+  @Get()
+  async ver() {
+    const [plan, cajas, usuarios] = await Promise.all([
+      planActual(this.prisma),
+      this.prisma.caja.count({ where: { activa: true } }),
+      this.prisma.usuario.count({ where: { activo: true, sistema: false, rol: { in: ['CAJERO', 'REGENTE', 'ADMIN'] } } }),
+    ]);
+    return { plan, uso: { cajas, usuarios } };
+  }
+}
+
+@Module({ providers: [SoporteService], controllers: [SoporteController, PlanController] })
 export class SoporteModule {}

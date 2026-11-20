@@ -1,3 +1,4 @@
+import { TuPlan } from '@/features/plan/Plan';
 import { clsx } from 'clsx';
 import { Printer, RefreshCw } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -86,6 +87,7 @@ export default function ConfiguracionPage() {
     <div className="flex flex-col gap-4">
       <PageHeader title="Configuración" subtitle="Tasa del dólar, impuestos, datos del ticket e impresora" />
       {error && <Alert tone="bad">{error}</Alert>}
+      <TuPlan />
 
       <Seccion titulo="Tasa del día" sub={`Vigente: ${tasa ? num2(tasa) : '—'} Bs. Las ventas ya hechas conservan la tasa con la que se cobraron.`}>
         <div className="grid gap-2 md:grid-cols-3">

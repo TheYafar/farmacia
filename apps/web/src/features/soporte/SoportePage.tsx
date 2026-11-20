@@ -6,6 +6,7 @@ import { useCargar } from '@/lib/useCargar';
 import { useSesion } from '@/store/sesion';
 import { useCaja } from '@/store/caja';
 import { avisar } from '@/store/avisos';
+import { usePlan } from '@/store/plan';
 
 interface Estado {
   enlazada: boolean;
@@ -74,7 +75,7 @@ function Enlazar({ listo }: { listo: () => void }) {
   return (
     <form className="flex flex-col gap-3" onSubmit={async (e) => {
       e.preventDefault(); setEnviando(true); setError(null);
-      try { await api('/soporte/enlazar', { body: { codigo } }); avisar('Farmacia enlazada con soporte', 'ok'); listo(); } catch (err) { setError(err instanceof ApiError ? err.message : 'No se pudo enlazar'); } finally { setEnviando(false); }
+      try { await api('/soporte/enlazar', { body: { codigo } }); avisar('Farmacia enlazada con soporte', 'ok'); void usePlan.getState().cargar(); listo(); } catch (err) { setError(err instanceof ApiError ? err.message : 'No se pudo enlazar'); } finally { setEnviando(false); }
     }}>
       <Campo etiqueta="Código de enlace" ayuda="Te lo da quien te vendió el sistema. Empieza por FT1.">
         <textarea value={codigo} onChange={(e) => setCodigo(e.target.value)} rows={3} required className={claseInput + ' h-auto py-2 font-mono text-xs'} placeholder="FT1.eyJ1Ijoi…" />

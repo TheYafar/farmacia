@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
 import { Publico, Roles, Usuario, type UsuarioActual } from '../common/seguridad';
 import { Validar } from '../common/validacion';
+import { revisarLimite } from '../common/plan';
 
 /**
  * Cajas: cada equipo (computadora, tablet) puede ser una caja. Se crea en el mismo equipo
@@ -72,6 +73,7 @@ export class CajasController {
   @Roles('CAJERO', 'REGENTE', 'ADMIN')
   @Post()
   async crear(@Body(new Validar(cajaSchema)) b: CajaInput, @Usuario() u: UsuarioActual, @Req() req: Request) {
+    await revisarLimite(this.prisma, 'cajas');
     const caja = await this.prisma.caja.create({ data: { nombre: b.nombre, creadaPorId: u.id } });
     const token = b.enEsteEquipo ? await this.cajas.nuevoEquipo(caja.id, req.headers['user-agent']) : undefined;
     await this.auditoria.registrar({ usuarioId: u.id, accion: 'CAJA_CREADA', entidad: 'Caja', entidadId: caja.id, datos: { nombre: caja.nombre } });
@@ -141,6 +143,7 @@ export class CajasController {
   @Roles('ADMIN')
   @Patch(':id')
   async editar(@Param('id', ParseUUIDPipe) id: string, @Body(new Validar(editarCajaSchema)) b: { nombre?: string; activa?: boolean }, @Usuario() u: UsuarioActual) {
+    if (b.activa === true && !(await this.prisma.caja.findUnique({ where: { id } }))?.activa) await revisarLimite(this.prisma, 'cajas');
     const c = await this.prisma.caja.update({ where: { id }, data: { ...b, ...(b.activa === false ? { codigoHash: null, codigoVence: null } : {}) } });
     if (b.activa === false) await this.prisma.cajaEquipo.updateMany({ where: { cajaId: id, quitadoEn: null }, data: { quitadoEn: new Date() } });
     await this.auditoria.registrar({ usuarioId: u.id, accion: 'CAJA_EDITADA', entidad: 'Caja', entidadId: id, datos: b });

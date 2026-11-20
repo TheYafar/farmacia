@@ -114,7 +114,7 @@ POST /api/v1/ventas
 <!-- rutas:inicio -->
 ## Todas las rutas
 
-Generada del código con `python3 infra/generar-api-doc.py`. 130 rutas.
+Generada del código con `python3 infra/generar-api-doc.py`. 133 rutas.
 
 | Método | Ruta | Quién | Qué hace |
 |---|---|---|---|
@@ -174,6 +174,8 @@ Generada del código con `python3 infra/generar-api-doc.py`. 130 rutas.
 | PATCH | `/central/farmacias/:id` | SA |  |
 | POST | `/central/farmacias/:id/codigo` | SA | Código nuevo: el anterior deja de funcionar (por si se filtró). |
 | POST | `/central/farmacias/:id/entrar` | SA, S | Entrar a la farmacia como soporte: solo si el dueño dio permiso y no ha vencido. |
+| GET | `/central/planes` | SA, S | Los planes que se venden, con cuántas farmacias tiene cada uno. |
+| PATCH | `/central/planes/:id` | SA | Cambiar qué trae un plan. Las farmacias lo reciben en su próximo reporte (máximo 5 minutos). |
 | GET | `/central/tickets` | SA, S | Casos de soporte de todas las farmacias. |
 | GET | `/central/tickets/:id` | SA, S |  |
 | POST | `/central/tickets/:id/mensajes` | SA, S |  |
@@ -203,9 +205,10 @@ Generada del código con `python3 infra/generar-api-doc.py`. 130 rutas.
 | POST | `/pacientes` | Todos |  |
 | GET | `/pacientes/:cedula` | Todos |  |
 | PATCH | `/pacientes/:cedula` | Todos | Cambios en alergias quedan auditados: son datos clínicos. |
+| GET | `/plan` | Todos |  |
 | GET | `/proveedores/cuentas` | A | Cuentas por pagar: compras con saldo, de la que vence antes a la que vence después. |
 | POST | `/proveedores/cuentas/:id/pagos` | A |  |
-| GET | `/proveedores/lista` | A | Droguerías a las que ya se les compró, para elegirlas al cargar una compra. |
+| GET | `/proveedores/lista` | A | Nombres de droguerías: también lo usa «Cargar compra» de Inventario (que está en todos los planes). |
 | GET | `/proveedores/ordenes` | A | Órdenes de compra: lo que se le pidió a cada droguería y todavía no llega. |
 | POST | `/proveedores/ordenes` | A |  |
 | POST | `/proveedores/ordenes/:id/anular` | A |  |

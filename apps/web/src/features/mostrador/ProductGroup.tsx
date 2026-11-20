@@ -8,12 +8,15 @@ import type { Grupo, Opcion } from '@/lib/tipos';
 import { avisar } from '@/store/avisos';
 import { useSesion } from '@/store/sesion';
 import { useVenta } from '@/store/venta';
+import { incluye, usePlan } from '@/store/plan';
 
 export default function ProductGroup({ g }: { g: Grupo }) {
   const agregar = useVenta((s) => s.agregar);
   const cliente = useVenta((s) => s.cliente);
   const tasa = useSesion((s) => s.tasa);
   const [avisarDe, setAvisarDe] = useState<Opcion | null>(null);
+  // «Avisar cuando llegue» es parte de Encargos: solo si el plan lo trae.
+  const conEncargos = usePlan((s) => incluye(s.plan, 'encargos'));
   const masBarato = g.opciones.find((o) => o.stockLibre > 0);
   const alergia = cliente ? alergiaQueChoca(cliente.alergias, g.principio) : null;
   const delicado = g.principio.riesgo !== 'NORMAL';
@@ -52,7 +55,8 @@ export default function ProductGroup({ g }: { g: Grupo }) {
               </div>
               <div className="w-full sm:w-auto">
                 {noHay ? (
-                  <Button size="lg" className="w-full sm:w-60" icon={<Bell className="h-5 w-5" />} onClick={() => setAvisarDe(o)}>Avisar cuando llegue</Button>
+                  conEncargos ? <Button size="lg" className="w-full sm:w-60" icon={<Bell className="h-5 w-5" />} onClick={() => setAvisarDe(o)}>Avisar cuando llegue</Button>
+                    : <Button size="lg" className="w-full sm:w-60" disabled>No hay</Button>
                 ) : (
                   <Button size="lg" variant="primary" className="w-full sm:w-60" icon={<Plus className="h-5 w-5" />} onClick={() => { agregar(o, g.principio); avisar(`Agregado: ${o.nombreComercial}`, 'ok'); }}>Agregar</Button>
                 )}

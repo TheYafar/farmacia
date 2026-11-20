@@ -18,15 +18,20 @@ import { AuditoriaPage, CatalogoPage, VentasPage } from '@/features/gestion/Gest
 import ConfiguracionPage from '@/features/configuracion/ConfiguracionPage';
 import CajaPage from '@/features/caja/CajaPage';
 import { useCaja } from '@/store/caja';
+import { rutaIncluida, usePlan } from '@/store/plan';
+import { NoIncluido } from '@/features/plan/Plan';
 import SoportePage from '@/features/soporte/SoportePage';
 import CajasPage from '@/features/cajas/Cajas';
-import { CasosPage, EquipoPage, FarmaciasPage } from '@/features/central/CentralPage';
+import { CasosPage, EquipoPage, FarmaciasPage, PlanesPage } from '@/features/central/CentralPage';
 
 /** Esconde la ruta a quien no tiene el rol (el servidor igual lo rechazaría). */
 function ConRol({ ruta, children }: { ruta: string; children: ReactNode }) {
   const rol = useRol();
+  const plan = usePlan((s) => s.plan);
   const item = NAV.find((n) => n.to === ruta);
-  return item && !item.roles.includes(rol) ? <Navigate to={INICIO[rol]} replace /> : <>{children}</>;
+  if (item && !item.roles.includes(rol)) return <Navigate to={INICIO[rol]} replace />;
+  if (!rutaIncluida(plan, ruta)) return <NoIncluido ruta={ruta} />;
+  return <>{children}</>;
 }
 
 export default function App() {
@@ -47,7 +52,7 @@ export default function App() {
     ['/revisar', <RevisarPage />], ['/encargos', <EncargosPage />], ['/inventario', <InventarioPage />],
     ['/resumen', <ResumenPage />], ['/usuarios', <UsuariosPage />], ['/ventas', <VentasPage />], ['/catalogo', <CatalogoPage />], ['/auditoria', <AuditoriaPage />], ['/configuracion', <ConfiguracionPage />],
     ['/compras', <ComprasPage />], ['/mayor', <MayoristaPage />], ['/whatsapp', <WhatsappPage />], ['/controlados', <LibroPage />], ['/reportes', <ReportesPage />],
-    ['/soporte', <SoportePage />], ['/cajas', <CajasPage />], ['/farmacias', <FarmaciasPage />], ['/casos', <CasosPage />], ['/equipo', <EquipoPage />],
+    ['/soporte', <SoportePage />], ['/cajas', <CajasPage />], ['/farmacias', <FarmaciasPage />], ['/casos', <CasosPage />], ['/equipo', <EquipoPage />], ['/planes', <PlanesPage />],
   ];
   return (
     <Routes>

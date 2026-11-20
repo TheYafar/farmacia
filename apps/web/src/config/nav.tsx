@@ -1,4 +1,4 @@
-import { MonitorSmartphone, Headset, LifeBuoy, Store, UsersRound, BarChart3, Settings, ClipboardList, Receipt, Tags, BookLock, Building2, MessageCircle, PieChart, Truck, Camera, Clock, Package, ShieldCheck, ShoppingCart, UserCog, Users, Wallet } from 'lucide-react';
+import { Layers, MonitorSmartphone, Headset, LifeBuoy, Store, UsersRound, BarChart3, Settings, ClipboardList, Receipt, Tags, BookLock, Building2, MessageCircle, PieChart, Truck, Camera, Clock, Package, ShieldCheck, ShoppingCart, UserCog, Users, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Rol } from '@farmacia/shared';
 
@@ -32,6 +32,7 @@ export const NAV: NavItem[] = [
   // Panel central: quien vende el sistema ve todas las farmacias y les da soporte.
   { to: '/farmacias', label: 'Farmacias', short: 'Farmacias', icon: Store, roles: ['SUPERADMIN', 'SOPORTE'], grupo: 'Panel central' },
   { to: '/casos', label: 'Casos de soporte', short: 'Casos', icon: Headset, roles: ['SUPERADMIN', 'SOPORTE'], grupo: 'Panel central' },
+  { to: '/planes', label: 'Planes', short: 'Planes', icon: Layers, roles: ['SUPERADMIN', 'SOPORTE'], grupo: 'Panel central' },
   { to: '/equipo', label: 'Equipo', short: 'Equipo', icon: UsersRound, roles: ['SUPERADMIN'], grupo: 'Panel central' },
 ];
 

@@ -540,6 +540,8 @@ export const farmaciaRegistradaSchema = z.object({
   url: z.string().trim().url('Dirección inválida. Ejemplo: https://mifarmacia.com').max(200).optional().or(z.literal('').transform(() => undefined)),
   notas: opc(1000),
   activa: z.boolean().optional(),
+  /** Plan contratado (vacío = sin plan: todo disponible). */
+  planId: z.string().uuid().nullable().optional().or(z.literal('').transform(() => null)),
 });
 export type FarmaciaRegistradaInput = z.infer<typeof farmaciaRegistradaSchema>;
 
@@ -569,3 +571,41 @@ export const vincularCajaSchema = z.object({
   codigo: z.string().transform((v) => v.toUpperCase().replace(/[^A-Z0-9]/g, '')).pipe(z.string().length(6, 'El código tiene 6 letras o números')),
 });
 export const editarCajaSchema = z.object({ nombre: texto(40).optional(), activa: z.boolean().optional() });
+
+// ---------- Planes ----------
+
+/**
+ * Módulos que se pueden incluir o no en un plan. Los demás (vender, caja, récipes, controlados,
+ * inventario, catálogo, usuarios…) vienen en todos los planes: sin ellos la farmacia no puede operar
+ * ni cumplir con los controlados.
+ */
+export const MODULOS_PLAN = ['encargos', 'compras', 'reportes', 'whatsapp', 'mayor'] as const;
+export type ModuloPlan = (typeof MODULOS_PLAN)[number];
+export const NOMBRE_MODULO: Record<ModuloPlan, string> = {
+  encargos: 'Encargos (lista de espera)',
+  compras: 'Compras a droguerías (pedido sugerido, órdenes, cuentas por pagar)',
+  reportes: 'Reportes (ganancia, rotación, cajeros, valor del inventario)',
+  whatsapp: 'WhatsApp y recompra',
+  mayor: 'Venta al mayor (clínicas y empresas a crédito)',
+};
+/** Ruta de la app de cada módulo de plan. */
+export const RUTA_MODULO: Record<ModuloPlan, string> = { encargos: '/encargos', compras: '/compras', reportes: '/reportes', whatsapp: '/whatsapp', mayor: '/mayor' };
+
+/** El plan que tiene la farmacia (lo envía el panel central). 0 = sin límite. */
+export interface PlanFarmacia { nombre: string; modulos: ModuloPlan[]; maxCajas: number; maxUsuarios: number }
+
+/** Los 3 planes con los que arranca el panel central (el super admin los puede cambiar). */
+export const PLANES_INICIALES: (PlanFarmacia & { clave: string; precioUsd: number; orden: number })[] = [
+  { clave: 'MOSTRADOR', nombre: 'Mostrador', precioUsd: 30, orden: 1, modulos: ['encargos'], maxCajas: 1, maxUsuarios: 4 },
+  { clave: 'PROFESIONAL', nombre: 'Profesional', precioUsd: 50, orden: 2, modulos: ['encargos', 'compras', 'reportes', 'whatsapp'], maxCajas: 3, maxUsuarios: 10 },
+  { clave: 'COMPLETO', nombre: 'Completo', precioUsd: 70, orden: 3, modulos: ['encargos', 'compras', 'reportes', 'whatsapp', 'mayor'], maxCajas: 0, maxUsuarios: 0 },
+];
+
+export const planSchema = z.object({
+  nombre: texto(40),
+  precioUsd: z.number().min(0).max(10_000),
+  modulos: z.array(z.enum(MODULOS_PLAN)).max(MODULOS_PLAN.length),
+  maxCajas: z.number().int().min(0).max(999),
+  maxUsuarios: z.number().int().min(0).max(999),
+});
+export type PlanInput = z.infer<typeof planSchema>;

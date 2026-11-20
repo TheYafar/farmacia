@@ -6,6 +6,7 @@ import { AuditoriaService } from '../auditoria/auditoria';
 import { Roles, Usuario, type UsuarioActual } from '../common/seguridad';
 import { Validar } from '../common/validacion';
 import { cifrarClave } from '../auth/auth';
+import { revisarLimite } from '../common/plan';
 
 const campos = { id: true, nombre: true, usuario: true, correo: true, rol: true, activo: true, bloqueadoHasta: true, creadoEn: true } as const;
 const claveSchema = z.object({ clave: crearUsuarioSchema.shape.clave });
@@ -29,6 +30,7 @@ export class UsuariosController {
 
   @Post()
   async crear(@Body(new Validar(crearUsuarioSchema)) b: CrearUsuarioInput, @Usuario() yo: UsuarioActual) {
+    await revisarLimite(this.prisma, 'usuarios');
     const u = await this.prisma.usuario.create({
       data: { nombre: b.nombre, usuario: b.usuario, correo: b.correo, rol: b.rol, claveHash: await cifrarClave(b.clave) },
       select: campos,
@@ -72,6 +74,7 @@ export class UsuariosController {
   @HttpCode(204)
   async activar(@Param('id', ParseUUIDPipe) id: string, @Usuario() yo: UsuarioActual) {
     await this.deLaFarmacia(id);
+    if (!(await this.prisma.usuario.findUnique({ where: { id } }))?.activo) await revisarLimite(this.prisma, 'usuarios');
     await this.prisma.usuario.update({ where: { id }, data: { activo: true, bloqueadoHasta: null, intentosFallidos: 0 } });
     await this.auditoria.registrar({ usuarioId: yo.id, accion: 'USUARIO_ACTIVADO', entidad: 'Usuario', entidadId: id });
   }

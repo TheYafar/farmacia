@@ -6,7 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
 import { TasaModule, TasaService } from '../tasa/tasa';
 import { Notificador, type ReservaLista } from '../notificaciones/notificador';
-import { Roles, Usuario, type UsuarioActual } from '../common/seguridad';
+import { Modulo, Roles, Usuario, type UsuarioActual } from '../common/seguridad';
 import { Validar } from '../common/validacion';
 import { bloquearLotes } from '../inventario/stock';
 
@@ -151,6 +151,7 @@ export class EsperaService {
 }
 
 @Controller('espera')
+@Modulo('encargos')
 export class EsperaController {
   constructor(private readonly espera: EsperaService, private readonly prisma: PrismaService) {}
 

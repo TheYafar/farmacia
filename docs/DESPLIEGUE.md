@@ -285,3 +285,19 @@ La pantalla de entrada tiene el botón **Prueba la demo**. Se puede entrar como 
 - **Se reinicia sola:** los datos se borran y se vuelven a cargar cada noche.
 - **Lo que no se puede hacer en la demo:** crear usuarios, subir fotos de récipes ni usar soporte.
 - **Para quitar el botón:** pon `DEMO=false` en el `.env` y corre `./instalar.sh`.
+
+## Planes
+
+Desde el panel central, el super admin decide qué trae cada plan (menú **Planes**). Se arranca con tres:
+
+| Plan | Precio | Módulos extra | Cajas | Usuarios |
+|---|---|---|---|---|
+| Mostrador | 30 $/mes | Encargos | 1 | 4 |
+| Profesional | 50 $/mes | Encargos, Compras, Reportes, WhatsApp | 3 | 10 |
+| Completo | 70 $/mes | Todo, incluido Al mayor | sin límite | sin límite |
+
+- **En todos los planes** van Vender, Caja, Ventas, Récipe, Por revisar, Controlados, Clientes, Inventario, Catálogo, Resumen, Cajas, Usuarios, Auditoría y Soporte. Sin ellos la farmacia no puede operar ni cumplir con los controlados.
+- **Asignar un plan:** Farmacias → la farmacia → Editar → Plan. La farmacia lo recibe en su siguiente reporte, como máximo en 5 minutos.
+- **Lo que no trae el plan** desaparece del menú y el servidor lo rechaza. El dueño ve su plan en Configuración.
+- **Límites:** no se pueden crear más cajas ni usuarios activos que los del plan. Los que ya existían siguen funcionando.
+- **Farmacia sin plan o sin enlazar:** tiene todo disponible. Si se desenlaza, conserva el último plan que recibió.

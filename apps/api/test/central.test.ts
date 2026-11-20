@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net';
 import request from 'supertest';
 import { CLAVE, como, entrar, escenario, levantar, prisma } from './ayuda';
 import { cifrarClave } from '../src/auth/auth';
+import { SoporteService } from '../src/soporte/soporte';
 
 // Panel central (super admin y soporte) y soporte en línea de la farmacia.
 // En la prueba el mismo servidor hace de panel central y de farmacia.
@@ -125,5 +126,40 @@ describe('Panel central y soporte', () => {
     assert.equal((await luis.post('/central/farmacias', { nombre: 'X' })).status, 403);
     assert.equal((await central.post(`/central/equipo/${m.body.id}/activo`, { activo: false })).status, 204);
     assert.equal((await luis.get('/central/farmacias')).status, 401);
+  });
+
+  it('planes: la farmacia recibe su plan, se cierran los módulos que no trae y se respetan los límites', async () => {
+    const planes = (await central.get('/central/planes')).body as { id: string; clave: string; modulos: string[] }[];
+    assert.deepEqual(planes.map((p) => p.clave), ['MOSTRADOR', 'PROFESIONAL', 'COMPLETO']);
+    const mostrador = planes[0]!;
+    const r = await central.post('/central/farmacias', { nombre: 'Farmacia Plan', planId: mostrador.id });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    // Sin enlazar: todo disponible.
+    assert.equal((await admin.get('/plan')).body.plan, null);
+    assert.equal((await admin.get('/mayorista/clientes')).status, 200);
+
+    await admin.post('/soporte/enlazar', { codigo: codigo(r.body.clave) });
+    const p = await admin.get('/plan');
+    assert.equal(p.body.plan.nombre, 'Mostrador');
+    assert.deepEqual(p.body.plan.modulos, ['encargos']);
+    const m = await admin.get('/mayorista/clientes');
+    assert.equal(m.status, 403);
+    assert.equal(m.body.codigo, 'PLAN');
+    assert.equal((await admin.get('/reportes/ganancia')).status, 403);
+    assert.equal((await admin.get('/proveedores/lista')).status, 200);
+    assert.equal((await admin.get('/reportes/resumen')).status, 200);
+    assert.equal((await admin.get('/espera')).status, 200);
+
+    // Límites: 1 caja y 4 usuarios.
+    assert.equal((await admin.post('/cajas', { nombre: 'Caja 1' })).status, 201);
+    assert.equal((await admin.post('/cajas', { nombre: 'Caja 2' })).status, 403);
+    assert.equal((await admin.post('/usuarios', { nombre: 'Cuarto', usuario: 'cuarto', clave: 'clave-larga-123', rol: 'CAJERO' })).status, 201);
+    assert.equal((await admin.post('/usuarios', { nombre: 'Quinto', usuario: 'quinto', clave: 'clave-larga-123', rol: 'CAJERO' })).status, 403);
+
+    // El super admin le agrega el mayor al plan: la farmacia lo recibe en el siguiente reporte.
+    await central.patch(`/central/planes/${mostrador.id}`, { nombre: 'Mostrador', precioUsd: 30, modulos: ['encargos', 'mayor'], maxCajas: 1, maxUsuarios: 4 });
+    await app.get(SoporteService).reportar();
+    assert.equal((await admin.get('/mayorista/clientes')).status, 200);
+    assert.equal((await central.get('/central/planes')).body[0].farmacias, 1);
   });
 });

@@ -16,20 +16,21 @@ import { avisar } from '@/store/avisos';
 import Guia, { useGuia } from '@/features/guia/Guia';
 import { AvisoGuiaModulo, BotonGuiaModulo } from '@/features/guia/GuiaModulo';
 import { useCajaEquipo } from '@/store/cajaEquipo';
+import { rutaIncluida, usePlan } from '@/store/plan';
 const usdF = (v: number) => `$${v.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /** Números rojos del menú: lo que espera al farmacéutico o al dueño. Se actualiza cada 20 segundos. */
-function useBadges(rol: string): Record<string, number> {
+function useBadges(rol: string, conEncargos: boolean): Record<string, number> {
   const { datos } = useCargar(async (): Promise<Record<string, number>> => {
     if (rol === 'CAJERO') return {};
     if (rol === 'SUPERADMIN' || rol === 'SOPORTE') return { '/casos': (await api<unknown[]>('/central/tickets?estado=ABIERTO')).length };
     const [permisos, recipes, avisados] = await Promise.all([
       api<unknown[]>('/autorizaciones'),
       api<unknown[]>('/recipes/pendientes'),
-      api<unknown[]>('/espera?estado=NOTIFICADO'),
+      conEncargos ? api<unknown[]>('/espera?estado=NOTIFICADO') : Promise.resolve([]),
     ]);
     return { '/revisar': permisos.length + recipes.length, '/encargos': avisados.length };
-  }, [rol], 20_000);
+  }, [rol, conEncargos], 20_000);
   return datos ?? {};
 }
 
@@ -79,11 +80,15 @@ export default function AppShell() {
   const tasa = useSesion((s) => s.tasa);
   const tasaModo = useConfig((s) => s.config?.tasaModo);
   const salir = useSesion((s) => s.salir);
-  const badges = useBadges(rol);
-  const nav = NAV.filter((n) => n.roles.includes(rol));
+  const plan = usePlan((s) => s.plan);
+  const cargarPlan = usePlan((s) => s.cargar);
+  useEffect(() => { if (!central) void cargarPlan(); }, [central, cargarPlan]);
+  const badges = useBadges(rol, rutaIncluida(plan, '/encargos'));
+  // El menú muestra solo lo que trae el plan de la farmacia.
+  const nav = NAV.filter((n) => n.roles.includes(rol) && rutaIncluida(plan, n.to));
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const current = nav.find((n) => pathname === n.to || pathname.startsWith(`${n.to}/`));
+  const current = NAV.filter((n) => n.roles.includes(rol)).find((n) => pathname === n.to || pathname.startsWith(`${n.to}/`));
   const [moreOpen, setMoreOpen] = useState(false);
   const cerrar = async () => { await salir(); navigate('/'); };
 

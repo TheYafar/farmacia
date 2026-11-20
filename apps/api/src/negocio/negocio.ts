@@ -7,7 +7,7 @@ import {
 } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
-import { Roles, Usuario, type UsuarioActual } from '../common/seguridad';
+import { Modulo, Roles, Usuario, type UsuarioActual } from '../common/seguridad';
 import { Validar } from '../common/validacion';
 import { descontarFefo } from '../inventario/stock';
 
@@ -26,6 +26,7 @@ function rango(desde?: string, hasta?: string) {
 /* ───────────────── Compras a droguerías ───────────────── */
 
 @Controller('proveedores')
+@Modulo('compras')
 @Roles('ADMIN')
 export class ProveedoresController {
   constructor(private readonly prisma: PrismaService, private readonly auditoria: AuditoriaService) {}
@@ -56,6 +57,8 @@ export class ProveedoresController {
   }
 
   /** Droguerías a las que ya se les compró, para elegirlas al cargar una compra. */
+  /** Nombres de droguerías: también lo usa «Cargar compra» de Inventario (que está en todos los planes). */
+  @Modulo(false)
   @Get('lista')
   async lista() {
     const f = await this.prisma.compra.groupBy({ by: ['proveedor'], _count: true, orderBy: { _count: { proveedor: 'desc' } } });
@@ -124,6 +127,7 @@ export class ProveedoresController {
 const SIGUIENTE: Record<string, 'PEDIDO' | 'DESPACHADO' | 'ENTREGADO' | undefined> = { COTIZACION: 'PEDIDO', PEDIDO: 'DESPACHADO', DESPACHADO: 'ENTREGADO' };
 
 @Controller('mayorista')
+@Modulo('mayor')
 @Roles('ADMIN')
 export class MayoristaController {
   constructor(private readonly prisma: PrismaService, private readonly auditoria: AuditoriaService) {}
@@ -268,6 +272,7 @@ export class MayoristaController {
 /* ───────────────── WhatsApp y recompra ───────────────── */
 
 @Controller('whatsapp')
+@Modulo('whatsapp')
 @Roles('REGENTE', 'ADMIN')
 export class WhatsappController {
   constructor(private readonly prisma: PrismaService) {}
@@ -376,6 +381,7 @@ export class LibroController {
 /* ───────────────── Reportes ───────────────── */
 
 @Controller('reportes')
+@Modulo('reportes')
 @Roles('ADMIN')
 export class ReportesNegocioController {
   constructor(private readonly prisma: PrismaService) {}

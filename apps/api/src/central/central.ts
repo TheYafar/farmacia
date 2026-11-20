@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import {
+  PLANES_INICIALES, planSchema, type PlanInput,
   farmaciaRegistradaSchema, mensajeSoporteSchema, miembroEquipoSchema, ticketNuevoSchema,
   type FarmaciaRegistradaInput, type MensajeSoporteInput, type MiembroEquipoInput, type TicketNuevoInput,
 } from '@farmacia/shared';
@@ -41,7 +42,7 @@ export class CentralService {
   /** La farmacia se identifica con su clave de enlace. */
   async porClave(clave: string | undefined) {
     if (!clave || clave.length < 20) throw new UnauthorizedException('Falta la clave de enlace');
-    const f = await this.prisma.farmaciaRegistrada.findUnique({ where: { claveHash: sha256(clave) } });
+    const f = await this.prisma.farmaciaRegistrada.findUnique({ where: { claveHash: sha256(clave) }, include: { plan: true } });
     if (!f) throw new UnauthorizedException('Código de enlace inválido');
     if (!f.activa) throw new UnauthorizedException('Esta farmacia está desactivada en el panel central');
     return f;
@@ -83,6 +84,20 @@ export class CentralService {
     ]);
   }
 
+  /** Los planes; la primera vez se crean los 3 iniciales. */
+  async planes() {
+    if (!(await this.prisma.plan.count())) {
+      await this.prisma.plan.createMany({ data: PLANES_INICIALES.map((p) => ({ ...p, modulos: [...p.modulos] })), skipDuplicates: true });
+    }
+    const lista = await this.prisma.plan.findMany({ orderBy: { orden: 'asc' }, include: { _count: { select: { farmacias: { where: { activa: true } } } } } });
+    return lista.map(({ _count, ...p }) => ({ ...p, precioUsd: p.precioUsd.toFixed(2), farmacias: _count.farmacias }));
+  }
+
+  /** Lo que se le manda a la farmacia: qué módulos y límites tiene. */
+  planParaFarmacia(plan: { nombre: string; modulos: string[]; maxCajas: number; maxUsuarios: number } | null) {
+    return plan ? { nombre: plan.nombre, modulos: plan.modulos, maxCajas: plan.maxCajas, maxUsuarios: plan.maxUsuarios } : null;
+  }
+
   telefono() {
     return this.config.SOPORTE_TELEFONO || null;
   }
@@ -110,7 +125,7 @@ export class CentralController {
   @Get('farmacias')
   async farmacias() {
     const [lista, abiertos] = await Promise.all([
-      this.prisma.farmaciaRegistrada.findMany({ orderBy: { nombre: 'asc' } }),
+      this.prisma.farmaciaRegistrada.findMany({ orderBy: { nombre: 'asc' }, include: { plan: { select: { id: true, nombre: true, precioUsd: true } } } }),
       this.prisma.ticketSoporte.groupBy({ by: ['farmaciaId'], where: { estado: 'ABIERTO' }, _count: true }),
     ]);
     const porFarmacia = new Map(abiertos.map((a) => [a.farmaciaId, a._count]));
@@ -119,7 +134,7 @@ export class CentralController {
 
   @Get('farmacias/:id')
   async farmacia(@Param('id', ParseUUIDPipe) id: string) {
-    const f = await this.prisma.farmaciaRegistrada.findUnique({ where: { id } });
+    const f = await this.prisma.farmaciaRegistrada.findUnique({ where: { id }, include: { plan: { select: { id: true, nombre: true, precioUsd: true } } } });
     if (!f) throw new NotFoundException('La farmacia no existe');
     return { ...this.central.resumen(f), tickets: await this.central.ticketsDe(id) };
   }
@@ -163,6 +178,21 @@ export class CentralController {
     if (!f.url) throw new BadRequestException('Falta la dirección web de la farmacia');
     await this.central.registrar(u, 'SOPORTE_ENTRA_A_FARMACIA', id);
     return { url: `${f.url.replace(/\/+$/, '')}/?soporte=${encodeURIComponent(this.central.descifrarToken(f.accesoToken!))}` };
+  }
+
+  /** Los planes que se venden, con cuántas farmacias tiene cada uno. */
+  @Get('planes')
+  planes() {
+    return this.central.planes();
+  }
+
+  /** Cambiar qué trae un plan. Las farmacias lo reciben en su próximo reporte (máximo 5 minutos). */
+  @Roles('SUPERADMIN')
+  @Patch('planes/:id')
+  async editarPlan(@Param('id', ParseUUIDPipe) id: string, @Body(new Validar(planSchema)) b: PlanInput, @Usuario() u: UsuarioActual) {
+    const p = await this.prisma.plan.update({ where: { id }, data: { ...b, modulos: [...new Set(b.modulos)] } });
+    await this.central.registrar(u, 'PLAN_EDITADO', id, b as unknown as Prisma.InputJsonValue);
+    return { ...p, precioUsd: p.precioUsd.toFixed(2) };
   }
 
   /** Casos de soporte de todas las farmacias. */
@@ -242,7 +272,7 @@ export class EnlaceController {
       where: { id: f.id },
       data: { ultimoReporte: new Date(), version: b.version, estado: (b.estado ?? undefined) as Prisma.InputJsonValue | undefined },
     });
-    return { nombre: f.nombre, telefono: this.central.telefono() };
+    return { nombre: f.nombre, telefono: this.central.telefono(), plan: this.central.planParaFarmacia(f.plan) };
   }
 
   @Get('tickets')

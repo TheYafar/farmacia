@@ -637,6 +637,8 @@ model Configuracion {
   centralTelefono   String?
   centralUltimo     DateTime?
   centralError      String?
+  /// Plan de esta farmacia, tal como lo mandó el panel central. Vacío = todo disponible.
+  plan              Json?
 }
 
 // ---------- Panel central (solo en el servidor de quien vende el sistema) ----------
@@ -659,8 +661,27 @@ model FarmaciaRegistrada {
   accesoToken   String?
   accesoVence   DateTime?
   creadaEn      DateTime  @default(now())
+  /// Plan contratado. Sin plan: todo disponible.
+  planId        String?   @db.Uuid
+  plan          Plan?     @relation(fields: [planId], references: [id])
 
   tickets       TicketSoporte[]
+}
+
+/// Planes que se venden (en el panel central). Definen qué módulos y cuántas cajas y usuarios tiene cada farmacia.
+model Plan {
+  id          String   @id @default(uuid()) @db.Uuid
+  clave       String   @unique
+  nombre      String
+  precioUsd   Decimal  @db.Decimal(10, 2)
+  /// Módulos opcionales incluidos (encargos, compras, reportes, whatsapp, mayor).
+  modulos     String[]
+  /// 0 = sin límite.
+  maxCajas    Int      @default(0)
+  maxUsuarios Int      @default(0)
+  orden       Int      @default(0)
+
+  farmacias   FarmaciaRegistrada[]
 }
 
 enum EstadoTicket {

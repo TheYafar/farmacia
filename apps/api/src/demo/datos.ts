@@ -207,5 +207,66 @@ export async function sembrarDemo(prisma: PrismaClient) {
       },
     });
   }
-  await prisma.clienteEmpresa.create({ data: { rif: 'J-00000001-0', nombre: 'Clínica Demo San Rafael', telefono: '0212-0000001', limiteUsd: 1500, diasCredito: 15, descuentoPct: 10 } });
+
+  // Controlados: una compra y ventas con récipe aprobado, para que el libro de psicotrópicos tenga movimientos.
+  const tasaHoy = tasas[tasas.length - 1]!;
+  const medico = await prisma.medico.findFirstOrThrow({ where: { especialidad: 'Psiquiatría' } });
+  const psico = await prisma.producto.findMany({ where: { principioActivo: { riesgo: 'PSICOTROPICO' } }, include: { lotes: { orderBy: { vence: 'asc' }, take: 1 } } });
+  for (const [i, p] of psico.entries()) {
+    const lote = p.lotes[0];
+    if (!lote) continue;
+    const costo = Math.round(Number(p.precioUsd) * 0.62 * 100) / 100;
+    await prisma.compra.create({
+      data: {
+        proveedor: 'Droguería Andina (demo)', numeroFactura: `F-02${i}`, totalUsd: D(costo * 10), pagadoUsd: D(costo * 10), creadaPorId: duena.id, creadaEn: new Date(ahora - (12 + i) * DIA),
+        lineas: { create: [{ productoId: p.id, numeroLote: lote.numero, vence: lote.vence, cantidad: 10, costoUsd: D(costo) }] },
+      },
+    });
+    for (const [j, [cedula]] of PACIENTES.slice(i * 2, i * 2 + 2).entries()) {
+      const cuando = new Date(Math.min(hoy.getTime() - (9 - i * 3 - j * 4) * DIA + 15 * 3_600_000, ahora - 3 * 3_600_000));
+      const recipe = await prisma.recipe.create({
+        data: { cedula, medicoId: medico.id, archivo: 'demo/recipe.jpg', tipoArchivo: 'image/jpeg', estado: 'VALIDADO', creadoPorId: cajera.id, validadoPorId: regente.id, validadoEn: cuando, creadoEn: cuando },
+      });
+      const precio = Number(p.precioUsd);
+      await prisma.venta.create({
+        data: {
+          cajeroId: cajera.id, cedula, totalUsd: D(precio), tasa: tasaHoy, totalBs: D(precio * tasaHoy), metodoPago: 'PAGO_MOVIL', tasaFuente: 'BCV', referenciaPago: String(entre(1000, 9999)), creadaEn: cuando,
+          lineas: { create: [{ productoId: p.id, loteId: lote.id, cantidad: 1, precioUsd: precio, recipeId: recipe.id }] },
+          pagos: { create: [{ metodo: 'PAGO_MOVIL', moneda: 'BS', monto: D(precio * tasaHoy), montoUsd: D(precio), referencia: String(entre(1000, 9999)) }] },
+        },
+      });
+    }
+  }
+
+  // Al mayor: un cliente con pedidos en cada etapa (cotización, en preparación, despachado con abono y uno vencido).
+  const clinica = await prisma.clienteEmpresa.create({ data: { rif: 'J-00000001-0', nombre: 'Clínica Demo San Rafael', telefono: '0212-0000001', limiteUsd: 1500, diasCredito: 15, descuentoPct: 10 } });
+  const ambulatorio = await prisma.clienteEmpresa.create({ data: { rif: 'J-00000002-1', nombre: 'Ambulatorio Demo El Valle', telefono: '0212-0000002', limiteUsd: 800, diasCredito: 7, descuentoPct: 5 } });
+  const pedidos = [
+    { cliente: clinica, estado: 'COTIZACION', dias: 0, items: [[0, 20], [3, 10]] },
+    { cliente: clinica, estado: 'PEDIDO', dias: 1, items: [[1, 15], [4, 10]] },
+    { cliente: clinica, estado: 'DESPACHADO', dias: 6, items: [[2, 20], [5, 12]], abono: 0.4 },
+    { cliente: ambulatorio, estado: 'DESPACHADO', dias: 12, items: [[6, 10], [7, 10]] },
+    { cliente: ambulatorio, estado: 'ENTREGADO', dias: 25, items: [[8, 12]], abono: 1 },
+  ] as const;
+  for (const pd of pedidos) {
+    const desc = 1 - Number(pd.cliente.descuentoPct) / 100;
+    const lineas = pd.items.map(([k, cantidad]) => {
+      const p = normales[(k * 2) % normales.length]!;
+      return { p, cantidad, precio: Math.round(p.precio * desc * 100) / 100 };
+    });
+    const total = lineas.reduce((a, l) => a + l.precio * l.cantidad, 0);
+    const creado = new Date(ahora - pd.dias * DIA - 3_600_000);
+    const despachado = pd.estado === 'DESPACHADO' || pd.estado === 'ENTREGADO';
+    const pagado = 'abono' in pd ? Math.round(total * pd.abono * 100) / 100 : 0;
+    await prisma.pedidoMayor.create({
+      data: {
+        clienteId: pd.cliente.id, estado: pd.estado, totalUsd: D(total), pagadoUsd: D(pagado), creadoPorId: duena.id, creadoEn: creado, empleado: 'Lcda. Andreína (compras)',
+        validaHasta: pd.estado === 'COTIZACION' ? new Date(ahora + 3 * DIA) : null,
+        despachadoEn: despachado ? creado : null,
+        venceEn: despachado ? new Date(creado.getTime() + pd.cliente.diasCredito * DIA) : null,
+        lineas: { create: lineas.map((l) => ({ productoId: l.p.id, cantidad: l.cantidad, precioUsd: D(l.precio), lotes: despachado ? [{ loteId: l.p.loteId, cantidad: l.cantidad }] : undefined })) },
+        abonos: pagado ? { create: [{ montoUsd: D(pagado), metodo: 'PAGO_MOVIL', referencia: String(entre(1000, 9999)), usuarioId: duena.id, creadoEn: new Date(creado.getTime() + 2 * DIA) }] } : undefined,
+      },
+    });
+  }
 }

@@ -32,6 +32,8 @@ const esquema = z.object({
   SOPORTE_TELEFONO: z.string().trim().max(20).default(''),
   /** Demo con datos de ejemplo en la pantalla de entrada (botón «Probar la demo»). */
   DEMO: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
+  /** Cuántas personas pueden probar la demo a la vez, cada una con su propia copia de los datos. */
+  DEMO_CUPOS: z.coerce.number().int().min(1).max(20).default(4),
   TRUST_PROXY: z.coerce.number().int().min(0).max(3).default(1),
 });
 

@@ -1,6 +1,6 @@
 import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Post, Query, UnprocessableEntityException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { crearVentaSchema, devolucionSchema, ES_EFECTIVO, monedaDe, type CrearVentaInput, type DevolucionInput } from '@farmacia/shared';
+import { crearVentaSchema, devolucionSchema, ES_EFECTIVO, monedaDe, type CrearVentaInput, type DevolucionInput, inicioDiaVe, sumarDias } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
 import { TasaService, TasaModule } from '../tasa/tasa';
@@ -246,8 +246,8 @@ export class VentasController {
   /** El cajero ve solo sus ventas; Regente y dueño ven todas. */
   @Get()
   listar(@Usuario() u: UsuarioActual, @Query('desde') desde?: string, @Query('hasta') hasta?: string, @Query('numero') numero?: string) {
-    const inicio = desde ? new Date(desde) : new Date(new Date().toISOString().slice(0, 10));
-    const fin = hasta ? new Date(new Date(hasta).getTime() + 86_400_000) : undefined;
+    const inicio = desde ? inicioDiaVe(desde) : inicioDiaVe();
+    const fin = hasta ? inicioDiaVe(sumarDias(hasta, 1)) : undefined;
     if (Number.isNaN(inicio.getTime()) || (fin && Number.isNaN(fin.getTime()))) throw new BadRequestException('Fecha inválida');
     const n = numero && /^\d{1,9}$/.test(numero) ? Number(numero) : undefined;
     return this.prisma.venta.findMany({

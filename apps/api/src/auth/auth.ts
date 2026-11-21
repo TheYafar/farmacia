@@ -12,7 +12,7 @@ import { AuditoriaService } from '../auditoria/auditoria';
 import { CONFIG, type Config } from '../config';
 import { Publico, Usuario, type UsuarioActual } from '../common/seguridad';
 import { Validar } from '../common/validacion';
-import { contextoDemo, enDemo } from '../prisma/prisma.service';
+import { contextoDemo, cupoDemo, enDemo } from '../prisma/prisma.service';
 import { DemoModule, DemoService } from '../demo/demo';
 import { USUARIOS_DEMO } from '../demo/datos';
 
@@ -43,12 +43,13 @@ export class AuthService {
   /** Entrar a la demo con un rol (sin clave). Todo pasa en el esquema demo. */
   async entrarDemo(rol: keyof typeof USUARIOS_DEMO, ip?: string, agente?: string) {
     if (!this.config.DEMO) throw new ForbiddenException('La demo está apagada');
-    await this.demo.preparar();
-    return contextoDemo.run({ demo: true }, async () => {
+    // Cada visitante tiene su propia copia de la demo.
+    const cupo = await this.demo.asignar();
+    return contextoDemo.run({ demo: true, cupo }, async () => {
       const u = await this.prisma.usuario.update({ where: { usuario: USUARIOS_DEMO[rol].usuario }, data: { activo: true, bloqueadoHasta: null } });
       const refresh = randomBytes(32).toString('base64url');
       const sesion = await this.prisma.sesion.create({ data: { usuarioId: u.id, refreshHash: sha256(refresh), expira: new Date(Date.now() + 86_400_000), ip, agente: agente?.slice(0, 200) } });
-      return { refresh, ...(await this.respuesta(u.id, sesion.id)) };
+      return { refresh, cupo, ...(await this.respuesta(u.id, sesion.id)) };
     });
   }
 
@@ -167,9 +168,10 @@ export class AuthService {
 
   private async respuesta(usuarioId: string, sesionId: string) {
     const { sistema, ...u } = await this.prisma.usuario.findUniqueOrThrow({ where: { id: usuarioId }, select: { id: true, nombre: true, usuario: true, rol: true, sistema: true } });
-    const demo = enDemo() || undefined;
+    // En el token va el cupo de la demo (para saber qué copia usar); a la pantalla solo le importa que es demo.
+    const demo = enDemo() ? cupoDemo() : undefined;
     const accessToken = await this.jwt.signAsync({ sub: u.id, sid: sesionId, rol: u.rol, demo }, { expiresIn: `${this.config.ACCESS_TOKEN_MINUTOS}m`, algorithm: 'HS256' });
-    return { accessToken, usuario: { ...u, soporte: sistema, demo } };
+    return { accessToken, usuario: { ...u, soporte: sistema, demo: demo ? true : undefined } };
   }
 }
 
@@ -205,8 +207,8 @@ export class AuthController {
   @Post('demo')
   @HttpCode(200)
   async entrarDemo(@Body(new Validar(demoSchema)) b: z.infer<typeof demoSchema>, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const { refresh, ...r } = await this.auth.entrarDemo(b.rol, req.ip, req.headers['user-agent']);
-    this.ponerCookie(res, `d.${refresh}`);
+    const { refresh, cupo, ...r } = await this.auth.entrarDemo(b.rol, req.ip, req.headers['user-agent']);
+    this.ponerCookie(res, `d${cupo}.${refresh}`);
     return r;
   }
 
@@ -218,8 +220,8 @@ export class AuthController {
     this.verificarOrigen(req);
     // Las sesiones de la demo llevan «d.» delante (así se sabe qué base usar).
     const cookie: string | undefined = req.cookies?.[COOKIE];
-    const { refresh, ...r } = await this.auth.renovar(enDemo() && cookie?.startsWith('d.') ? cookie.slice(2) : cookie);
-    this.ponerCookie(res, enDemo() ? `d.${refresh}` : refresh);
+    const { refresh, ...r } = await this.auth.renovar(enDemo() ? cookie?.replace(/^d\d*\./, '') : cookie);
+    this.ponerCookie(res, enDemo() ? `d${cupoDemo()}.${refresh}` : refresh);
     return r;
   }
 

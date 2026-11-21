@@ -618,3 +618,24 @@ export const planSchema = z.object({
   maxUsuarios: z.number().int().min(0).max(999),
 });
 export type PlanInput = z.infer<typeof planSchema>;
+
+/* ───────────────── Día en Venezuela ───────────────── */
+// Venezuela está en UTC−4 todo el año (sin horario de verano desde 2016).
+// El servidor y la base de datos trabajan en UTC: sin esto, desde las 8 p. m.
+// las ventas se contarían como del día siguiente.
+const DESFASE_VE = 4 * 3_600_000;
+
+/** Fecha de hoy (o de `d`) en Venezuela, como «AAAA-MM-DD». */
+export function fechaVe(d: Date = new Date()): string {
+  return new Date(d.getTime() - DESFASE_VE).toISOString().slice(0, 10);
+}
+
+/** Instante en que empieza un día de Venezuela (por defecto, hoy). */
+export function inicioDiaVe(fecha: string = fechaVe()): Date {
+  return new Date(`${fecha}T00:00:00-04:00`);
+}
+
+/** Suma días a una fecha «AAAA-MM-DD». */
+export function sumarDias(fecha: string, dias: number): string {
+  return new Date(Date.parse(`${fecha}T12:00:00Z`) + dias * 86_400_000).toISOString().slice(0, 10);
+}

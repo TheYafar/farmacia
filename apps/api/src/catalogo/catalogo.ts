@@ -1,12 +1,12 @@
 import { Body, ConflictException, Controller, Get, HttpCode, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { configuracionSchema, riesgoSugerido, preciosMasivoSchema, principioSchema, productoSchema, type ConfiguracionInput, type PreciosMasivoInput, type PrincipioInput, type ProductoInput } from '@farmacia/shared';
+import { configuracionSchema, riesgoSugerido, preciosMasivoSchema, principioSchema, productoSchema, type ConfiguracionInput, type PreciosMasivoInput, type PrincipioInput, type ProductoInput, fechaVe } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
 import { Roles, Usuario, type UsuarioActual } from '../common/seguridad';
 import { Validar } from '../common/validacion';
 
-const hoy = () => new Date(new Date().toISOString().slice(0, 10));
+const hoy = () => new Date(fechaVe());
 const sinTildes = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
 /** Distancia de edición (cuántas letras hay que cambiar, quitar o poner). */
@@ -213,7 +213,7 @@ export class CatalogoController {
   @Roles('REGENTE', 'ADMIN')
   async productos(@Query('q') q = '', @Query('bajo') bajo?: string) {
     const filas = await this.prisma.$queryRaw<{ id: string; stock: bigint; costo: Prisma.Decimal | null }[]>`
-      SELECT p.id, COALESCE(sum(l."stockLibre") FILTER (WHERE l.vence >= current_date), 0) AS stock,
+      SELECT p.id, COALESCE(sum(l."stockLibre") FILTER (WHERE l.vence >= (now() AT TIME ZONE 'America/Caracas')::date), 0) AS stock,
         COALESCE((SELECT cl."costoUsd" / GREATEST(cl."factorVenta", 1) FROM "CompraLinea" cl JOIN "Compra" c ON c.id = cl."compraId"
           WHERE cl."productoId" = p.id AND cl."costoUsd" > 0 ORDER BY c."creadaEn" DESC LIMIT 1), p."costoRefUsd") AS costo
       FROM "Producto" p LEFT JOIN "Lote" l ON l."productoId" = p.id GROUP BY p.id`;

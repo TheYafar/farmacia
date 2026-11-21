@@ -45,3 +45,6 @@ export function leerMonto(texto: string): number {
   }
   return /^-?\d+(\.\d+)?$/.test(s) ? Number(s) : NaN;
 }
+
+/** «1 venta», «3 ventas». */
+export const nVentas = (n: number) => `${n} venta${n === 1 ? '' : 's'}`;

@@ -1,3 +1,4 @@
+import { fechaVe, sumarDias } from '@farmacia/shared';
 import { clsx } from 'clsx';
 import { Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -508,7 +509,7 @@ export function WhatsappPage() {
 interface Mov { fecha: string; tipo: 'ENTRADA' | 'SALIDA'; producto: string; lote: string; cantidad: number; paciente: string; medico: string; documento: string; responsable: string }
 
 export function LibroPage() {
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = fechaVe();
   const [desde, setDesde] = useState(hoy.slice(0, 8) + '01');
   const [hasta, setHasta] = useState(hoy);
   const lib = useCargar(() => api<Mov[]>(`/libro/controlados?desde=${desde}&hasta=${hasta}`), [desde, hasta]);
@@ -540,8 +541,8 @@ interface Cajero { cajero: string; ventas: number; totalUsd: string; cierres: nu
 
 export function ReportesPage() {
   const [tab, setTab] = useState<'Ganancia' | 'Rotación' | 'Cajeros' | 'Horas y pagos' | 'Inventario'>('Ganancia');
-  const hoyS = new Date().toISOString().slice(0, 10);
-  const [desde, setDesde] = useState(new Date(Date.now() - 29 * 86_400_000).toISOString().slice(0, 10));
+  const hoyS = fechaVe();
+  const [desde, setDesde] = useState(sumarDias(fechaVe(), -29));
   const [hasta, setHasta] = useState(hoyS);
   const q = `?desde=${desde}&hasta=${hasta}`;
   const gan = useCargar(() => api<Ganancia>(`/reportes/ganancia${q}`), [q]);
@@ -550,8 +551,8 @@ export function ReportesPage() {
   const det = useCargar(() => api<{ porHora: { hora: number; ventas: number; usd: string }[]; porMetodo: { metodo: string; pagos: number; usd: string; monto: string }[]; devueltoUsd: string }>(`/reportes/ventas-detalle${q}`), [q]);
   const cmp = useCargar(() => api<Comparacion>(`/reportes/comparar${q}`), [q]);
   const inv = useCargar(() => api<ValorInventario>('/reportes/inventario'), []);
-  const mesActual = () => { const h = new Date(); setDesde(new Date(h.getFullYear(), h.getMonth(), 1).toISOString().slice(0, 10)); setHasta(hoyS); };
-  const atajo = (dias: number) => { setDesde(new Date(Date.now() - (dias - 1) * 86_400_000).toISOString().slice(0, 10)); setHasta(hoyS); };
+  const mesActual = () => { setDesde(hoyS.slice(0, 8) + '01'); setHasta(hoyS); };
+  const atajo = (dias: number) => { setDesde(sumarDias(hoyS, -(dias - 1))); setHasta(hoyS); };
   const porLab = Object.entries((gan.datos?.productos ?? []).reduce<Record<string, number>>((a, p) => ({ ...a, [p.laboratorio]: (a[p.laboratorio] ?? 0) + Number(p.ventaUsd) }), {})).sort((a, b) => b[1] - a[1]).slice(0, 8);
   const max = Math.max(1, ...porLab.map((l) => l[1]));
   const exportar = () => {

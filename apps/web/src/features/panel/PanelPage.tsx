@@ -1,7 +1,8 @@
+import { fechaVe, sumarDias } from '@farmacia/shared';
 import { useState } from 'react';
 import { Button, Card, Cargando, ErrorCarga, PageHeader } from '@/components/ui';
 import { api, guardarTasa, ApiError } from '@/lib/api';
-import { bs, leerMonto, num2, usd } from '@/lib/format';
+import { bs, leerMonto, num2, usd, nVentas } from '@/lib/format';
 import type { Resumen } from '@/lib/tipos';
 import { useCargar } from '@/lib/useCargar';
 import { Link } from 'react-router-dom';
@@ -100,11 +101,10 @@ const DIAS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
 function VentasChart({ semana }: { semana: Resumen['semana'] }) {
   // Siempre 7 días, aunque alguno no tenga ventas.
-  const hoy = new Date(new Date().toISOString().slice(0, 10));
   const dias = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(hoy.getTime() - (6 - i) * 86_400_000);
-    const v = semana.find((s) => s.dia.slice(0, 10) === d.toISOString().slice(0, 10));
-    return { etiqueta: i === 6 ? 'Hoy' : DIAS[d.getUTCDay()]!, usd: v ? Number(v.usd) : 0 };
+    const d = sumarDias(fechaVe(), -(6 - i));
+    const v = semana.find((s) => s.dia.slice(0, 10) === d);
+    return { etiqueta: i === 6 ? 'Hoy' : DIAS[new Date(`${d}T12:00:00Z`).getUTCDay()]!, usd: v ? Number(v.usd) : 0 };
   });
   const max = Math.max(...dias.map((d) => d.usd), 1);
   // Escala "redonda" de unas 4 divisiones: 1, 2, 5, 10, 20, 50…
@@ -161,7 +161,7 @@ export default function PanelPage() {
             </Link>
           )}
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-            <Kpi k="Vendido hoy" v={usd(datos.hoy.usd)} sub={`${datos.hoy.ventas} ventas${Number(datos.hoy.devueltoUsd) > 0 ? ` · devuelto ${usd(datos.hoy.devueltoUsd!)}` : ''}`} />
+            <Kpi k="Vendido hoy" v={usd(datos.hoy.usd)} sub={`${nVentas(datos.hoy.ventas)}${Number(datos.hoy.devueltoUsd) > 0 ? ` · devuelto ${usd(datos.hoy.devueltoUsd!)}` : ''}`} />
             <Kpi k="En la gaveta" v={String(datos.enGaveta)} sub="pagados, esperando que los busquen" />
             <Kpi k="Lotes que vencen en 30 días" v={String(datos.lotesVencen30Dias)} sub="revisar devolución" tone={datos.lotesVencen30Dias ? 'bad' : undefined} />
             <Kpi k="Clientes esperando" v={String(datos.clientesEsperando)} sub="pidieron algo que no había" />

@@ -5,8 +5,7 @@ import { statfs } from 'node:fs/promises';
 import { z } from 'zod';
 import {
   accesoSoporteSchema, enlaceCentralSchema, esUrlWeb, mensajeSoporteSchema, ticketNuevoSchema,
-  type MensajeSoporteInput, type TicketNuevoInput,
-} from '@farmacia/shared';
+  type MensajeSoporteInput, type TicketNuevoInput, inicioDiaVe } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
 import { CONFIG, type Config } from '../config';
@@ -86,7 +85,7 @@ export class SoporteService {
   /** Foto del estado de la farmacia: lo que soporte necesita ver cuando algo falla. */
   async diagnostico() {
     const ahora = Date.now();
-    const hoy = new Date(Math.floor((ahora - 4 * 3_600_000) / 86_400_000) * 86_400_000 + 4 * 3_600_000);
+    const hoy = inicioDiaVe();
     const [ventas, ultimaVenta, turnos, tasa, conf, usuarios, productos, sinStock, porVencer, recipes, permisos, migracion, tamano, disco] = await Promise.all([
       this.prisma.venta.aggregate({ where: { creadaEn: { gte: hoy }, estado: 'COMPLETADA' }, _count: true, _sum: { totalUsd: true } }),
       this.prisma.venta.findFirst({ orderBy: { creadaEn: 'desc' }, select: { creadaEn: true } }),

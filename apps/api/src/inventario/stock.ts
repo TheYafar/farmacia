@@ -13,7 +13,7 @@ export interface LoteBloqueado { id: string; stockLibre: number; vence: Date }
 export function bloquearLotes(tx: Tx, productoId: string) {
   return tx.$queryRaw<LoteBloqueado[]>`
     SELECT id, "stockLibre", vence FROM "Lote"
-    WHERE "productoId" = ${productoId}::uuid AND vence >= current_date AND "stockLibre" > 0
+    WHERE "productoId" = ${productoId}::uuid AND vence >= (now() AT TIME ZONE 'America/Caracas')::date AND "stockLibre" > 0
     ORDER BY vence ASC, "creadoEn" ASC
     FOR UPDATE`;
 }

@@ -1,3 +1,4 @@
+import { fechaVe } from '@farmacia/shared';
 /** Descarga una tabla como Excel de verdad (.xlsx), con la primera fila en negrita y columnas con ancho. */
 export async function descargarExcel(nombre: string, cabecera: string[], filas: (string | number | null)[][]) {
   const { default: writeXlsxFile } = await import('write-excel-file/browser');
@@ -10,7 +11,7 @@ export async function descargarExcel(nombre: string, cabecera: string[], filas: 
   const blob = await writeXlsxFile(datos as never, { columns: anchos, stickyRowsCount: 1 } as never).toBlob();
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `${nombre}-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  a.download = `${nombre}-${fechaVe()}.xlsx`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }

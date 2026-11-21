@@ -2,7 +2,7 @@ import { BadRequestException, Body, Controller, ForbiddenException, Get, Headers
 import { Throttle } from '@nestjs/throttler';
 import { createHash, randomBytes, randomInt } from 'node:crypto';
 import type { Request } from 'express';
-import { cajaSchema, editarCajaSchema, vincularCajaSchema, type CajaInput } from '@farmacia/shared';
+import { cajaSchema, editarCajaSchema, vincularCajaSchema, type CajaInput, inicioDiaVe } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
 import { Publico, Roles, Usuario, type UsuarioActual } from '../common/seguridad';
@@ -38,7 +38,7 @@ export class CajasService {
   }
 }
 
-const hoyVe = () => new Date(Math.floor((Date.now() - 4 * 3_600_000) / 86_400_000) * 86_400_000 + 4 * 3_600_000);
+const hoyVe = () => inicioDiaVe();
 
 @Controller('cajas')
 export class CajasController {

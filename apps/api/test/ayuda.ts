@@ -31,7 +31,7 @@ export async function levantar() {
   }
   const config = cargarConfig({
     NODE_ENV: 'test', DATABASE_URL: DB, JWT_SECRET: 'x'.repeat(48), COOKIE_SECURE: 'false',
-    CORS_ORIGINS: ORIGEN, UPLOAD_DIR: mkdtempSync(join(tmpdir(), 'recipes-')),
+    CORS_ORIGINS: ORIGEN, DEMO_CUPOS: '2', UPLOAD_DIR: mkdtempSync(join(tmpdir(), 'recipes-')),
   });
   const app = await crearApp(config);
   await app.init();

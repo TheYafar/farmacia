@@ -6,19 +6,23 @@ import { AsyncLocalStorage } from 'node:async_hooks';
  * Demo: las peticiones de la demo usan otro esquema de la base de datos («demo»), con datos de ejemplo.
  * La farmacia real nunca se toca. Qué esquema usar se decide por petición (ver common/demo.ts).
  */
-export const contextoDemo = new AsyncLocalStorage<{ demo: boolean }>();
+export const contextoDemo = new AsyncLocalStorage<{ demo: boolean; cupo?: number }>();
 export const enDemo = () => contextoDemo.getStore()?.demo === true;
+/** Cada visitante de la demo tiene su propia copia («cupo»): no ve ni cambia lo de los demás. */
+export const cupoDemo = () => contextoDemo.getStore()?.cupo ?? 1;
+export const esquemaDemo = (cupo: number) => (cupo <= 1 ? 'demo' : `demo${cupo}`);
 
-/** La misma base, pero en el esquema «demo». */
-export function urlDemo(url: string) {
+/** La misma base, pero en el esquema de un cupo de la demo. */
+export function urlDemo(url: string, cupo = 1) {
   const u = new URL(url);
-  u.searchParams.set('schema', 'demo');
+  u.searchParams.set('schema', esquemaDemo(cupo));
+  u.searchParams.set('connection_limit', '3');
   return u.toString();
 }
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
-  private clienteDemo?: PrismaClient;
+  private readonly clientesDemo = new Map<number, PrismaClient>();
 
   constructor() {
     super();
@@ -33,10 +37,11 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     });
   }
 
-  /** Cliente del esquema demo (se crea la primera vez que se usa). */
-  demo() {
-    this.clienteDemo ??= new PrismaClient({ datasources: { db: { url: urlDemo(process.env.DATABASE_URL!) } } });
-    return this.clienteDemo;
+  /** Cliente del esquema de un cupo de la demo (se crea la primera vez que se usa). */
+  demo(cupo = cupoDemo()) {
+    let c = this.clientesDemo.get(cupo);
+    if (!c) this.clientesDemo.set(cupo, (c = new PrismaClient({ datasources: { db: { url: urlDemo(process.env.DATABASE_URL!, cupo) } } })));
+    return c;
   }
 
   async onModuleInit() {
@@ -44,7 +49,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   }
   async onModuleDestroy() {
     await this.$disconnect();
-    await this.clienteDemo?.$disconnect();
+    await Promise.all([...this.clientesDemo.values()].map((c) => c.$disconnect()));
   }
 }
 

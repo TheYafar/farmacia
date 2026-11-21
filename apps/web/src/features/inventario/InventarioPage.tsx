@@ -12,7 +12,7 @@ import { useRol } from '@/store/sesion';
 import ImportarExcel from './ImportarExcel';
 
 const sem = (d: number) =>
-  d <= 30 ? { tone: 'bad' as const, txt: 'Vence este mes' } : d <= 90 ? { tone: 'warn' as const, txt: 'Vence pronto' } : { tone: 'ok' as const, txt: 'Bien' };
+  d < 0 ? { tone: 'bad' as const, txt: 'Vencido: retirar' } : d === 0 ? { tone: 'bad' as const, txt: 'Vence hoy' } : d <= 30 ? { tone: 'bad' as const, txt: `Vence en ${d} días` } : d <= 90 ? { tone: 'warn' as const, txt: 'Vence pronto' } : { tone: 'ok' as const, txt: 'Bien' };
 const fmtFecha = (iso: string) => new Date(iso).toLocaleDateString('es-VE', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
 interface LineaCompra { producto: Opcion | null; numeroLote: string; vence: string; cantidad: string; factorVenta: string; costoUsd: string }
@@ -168,7 +168,7 @@ export default function InventarioPage() {
         ) : <Locked>Solo el dueño carga compras</Locked>}
       />
       <div className="flex gap-1 self-start rounded-xl bg-surface2 p-1">
-        {([['', 'Todo'], ['90', 'Vence en 3 meses'], ['30', 'Vence este mes']] as const).map(([v, t]) => (
+        {([['', 'Todo'], ['90', 'Vence en 3 meses'], ['30', 'Vence en 30 días']] as const).map(([v, t]) => (
           <button key={v} onClick={() => setDias(v)} className={clsx('rounded-lg px-3 py-1.5 text-sm font-semibold', dias === v ? 'bg-surface shadow-sm' : 'text-muted')}>{t}</button>
         ))}
       </div>

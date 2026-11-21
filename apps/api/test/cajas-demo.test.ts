@@ -92,9 +92,21 @@ describe('Cajas por equipo, correo y demo', () => {
 
     // La sesión de la demo se renueva con su cookie.
     const cookie = (r.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
-    assert.match(cookie, /^farm_rt=d\./);
+    assert.match(cookie, /^farm_rt=d\d+\./);
     const ren = await api().post('/api/v1/auth/renovar').set('Origin', ORIGEN).set('Cookie', cookie);
     assert.equal(ren.status, 200, JSON.stringify(ren.body));
     assert.equal(ren.body.usuario.demo, true);
+  });
+
+  it('cada visitante de la demo tiene su propia copia', async () => {
+    const a = await api().post('/api/v1/auth/demo').send({ rol: 'ADMIN' });
+    const b = await api().post('/api/v1/auth/demo').send({ rol: 'ADMIN' });
+    assert.equal(a.status, 200); assert.equal(b.status, 200);
+    const ca = (a.headers['set-cookie'] as unknown as string[])[0]!, cb = (b.headers['set-cookie'] as unknown as string[])[0]!;
+    assert.notEqual(ca.match(/d(\d+)\./)![1], cb.match(/d(\d+)\./)![1], 'cupos distintos');
+    const da = como(app, a.body.accessToken), db = como(app, b.body.accessToken);
+    assert.equal((await da.post('/tasa', { valor: 123.45 })).status, 201);
+    assert.equal(Number((await da.get('/tasa')).body.valor), 123.45);
+    assert.notEqual(Number((await db.get('/tasa')).body.valor), 123.45, 'el otro visitante no ve el cambio');
   });
 });

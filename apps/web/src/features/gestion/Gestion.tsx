@@ -5,10 +5,10 @@ import { Alert, Button, Campo, Card, Cargando, Chip, ErrorCarga, PageHeader, Sea
 import { api, ApiError } from '@/lib/api';
 import { useCargar } from '@/lib/useCargar';
 import type { Paciente, Principio, Venta } from '@/lib/tipos';
-import { CATEGORIAS } from '@farmacia/shared';
+import { CATEGORIAS, fechaVe } from '@farmacia/shared';
 import { avisar } from '@/store/avisos';
 import { useRol, useSesion } from '@/store/sesion';
-import { bs } from '@/lib/format';
+import { bs, nVentas } from '@/lib/format';
 import { RevisarControlados } from '@/features/panel/PanelPage';
 import Ticket from '@/features/caja/Ticket';
 import { useConfig } from '@/store/config';
@@ -17,7 +17,7 @@ const usd = (v: string | number) => `$${Number(v).toLocaleString('es-VE', { mini
 const fechaHora = (d: string) => new Date(d).toLocaleString('es-VE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const msg = (e: unknown) => (e instanceof ApiError ? [e.message, ...e.errores.map((x) => x.mensaje)].join('. ') : 'No se pudo completar');
 const mono = (s: ReactNode) => <span className="font-mono tabular">{s}</span>;
-const hoy = () => new Date().toISOString().slice(0, 10);
+const hoy = () => fechaVe();
 
 function Tabs<T extends string>({ tabs, value, onChange }: { tabs: T[]; value: T; onChange: (t: T) => void }) {
   return (
@@ -221,7 +221,7 @@ export function VentasPage() {
         <Campo etiqueta="Desde"><input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} className={claseInput} /></Campo>
         <Campo etiqueta="Hasta"><input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className={claseInput} /></Campo>
         <Campo etiqueta="N.º de venta"><input inputMode="numeric" value={numero} onChange={(e) => setNumero(e.target.value.replace(/\D/g, ''))} placeholder="Buscar" className={claseInput + ' w-32'} /></Campo>
-        <div className="ml-auto text-right text-sm text-muted">{activas.length} ventas · <b className="font-mono text-fg">{usd(activas.reduce((a, v) => a + Number(v.totalUsd), 0))}</b></div>
+        <div className="ml-auto text-right text-sm text-muted">{nVentas(activas.length)} · <b className="font-mono text-fg">{usd(activas.reduce((a, v) => a + Number(v.totalUsd), 0))}</b></div>
       </div>
       <Estado c={lista}>{(d) => (
         <Tabla vacio="No hay ventas en estas fechas." head={['N.º', 'Hora', 'Productos', 'Cajero', 'Total', 'Estado']} rows={d.map((v) => [

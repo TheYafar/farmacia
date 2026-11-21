@@ -1,7 +1,7 @@
 import { Body, ConflictException, Controller, Get, HttpCode, Injectable, Logger, Module, NotFoundException, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
-import { confirmarPagoSchema, crearEsperaSchema, ESTADOS_ESPERA, HORAS_RESERVA, type ConfirmarPagoInput, type CrearEsperaInput, type EstadoEspera } from '@farmacia/shared';
+import { confirmarPagoSchema, crearEsperaSchema, ESTADOS_ESPERA, HORAS_RESERVA, type ConfirmarPagoInput, type CrearEsperaInput, type EstadoEspera, fechaVe } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
 import { TasaModule, TasaService } from '../tasa/tasa';
@@ -75,7 +75,7 @@ export class EsperaService {
   }
 
   async crear(b: CrearEsperaInput, u: UsuarioActual) {
-    const libre = await this.prisma.lote.aggregate({ where: { productoId: b.productoId, vence: { gte: new Date(new Date().toISOString().slice(0, 10)) } }, _sum: { stockLibre: true } });
+    const libre = await this.prisma.lote.aggregate({ where: { productoId: b.productoId, vence: { gte: new Date(fechaVe()) } }, _sum: { stockLibre: true } });
     if ((libre._sum.stockLibre ?? 0) > 0) throw new ConflictException('Este producto sí hay: véndelo directamente');
     const ya = await this.prisma.solicitudEspera.findFirst({ where: { cedula: b.cedula, productoId: b.productoId, estado: { in: ['EN_ESPERA', 'NOTIFICADO'] } } });
     if (ya) throw new ConflictException('Este cliente ya está esperando este producto');

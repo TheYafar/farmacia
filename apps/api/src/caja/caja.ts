@@ -1,6 +1,6 @@
 import { Body, ConflictException, Controller, Get, Headers, HttpCode, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { abrirCajaSchema, cerrarCajaSchema, METODOS_PAGO, type AbrirCajaInput, type CerrarCajaInput, type MetodoPago, type MontosPorMetodo } from '@farmacia/shared';
+import { abrirCajaSchema, cerrarCajaSchema, METODOS_PAGO, type AbrirCajaInput, type CerrarCajaInput, type MetodoPago, type MontosPorMetodo, fechaVe, inicioDiaVe, sumarDias } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
 import { Roles, Usuario, type UsuarioActual } from '../common/seguridad';
@@ -111,7 +111,7 @@ export class CajaController {
   @Get('turnos')
   @Roles('REGENTE', 'ADMIN')
   turnos(@Query('desde') desde?: string) {
-    const inicio = desde ? new Date(desde) : new Date(Date.now() - 14 * 86_400_000);
+    const inicio = desde ? inicioDiaVe(desde) : inicioDiaVe(sumarDias(fechaVe(), -14));
     return this.prisma.turno.findMany({
       where: { abiertoEn: { gte: Number.isNaN(inicio.getTime()) ? undefined : inicio } },
       orderBy: { abiertoEn: 'desc' },

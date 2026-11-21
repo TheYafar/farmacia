@@ -157,4 +157,17 @@ describe('Lógica del negocio (revisión)', () => {
     assert.equal((await admin.post('/tasa', { valor: 240 })).status, 201);
     assert.equal((await admin.post('/tasa', { valor: 23640, confirmar: true })).status, 201);
   });
+
+  it('el día es el de Venezuela: una venta de las 9:30 p. m. no pasa al día siguiente', async () => {
+    const { fechaVe, inicioDiaVe } = await import('@farmacia/shared');
+    assert.equal(fechaVe(new Date('2026-03-10T01:30:00Z')), '2026-03-09');
+    assert.equal(inicioDiaVe('2026-03-09').toISOString(), '2026-03-09T04:00:00.000Z');
+    const v = await prisma.venta.create({ data: { cajeroId: d.cajero.id, totalUsd: 5, tasa: 100, totalBs: 500, metodoPago: 'EFECTIVO_USD', creadaEn: new Date('2026-03-10T01:30:00Z') } });
+    const del9 = (await admin.get('/ventas?desde=2026-03-09&hasta=2026-03-09')).body as { id: string }[];
+    const del10 = (await admin.get('/ventas?desde=2026-03-10&hasta=2026-03-10')).body as { id: string }[];
+    assert.ok(del9.some((x) => x.id === v.id), 'sale el 9');
+    assert.ok(!del10.some((x) => x.id === v.id), 'no sale el 10');
+    const horas = (await admin.get('/reportes/ventas-detalle?desde=2026-03-09&hasta=2026-03-09')).body.porHora as { hora: number }[];
+    assert.deepEqual(horas.map((h) => h.hora), [21]);
+  });
 });

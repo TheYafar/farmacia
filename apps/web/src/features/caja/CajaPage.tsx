@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { METODOS_PAGO, type MetodoPago } from '@farmacia/shared';
 import { Alert, Button, Campo, Card, Cargando, Chip, ErrorCarga, PageHeader, Sheet, claseInput } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
-import { fecha, hora, num2, usd } from '@/lib/format';
+import { fecha, hora, num2, usd, nVentas } from '@/lib/format';
 import type { Montos, Turno } from '@/lib/tipos';
 import { useCargar } from '@/lib/useCargar';
 import { avisar } from '@/store/avisos';
@@ -119,7 +119,7 @@ function CerrarCaja({ onCerrada }: { onCerrada: (t: Turno) => void }) {
           <h2 className="text-lg font-bold">Mi caja</h2>
           <p className="text-sm text-muted">Abierta desde las {hora(turno.abiertoEn)} · fondo {usd(turno.fondoUsd)} y Bs {num2(turno.fondoBs)}</p>
         </div>
-        <Chip tone="ok">Abierta · {ventas} ventas · {usd(totalUsd)}</Chip>
+        <Chip tone="ok">Abierta · {nVentas(ventas)} · {usd(totalUsd)}</Chip>
       </div>
       <p className="text-sm">Para cerrar, <b>cuenta lo que tienes</b> y escríbelo. El sistema te dirá si cuadra.</p>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -166,7 +166,7 @@ function CerrarDeOtro({ t, listo }: { t: Turno; listo: () => void }) {
   );
 }
 
-function Cierres() {
+function Cierres({ miTurno }: { miTurno?: string }) {
   const rol = useRol();
   const { datos, error, cargando, recargar } = useCargar(() => api<Turno[]>('/caja/turnos'), [], 30_000);
   const [abierto, setAbierto] = useState<string | null>(null);
@@ -174,16 +174,22 @@ function Cierres() {
   return (
     <Card>
       <HojaCierre t={hoja} onCerrar={() => setHoja(null)} />
-      <h2 className="text-lg font-bold">Cierres de caja (últimos 14 días)</h2>
       {error && <ErrorCarga mensaje={error} reintentar={recargar} />}
-      {cargando ? <Cargando /> : !datos?.length ? <p className="text-sm text-muted">Todavía no hay turnos.</p> : (
+      {cargando ? <Cargando /> : [
+        // Las cajas abiertas de otros (la tuya está arriba) van aparte: todavía no son cierres.
+        { titulo: 'Abiertas ahora', lista: (datos ?? []).filter((t) => t.estado === 'ABIERTO' && t.id !== miTurno), vacio: '' },
+        { titulo: 'Cierres de caja (últimos 14 días)', lista: (datos ?? []).filter((t) => t.estado === 'CERRADO'), vacio: 'Todavía no hay cierres.' },
+      ].filter((g) => g.lista.length || g.vacio).map((g) => (
+        <div key={g.titulo} className="flex flex-col">
+        <h2 className="text-lg font-bold">{g.titulo}</h2>
+        {!g.lista.length ? <p className="text-sm text-muted">{g.vacio}</p> : (
         <ul className="flex flex-col divide-y divide-line">
-          {datos.map((t) => (
+          {g.lista.map((t) => (
             <li key={t.id} className="flex flex-col gap-2 py-3">
               <button className="flex flex-wrap items-center justify-between gap-2 text-left" onClick={() => setAbierto(abierto === t.id ? null : t.id)}>
                 <span className="min-w-0">
                   <span className="font-semibold">{t.cajero?.nombre}</span>
-                  <span className="block text-xs text-muted">{fecha(t.abiertoEn)} {hora(t.abiertoEn)}{t.cerradoEn ? ` → ${hora(t.cerradoEn)}` : ''} · {t._count?.ventas ?? 0} ventas</span>
+                  <span className="block text-xs text-muted">{fecha(t.abiertoEn)} {hora(t.abiertoEn)}{t.cerradoEn ? ` → ${hora(t.cerradoEn)}` : ''} · {nVentas(t._count?.ventas ?? 0)}</span>
                 </span>
                 <span className="flex flex-wrap gap-1.5">
                   {t.estado === 'ABIERTO' ? <Chip tone="info">Abierta</Chip> : cuadra(t.diferencia) ? <Chip tone="ok">Cuadra</Chip> : <Chip tone="bad">Con diferencia</Chip>}
@@ -207,7 +213,9 @@ function Cierres() {
             </li>
           ))}
         </ul>
-      )}
+        )}
+        </div>
+      ))}
     </Card>
   );
 }
@@ -234,7 +242,7 @@ export default function CajaPage() {
         </Card>
       )}
       {!cargada ? <Cargando /> : turno ? <CerrarCaja onCerrada={setUltimo} /> : <AbrirCaja />}
-      {rol !== 'CAJERO' && <Cierres />}
+      {rol !== 'CAJERO' && <Cierres miTurno={turno?.id} />}
       {hoja && <HojaCierre t={ultimo} onCerrar={() => setHoja(false)} />}
     </div>
   );

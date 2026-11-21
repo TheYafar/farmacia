@@ -1,3 +1,4 @@
+import { inicioDiaVe } from '@farmacia/shared';
 import { Controller, Get, Module } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,7 +12,7 @@ export class ReportesController {
 
   @Get('resumen')
   async resumen() {
-    const inicioHoy = new Date(new Date().toISOString().slice(0, 10));
+    const inicioHoy = inicioDiaVe();
     const hace7 = new Date(inicioHoy.getTime() - 6 * 86_400_000);
     const hace30 = new Date(inicioHoy.getTime() - 30 * 86_400_000);
     const en30 = new Date(inicioHoy.getTime() + 30 * 86_400_000);
@@ -19,7 +20,7 @@ export class ReportesController {
     const [hoy, semana, vencen, esperando, custodia, demanda, devHoy, devSemana, bajo] = await Promise.all([
       this.prisma.venta.aggregate({ where: { estado: 'COMPLETADA', creadaEn: { gte: inicioHoy } }, _sum: { totalUsd: true, totalBs: true }, _count: true }),
       this.prisma.$queryRaw<{ dia: Date; usd: Prisma.Decimal }[]>`
-        SELECT date_trunc('day', "creadaEn") AS dia, sum("totalUsd") AS usd FROM "Venta"
+        SELECT date_trunc('day', ("creadaEn" AT TIME ZONE 'UTC') AT TIME ZONE 'America/Caracas') AS dia, sum("totalUsd") AS usd FROM "Venta"
         WHERE estado = 'COMPLETADA' AND "creadaEn" >= ${hace7} GROUP BY 1 ORDER BY 1`,
       this.prisma.lote.count({ where: { vence: { lte: en30 }, OR: [{ stockLibre: { gt: 0 } }, { stockReservado: { gt: 0 } }] } }),
       this.prisma.solicitudEspera.count({ where: { estado: 'EN_ESPERA' } }),
@@ -30,10 +31,10 @@ export class ReportesController {
       }),
       this.prisma.devolucion.aggregate({ where: { creadoEn: { gte: inicioHoy } }, _sum: { montoUsd: true } }),
       this.prisma.$queryRaw<{ dia: Date; usd: Prisma.Decimal }[]>`
-        SELECT date_trunc('day', "creadoEn") AS dia, sum("montoUsd") AS usd FROM "Devolucion" WHERE "creadoEn" >= ${hace7} GROUP BY 1`,
+        SELECT date_trunc('day', ("creadoEn" AT TIME ZONE 'UTC') AT TIME ZONE 'America/Caracas') AS dia, sum("montoUsd") AS usd FROM "Devolucion" WHERE "creadoEn" >= ${hace7} GROUP BY 1`,
       this.prisma.$queryRaw<{ n: bigint }[]>`
         SELECT count(*) AS n FROM "Producto" p WHERE p.activo AND p."stockMinimo" > 0 AND p."stockMinimo" >=
-          COALESCE((SELECT sum(l."stockLibre") FROM "Lote" l WHERE l."productoId" = p.id AND l.vence >= current_date), 0)`,
+          COALESCE((SELECT sum(l."stockLibre") FROM "Lote" l WHERE l."productoId" = p.id AND l.vence >= (now() AT TIME ZONE 'America/Caracas')::date), 0)`,
     ]);
     const menos = (d: Date) => devSemana.find((x) => x.dia.getTime() === d.getTime())?.usd ?? 0;
     const productos = await this.prisma.producto.findMany({ where: { id: { in: demanda.map((d) => d.productoId) } }, select: { id: true, nombreComercial: true, concentracion: true } });

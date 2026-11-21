@@ -3,8 +3,7 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import {
   clienteEmpresaSchema, abonoSchema, ordenCompraSchema, pedidoMayorSchema,
-  type ClienteEmpresaInput, type AbonoInput, type OrdenCompraInput, type PedidoMayorInput,
-} from '@farmacia/shared';
+  type ClienteEmpresaInput, type AbonoInput, type OrdenCompraInput, type PedidoMayorInput, fechaVe, inicioDiaVe, sumarDias } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
 import { Modulo, Roles, Usuario, type UsuarioActual } from '../common/seguridad';
@@ -13,12 +12,14 @@ import { descontarFefo } from '../inventario/stock';
 
 const D = (v: Prisma.Decimal | number | string | null | undefined) => new Prisma.Decimal(v ?? 0);
 const dia = 86_400_000;
-const hoy0 = () => new Date(new Date().toISOString().slice(0, 10));
+const hoy0 = () => inicioDiaVe();
+/** «AAAA-MM-DD» es un día de Venezuela; cualquier otro texto se lee tal cual. */
+const diaVe = (s: string) => (/^\d{4}-\d{2}-\d{2}$/.test(s) ? inicioDiaVe(s) : new Date(s));
 
 /** Rango de fechas de los reportes: por defecto, los últimos 30 días. */
 function rango(desde?: string, hasta?: string) {
-  const h = hasta ? new Date(hasta) : new Date();
-  const d = desde ? new Date(desde) : new Date(hoy0().getTime() - 29 * dia);
+  const h = hasta ? diaVe(hasta) : new Date();
+  const d = desde ? diaVe(desde) : inicioDiaVe(sumarDias(fechaVe(), -29));
   if (Number.isNaN(h.getTime()) || Number.isNaN(d.getTime())) throw new BadRequestException('Fecha inválida');
   return { d, h: new Date(h.getTime() + (hasta ? dia : 0)) };
 }
@@ -39,7 +40,7 @@ export class ProveedoresController {
       SELECT p.id, p."nombreComercial" || ' ' || p.concentracion AS nombre,
         COALESCE((SELECT sum(vl.cantidad) FROM "VentaLinea" vl JOIN "Venta" v ON v.id = vl."ventaId"
                   WHERE vl."productoId" = p.id AND v.estado = 'COMPLETADA' AND v."creadaEn" >= ${hace30}), 0) AS vendidos,
-        COALESCE((SELECT sum(l."stockLibre" + l."stockReservado") FROM "Lote" l WHERE l."productoId" = p.id AND l.vence >= current_date), 0) AS stock,
+        COALESCE((SELECT sum(l."stockLibre" + l."stockReservado") FROM "Lote" l WHERE l."productoId" = p.id AND l.vence >= (now() AT TIME ZONE 'America/Caracas')::date), 0) AS stock,
         (SELECT count(*) FROM "SolicitudEspera" s WHERE s."productoId" = p.id AND s.estado = 'EN_ESPERA') AS espera,
         (SELECT cl."costoUsd" / GREATEST(cl."factorVenta", 1) FROM "CompraLinea" cl JOIN "Compra" c ON c.id = cl."compraId"
           WHERE cl."productoId" = p.id ORDER BY c."creadaEn" DESC LIMIT 1) AS costo,
@@ -219,7 +220,7 @@ export class MayoristaController {
         // Stock apartado: lo libre menos lo que ya está comprometido en otros pedidos sin despachar.
         for (const l of p.lineas) {
           const [r] = await tx.$queryRaw<{ libre: bigint; comprometido: bigint }[]>`
-            SELECT COALESCE((SELECT sum("stockLibre") FROM "Lote" WHERE "productoId" = ${l.productoId}::uuid AND vence >= current_date), 0) AS libre,
+            SELECT COALESCE((SELECT sum("stockLibre") FROM "Lote" WHERE "productoId" = ${l.productoId}::uuid AND vence >= (now() AT TIME ZONE 'America/Caracas')::date), 0) AS libre,
                    COALESCE((SELECT sum(pl.cantidad) FROM "PedidoMayorLinea" pl JOIN "PedidoMayor" pm ON pm.id = pl."pedidoId"
                              WHERE pl."productoId" = ${l.productoId}::uuid AND pm.estado = 'PEDIDO' AND pm.id <> ${p.id}::uuid), 0) AS comprometido`;
           const disponible = Number(r!.libre) - Number(r!.comprometido);
@@ -493,7 +494,7 @@ export class ReportesNegocioController {
     const { d, h } = rango(desde, hasta);
     const [horas, metodos, devs] = await Promise.all([
       this.prisma.$queryRaw<{ hora: number; ventas: bigint; usd: Prisma.Decimal }[]>`
-        SELECT extract(hour FROM "creadaEn" AT TIME ZONE 'America/Caracas')::int AS hora, count(*) AS ventas, sum("totalUsd") AS usd
+        SELECT extract(hour FROM ("creadaEn" AT TIME ZONE 'UTC') AT TIME ZONE 'America/Caracas')::int AS hora, count(*) AS ventas, sum("totalUsd") AS usd
         FROM "Venta" WHERE estado = 'COMPLETADA' AND "creadaEn" >= ${d} AND "creadaEn" < ${h} GROUP BY 1 ORDER BY 1`,
       this.prisma.pago.groupBy({ by: ['metodo'], where: { venta: { estado: 'COMPLETADA', creadaEn: { gte: d, lt: h } } }, _sum: { montoUsd: true, monto: true }, _count: true }),
       this.prisma.devolucion.groupBy({ by: ['metodo'], where: { creadoEn: { gte: d, lt: h } }, _sum: { montoUsd: true } }),
@@ -512,8 +513,8 @@ export class ReportesNegocioController {
       SELECT p.id, p."nombreComercial" || ' ' || p.concentracion AS producto, p.laboratorio, p.categoria, p."precioUsd" AS precio,
         COALESCE((SELECT cl."costoUsd" / GREATEST(cl."factorVenta", 1) FROM "CompraLinea" cl JOIN "Compra" c ON c.id = cl."compraId"
           WHERE cl."productoId" = p.id AND cl."costoUsd" > 0 ORDER BY c."creadaEn" DESC LIMIT 1), p."costoRefUsd") AS costo,
-        COALESCE(sum(l."stockLibre" + l."stockReservado") FILTER (WHERE l.vence >= current_date), 0) AS unidades,
-        COALESCE(sum(l."stockLibre" + l."stockReservado") FILTER (WHERE l.vence < current_date), 0) AS vencidas
+        COALESCE(sum(l."stockLibre" + l."stockReservado") FILTER (WHERE l.vence >= (now() AT TIME ZONE 'America/Caracas')::date), 0) AS unidades,
+        COALESCE(sum(l."stockLibre" + l."stockReservado") FILTER (WHERE l.vence < (now() AT TIME ZONE 'America/Caracas')::date), 0) AS vencidas
       FROM "Producto" p JOIN "Lote" l ON l."productoId" = p.id
       GROUP BY p.id HAVING sum(l."stockLibre" + l."stockReservado") > 0`;
     let costo = D(0), venta = D(0), vencido = D(0), unidades = 0, sinCosto = 0;

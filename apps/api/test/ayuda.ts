@@ -90,5 +90,6 @@ export function como(app: INestApplication, token: string) {
     post: (u: string, b?: object) => s().post(`/api/v1${u}`).set(auth).send(b),
     patch: (u: string, b?: object) => s().patch(`/api/v1${u}`).set(auth).send(b),
     subir: (u: string) => s().post(`/api/v1${u}`).set(auth),
+    borrar: (u: string) => s().delete(`/api/v1${u}`).set(auth),
   };
 }

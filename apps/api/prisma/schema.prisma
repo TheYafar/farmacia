@@ -130,6 +130,8 @@ model Producto {
   /// Costo de referencia (del Excel inicial). Se usa mientras no haya facturas de compra con costo.
   costoRefUsd       Decimal?        @db.Decimal(12, 4)
   activo            Boolean         @default(true)
+  /// Foto del producto para reconocerlo al vender: nombre del archivo en UPLOAD_DIR/productos (lo genera el servidor).
+  foto              String?
   actualizadoEn     DateTime        @updatedAt
 
   lotes      Lote[]

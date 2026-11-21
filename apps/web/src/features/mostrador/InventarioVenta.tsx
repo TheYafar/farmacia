@@ -9,6 +9,7 @@ import type { Grupo, Opcion, Principio } from '@/lib/tipos';
 import { avisar } from '@/store/avisos';
 import { useSesion } from '@/store/sesion';
 import { useVenta } from '@/store/venta';
+import { FotoProducto } from '@/lib/fotos';
 
 type Item = Opcion & { principio: Principio };
 const POR_PAGINA = 60;
@@ -75,9 +76,12 @@ export default function InventarioVenta({ version }: { version: number }) {
           const cuantos = enCuenta.find((l) => l.producto.id === o.id)?.cantidad;
           return (
             <li key={o.id} className={clsx('flex flex-col gap-2 rounded-2xl border bg-surface p-4', noHay ? 'border-dashed border-line opacity-70' : cuantos ? 'border-accent ring-2 ring-accent/15' : 'border-line')}>
-              <div className="min-w-0">
-                <div className="font-semibold leading-snug">{o.nombreComercial} <span className="font-normal text-muted">{o.concentracion}</span></div>
-                <div className="truncate text-xs text-muted">{o.laboratorio} · {o.forma} · caja de {o.unidadesPorCaja}</div>
+              <div className="flex min-w-0 items-start gap-3">
+                <FotoProducto foto={o.foto} nombre={o.nombreComercial} tamano="md" />
+                <div className="min-w-0">
+                  <div className="font-semibold leading-snug">{o.nombreComercial} <span className="font-normal text-muted">{o.concentracion}</span></div>
+                  <div className="truncate text-xs text-muted">{o.laboratorio} · {o.forma} · caja de {o.unidadesPorCaja}</div>
+                </div>
               </div>
               <div className="flex flex-wrap gap-1">
                 {/* Mismas etiquetas que en la búsqueda: un controlado pide récipe y permiso; otros, solo récipe. */}

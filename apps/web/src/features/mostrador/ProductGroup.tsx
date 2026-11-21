@@ -9,6 +9,7 @@ import { avisar } from '@/store/avisos';
 import { useSesion } from '@/store/sesion';
 import { useVenta } from '@/store/venta';
 import { incluye, usePlan } from '@/store/plan';
+import { FotoProducto } from '@/lib/fotos';
 
 export default function ProductGroup({ g }: { g: Grupo }) {
   const agregar = useVenta((s) => s.agregar);
@@ -39,7 +40,8 @@ export default function ProductGroup({ g }: { g: Grupo }) {
           const noHay = o.stockLibre === 0;
           return (
             <li key={o.id} className={clsx('flex flex-wrap items-center gap-x-4 gap-y-3 rounded-xl border p-4', noHay ? 'border-dashed border-line bg-surface2' : 'border-line', o === masBarato && g.opciones.length > 1 && 'border-ok/50 bg-ok-soft/30')}>
-              <div className="min-w-0 flex-1 basis-48">
+              <FotoProducto foto={o.foto} nombre={o.nombreComercial} tamano="md" />
+              <div className="min-w-0 flex-1 basis-40">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-base font-semibold">{o.nombreComercial}</span>
                   {o === masBarato && g.opciones.length > 1 && <Chip tone="ok">Más barato</Chip>}

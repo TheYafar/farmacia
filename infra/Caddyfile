@@ -28,6 +28,12 @@
 		-Server
 	}
 
+	# Fotos de los productos: no son datos privados y su nombre cambia con cada foto nueva,
+	# así que el navegador las guarda y no las vuelve a pedir.
+	handle /api/v1/fotos/* {
+		reverse_proxy api:3000
+	}
+
 	handle /api/* {
 		# Los datos (clientes, ventas) no se guardan en la memoria del navegador ni de intermediarios.
 		header Cache-Control "no-store"

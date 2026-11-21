@@ -1,6 +1,6 @@
 import { clsx } from 'clsx';
 import {
-  ArrowLeft, CalendarX2, ChevronDown, ClipboardList, FileSpreadsheet, FlaskConical, Hammer, PackagePlus,
+  ArrowLeft, CalendarX2, Camera, ChevronDown, ClipboardList, FileSpreadsheet, FlaskConical, Hammer, PackagePlus,
   PackageSearch, Pencil, Plus, Printer, SearchX, Tags, Truck, type LucideIcon,
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -16,13 +16,14 @@ import { useRol, useSesion } from '@/store/sesion';
 import { RevisarControlados } from '@/features/panel/PanelPage';
 import ImportarExcel from './ImportarExcel';
 import { CargarCompra } from './InventarioPage';
+import { FotoProducto, subirFoto } from '@/lib/fotos';
 
 /* ───────── Datos ───────── */
 
 export interface ProductoInv {
   id: string; nombreComercial: string; laboratorio: string; concentracion: string; forma: string; unidadesPorCaja: number;
   precioUsd: string; nivel: string; requiereRecipe: boolean; stockMinimo: number; activo: boolean; ivaPct: number; categoria: string;
-  codigoBarras: string | null; costoUsd: string | null; margenPct: number | null; stock: number; bajo: boolean;
+  codigoBarras: string | null; costoUsd: string | null; margenPct: number | null; stock: number; bajo: boolean; foto?: string | null;
   vencidas?: number; proximoVence?: string | null;
   principioActivo: { id: string; nombre: string; riesgo: string };
 }
@@ -133,7 +134,7 @@ export default function InventarioPage() {
         <Enlace icono={FlaskConical} onClick={() => setVista('principios')}>Componentes (principios activos)</Enlace>
       </div>
 
-      <FichaProducto p={fichaActual} tasa={tasa} admin={admin} onCerrar={() => setFicha(null)}
+      <FichaProducto p={fichaActual} tasa={tasa} admin={admin} onCerrar={() => setFicha(null)} onCambio={recargar}
         corregir={() => setCorregir(fichaActual)} editar={() => setEditar(fichaActual)} />
       <FormProducto p={editar} principios={princ.datos ?? []} onCerrar={() => setEditar(null)} onListo={recargar} />
       <CorregirCantidad producto={corregir} productos={todos} onCerrar={() => setCorregir(null)} onListo={recargar} />
@@ -175,11 +176,14 @@ function FilaProducto({ p, tasa, abrir }: { p: ProductoInv; tasa: number | null;
   return (
     <li>
       <button type="button" onClick={abrir} className="grid w-full grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1 px-4 py-3 text-left hover:bg-surface2 md:grid-cols-[1fr_90px_110px_170px]">
-        <span className="min-w-0">
-          <span className="block font-semibold leading-snug">{p.nombreComercial} <span className="font-normal text-muted">{p.concentracion}</span></span>
-          <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
-            {p.laboratorio} · {p.forma}
-            {p.principioActivo.riesgo !== 'NORMAL' && <Chip tone={RIESGO[p.principioActivo.riesgo]![1]}>{RIESGO[p.principioActivo.riesgo]![0]}</Chip>}
+        <span className="flex min-w-0 items-center gap-3">
+          <FotoProducto foto={p.foto} nombre={p.nombreComercial} />
+          <span className="min-w-0">
+            <span className="block font-semibold leading-snug">{p.nombreComercial} <span className="font-normal text-muted">{p.concentracion}</span></span>
+            <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
+              {p.laboratorio} · {p.forma}
+              {p.principioActivo.riesgo !== 'NORMAL' && <Chip tone={RIESGO[p.principioActivo.riesgo]![1]}>{RIESGO[p.principioActivo.riesgo]![0]}</Chip>}
+            </span>
           </span>
         </span>
         <span className="text-right md:text-center"><Hay p={p} />{p.stock > 0 && p.activo && <span className="block text-[11px] text-muted">{p.bajo ? 'quedan pocos' : 'hay'}</span>}</span>
@@ -194,13 +198,14 @@ function FilaProducto({ p, tasa, abrir }: { p: ProductoInv; tasa: number | null;
 
 /* ───────── Ficha de un producto ───────── */
 
-function FichaProducto({ p, tasa, admin, onCerrar, corregir, editar }: { p: ProductoInv | null; tasa: number | null; admin: boolean; onCerrar: () => void; corregir: () => void; editar: () => void }) {
+function FichaProducto({ p, tasa, admin, onCerrar, onCambio, corregir, editar }: { p: ProductoInv | null; tasa: number | null; admin: boolean; onCerrar: () => void; onCambio: () => void; corregir: () => void; editar: () => void }) {
   const lotes = useCargar(() => (p ? api<LoteInv[]>(`/inventario/lotes?productoId=${p.id}`) : Promise.resolve([])), [p?.id, p?.stock, p?.vencidas]);
   if (!p) return null;
   const riesgo = RIESGO[p.principioActivo.riesgo]!;
   return (
     <Sheet grande open onClose={onCerrar} title={`${p.nombreComercial} ${p.concentracion}`}>
       <div className="flex flex-col gap-4">
+        <FotoDeProducto p={p} onCambio={onCambio} />
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <Card className="gap-0.5 p-3"><span className="text-xs text-muted">Hay</span><Hay p={p} grande />{p.stockMinimo > 0 && <span className="text-xs text-muted">Te aviso si quedan {p.stockMinimo} o menos</span>}</Card>
           <Card className="gap-0.5 p-3"><span className="text-xs text-muted">Lo vendes a</span><span className="font-mono text-2xl font-bold">{usd(p.precioUsd)}</span><span className="text-xs text-muted">{bs(p.precioUsd, tasa)}</span></Card>
@@ -249,6 +254,33 @@ function FichaProducto({ p, tasa, admin, onCerrar, corregir, editar }: { p: Prod
   );
 }
 
+/** La foto en la ficha: tomarla con la cámara (en el teléfono) o elegirla, cambiarla o quitarla. */
+function FotoDeProducto({ p, onCambio }: { p: ProductoInv; onCambio: () => void }) {
+  const [subiendo, setSubiendo] = useState(false);
+  const elegir = async (archivo?: File) => {
+    if (!archivo) return;
+    setSubiendo(true);
+    try { await subirFoto(p.id, archivo); avisar('Foto guardada', 'ok'); onCambio(); }
+    catch (e) { avisar(e instanceof ApiError ? e.message : 'No se pudo subir la foto', 'bad'); }
+    finally { setSubiendo(false); }
+  };
+  return (
+    <div className="flex items-center gap-4">
+      <FotoProducto foto={p.foto} nombre={p.nombreComercial} tamano="lg" />
+      <div className="flex flex-col gap-2">
+        <p className="text-sm text-muted">{p.foto ? 'Así se ve al vender. Ayuda a no confundir productos parecidos.' : 'Ponle una foto de la caja: así se reconoce rápido al vender.'}</p>
+        <label className={clsx('inline-flex h-10 cursor-pointer items-center gap-1.5 self-start rounded-lg px-3.5 text-sm font-semibold', p.foto ? 'border border-line bg-surface hover:bg-surface2' : 'bg-accent text-white')}>
+          <Camera className="h-4 w-4" aria-hidden />{subiendo ? 'Subiendo…' : p.foto ? 'Cambiar foto' : 'Tomar o elegir foto'}
+          <input type="file" accept="image/*" className="sr-only" disabled={subiendo} onChange={(e) => { void elegir(e.target.files?.[0]); e.target.value = ''; }} />
+        </label>
+        {p.foto && <button type="button" className="self-start text-xs font-semibold text-muted underline" onClick={async () => {
+          try { await api(`/catalogo/productos/${p.id}/foto`, { method: 'DELETE' }); avisar('Foto quitada', 'ok'); onCambio(); } catch (e) { avisar(e instanceof ApiError ? e.message : 'No se pudo', 'bad'); }
+        }}>Quitar foto</button>}
+      </div>
+    </div>
+  );
+}
+
 /* ───────── Producto nuevo / cambiar datos ───────── */
 
 const FORMAS = ['Tabletas', 'Cápsulas', 'Jarabe', 'Suspensión', 'Gotas', 'Crema', 'Inyectable', 'Sobres', 'Inhalador', 'Otro'];
@@ -270,7 +302,10 @@ function FormProducto({ p, principios, onCerrar, onListo }: { p: ProductoInv | '
   const [mas, setMas] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
-  useEffect(() => { setF(ini()); setError(null); setMas(false); }, [p]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [foto, setFoto] = useState<File | null>(null);
+  const [vista, setVista] = useState<string | null>(null);
+  useEffect(() => { setF(ini()); setError(null); setMas(false); setFoto(null); }, [p]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!foto) { setVista(null); return; } const u = URL.createObjectURL(foto); setVista(u); return () => URL.revokeObjectURL(u); }, [foto]);
   const c = (x: Partial<typeof f>) => setF((v) => ({ ...v, ...x }));
   const existente = principios.find((x) => normalizar(x.nombre) === normalizar(f.principio));
   const sugeridos = f.principio.trim() && !existente ? principios.filter((x) => normalizar(x.nombre).includes(normalizar(f.principio))).slice(0, 5) : [];
@@ -302,6 +337,8 @@ function FormProducto({ p, principios, onCerrar, onListo }: { p: ProductoInv | '
         ivaPct: Number(f.iva), categoria: f.medicamento ? 'Medicamentos' : f.categoria === 'Medicamentos' ? 'Misceláneos' : f.categoria,
       };
       const r = await api<{ id: string }>(base ? `/catalogo/productos/${base.id}` : '/catalogo/productos', { method: base ? 'PATCH' : 'POST', body });
+      // La foto va después de crear el producto; si falla, el producto igual queda creado.
+      if (!base && foto) await subirFoto(r.id, foto).catch(() => avisar('El producto se creó, pero la foto no se pudo subir. Pruébala desde su ficha', 'bad'));
       if (!base && cant > 0) await api('/inventario/existencia', { body: { productoId: r.id, cantidad: cant, vence: f.vence, motivo: 'CONTEO', nota: 'Existencia inicial' } });
       avisar(base ? 'Cambios guardados' : cant > 0 ? `Listo: ${f.nombre} ya se puede vender (hay ${cant})` : `Producto creado. Para venderlo, carga la mercancía con «Llegó mercancía»`, 'ok');
       onListo(); onCerrar();
@@ -312,6 +349,13 @@ function FormProducto({ p, principios, onCerrar, onListo }: { p: ProductoInv | '
   return (
     <Sheet open={!!p} onClose={onCerrar} title={base ? `Cambiar datos de ${base.nombreComercial}` : 'Producto nuevo'}>
       <form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); void guardar(); }}>
+        {!base && (
+          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-line p-2 hover:bg-surface2">
+            {vista ? <img src={vista} alt="" className="h-14 w-14 rounded-lg border border-line bg-white object-contain" /> : <span className="grid h-14 w-14 place-items-center rounded-lg bg-surface2 text-muted"><Camera className="h-6 w-6" aria-hidden /></span>}
+            <span className="text-sm"><span className="block font-semibold">{vista ? 'Cambiar la foto' : 'Foto de la caja (opcional)'}</span><span className="text-xs text-muted">Para reconocerlo rápido al vender</span></span>
+            <input type="file" accept="image/*" className="sr-only" onChange={(e) => { setFoto(e.target.files?.[0] ?? null); e.target.value = ''; }} />
+          </label>
+        )}
         <Campo etiqueta="¿Cómo se llama?"><input autoFocus value={f.nombre} onChange={(e) => c({ nombre: e.target.value })} placeholder="Ej.: Atamel" className={claseInput} /></Campo>
         <div className="flex flex-col gap-1 text-sm font-semibold">¿Es un medicamento?
           <div className="grid grid-cols-2 gap-2">

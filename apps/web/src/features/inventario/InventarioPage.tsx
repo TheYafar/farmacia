@@ -5,6 +5,7 @@ import { Alert, Button, Campo, Sheet, claseInput } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
 import { normalizar, usd } from '@/lib/format';
 import { catalogoLocal } from '@/lib/sinConexion';
+import { FotoProducto } from '@/lib/fotos';
 import type { Grupo, Opcion } from '@/lib/tipos';
 import { avisar } from '@/store/avisos';
 
@@ -69,7 +70,7 @@ export function ElegirProducto({ valor, onElegir }: { valor: Opcion | null; onEl
             : res.map((o) => (
               <li key={o.id}>
                 <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => elegir(o)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-surface2">
-                  <span className="min-w-0"><span className="block truncate font-semibold">{o.nombreComercial} {o.concentracion}</span><span className="block truncate text-xs text-muted">{o.laboratorio} · {o.forma}</span></span>
+                  <span className="flex min-w-0 items-center gap-2"><FotoProducto foto={o.foto} nombre={o.nombreComercial} tamano="xs" /><span className="min-w-0"><span className="block truncate font-semibold">{o.nombreComercial} {o.concentracion}</span><span className="block truncate text-xs text-muted">{o.laboratorio} · {o.forma}</span></span></span>
                   <span className="shrink-0 text-right"><span className="block font-mono">{usd(o.precioUsd)}</span><span className={clsx('block text-xs', o.stockLibre ? 'text-muted' : 'font-semibold text-bad')}>{o.stockLibre ? `Hay ${o.stockLibre}` : 'Agotado'}</span></span>
                 </button>
               </li>

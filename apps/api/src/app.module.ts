@@ -12,6 +12,7 @@ import { NotificacionesModule } from './notificaciones/notificador';
 import { AuthModule } from './auth/auth';
 import { UsuariosModule } from './usuarios/usuarios';
 import { CatalogoModule } from './catalogo/catalogo';
+import { FotosModule } from './catalogo/fotos';
 import { TasaModule } from './tasa/tasa';
 import { PacientesModule } from './pacientes/pacientes';
 import { AutorizacionesModule } from './autorizaciones/autorizaciones';
@@ -43,7 +44,7 @@ export function crearModulo(config: Config) {
       ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: config.NODE_ENV === 'test' ? 10_000 : 120 }]),
       ScheduleModule.forRoot(),
       AuditoriaModule, NotificacionesModule,
-      AuthModule, UsuariosModule, CatalogoModule, TasaModule, PacientesModule, AutorizacionesModule,
+      AuthModule, UsuariosModule, CatalogoModule, FotosModule, TasaModule, PacientesModule, AutorizacionesModule,
       CajaModule, NegocioModule, VentasModule, EsperaModule, InventarioModule, RecipesModule, ReportesModule, SaludModule,
       CentralModule, SoporteModule, CajasModule, DemoModule,
     ],

@@ -1,5 +1,6 @@
 import { after, before, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import request from 'supertest';
 import type { INestApplication } from '@nestjs/common';
 import { como, entrar, escenario, levantar, prisma } from './ayuda';
 
@@ -194,5 +195,29 @@ describe('Lógica del negocio (revisión)', () => {
     assert.ok(hist.filter((a) => a.cantidad > 0).length >= 2);
     // El cajero no puede.
     assert.equal((await cajero.post('/inventario/existencia', { productoId: d.generico.id, cantidad: 1, vence: '2030-01-31' })).status, 403);
+  });
+
+  it('foto del producto: se sube, se ve sin sesión, sale en la lista y se quita', async () => {
+    const jpg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200, 1)]);
+    const r = await admin.subir(`/catalogo/productos/${d.generico.id}/foto`).attach('foto', jpg, 'caja.jpg');
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    const foto = r.body.foto as string;
+    assert.match(foto, /^[0-9a-f-]{36}\.jpg$/);
+    // Se ve sin sesión (va en <img>) y se puede guardar en caché.
+    const ver = await request(app.getHttpServer()).get(`/api/v1/fotos/${foto}`);
+    assert.equal(ver.status, 200);
+    assert.equal(ver.headers['content-type'], 'image/jpeg');
+    assert.match(ver.headers['cache-control'], /immutable/);
+    // Nombres raros no pasan.
+    assert.equal((await request(app.getHttpServer()).get('/api/v1/fotos/..%2F..%2Fetc%2Fpasswd')).status, 404);
+    // Sale en la lista del inventario y en Vender.
+    const lista = (await admin.get('/catalogo/productos')).body as { id: string; foto: string | null }[];
+    assert.equal(lista.find((x) => x.id === d.generico.id)!.foto, foto);
+    // No se aceptan archivos que no son imagen, ni que el cajero la cambie.
+    assert.equal((await admin.subir(`/catalogo/productos/${d.generico.id}/foto`).attach('foto', Buffer.from('<svg/>'), 'x.svg')).status, 400);
+    assert.equal((await cajero.subir(`/catalogo/productos/${d.generico.id}/foto`).attach('foto', jpg, 'caja.jpg')).status, 403);
+    // Quitar: la foto deja de existir.
+    assert.equal((await admin.borrar(`/catalogo/productos/${d.generico.id}/foto`)).status, 204);
+    assert.equal((await request(app.getHttpServer()).get(`/api/v1/fotos/${foto}`)).status, 404);
   });
 });

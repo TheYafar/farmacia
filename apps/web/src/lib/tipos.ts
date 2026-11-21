@@ -18,6 +18,8 @@ export interface Opcion {
   stockReservado: number;
   categoria?: string;
   stockMinimo?: number;
+  /** Nombre del archivo de la foto del producto (se ve en /api/v1/fotos/…). */
+  foto?: string | null;
 }
 
 export interface Principio { id: string; nombre: string; familia: string | null; riesgo: CategoriaRiesgo; uso: string | null }

@@ -111,6 +111,7 @@ export const GUIAS: Record<string, GuiaModulo> = {
     ],
     consejos: [
       'Al crear un producto puedes escribir cuántas tienes ya: así se puede vender de una vez.',
+      'Ponle foto a cada producto (en su ficha, «Tomar o elegir foto»): así en Vender se reconoce a primera vista y no se confunden cajas parecidas.',
       'Al vender, siempre sale primero lo que vence antes. Lo vencido no se vende: retíralo con «Corregir cantidad» → «Se venció».',
       'Para empezar con muchos productos, abajo está «Cargar todo desde Excel».',
     ],

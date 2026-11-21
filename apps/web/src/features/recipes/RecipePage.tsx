@@ -25,7 +25,7 @@ export default function RecipePage() {
     <div className="flex max-w-3xl flex-col gap-4">
       <PageHeader title="Récipe" subtitle="Toma la foto del récipe. El farmacéutico lo revisa antes de vender." />
       <Alert tone="info" icon={<Info className="mt-0.5 h-4 w-4 shrink-0" />}>
-        La lectura automática con IA llega en la siguiente fase. Por ahora el farmacéutico ve la foto y la aprueba.
+        Cómo funciona: 1) toma la foto, 2) escribe la cédula del cliente, 3) el farmacéutico la ve en «Por revisar» y la aprueba. Después ya se puede vender lo del récipe.
       </Alert>
       <Card>
         <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" className="hidden" onChange={(e) => elegir(e.target.files?.[0])} />

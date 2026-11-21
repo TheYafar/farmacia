@@ -104,7 +104,7 @@ export const GUIAS: Record<string, GuiaModulo> = {
     para: 'Ver cuánto hay de cada producto por lote, qué se vence y cargar mercancía.',
     pasos: [
       'Para empezar, carga todo con Excel: toca «Descargar plantilla», llénala y súbela. Antes de guardar te muestra qué se crea y qué cambia.',
-      'El color dice si el lote vence este mes (rojo), pronto (amarillo) o está bien (verde).',
+      'El color dice si el lote ya venció o vence en 30 días (rojo), en 3 meses (amarillo) o está bien (verde). Lo vencido no se vende: retíralo con un ajuste.',
       'Cuando llegue mercancía, toca «Cargar compra», elige la droguería, el producto, el lote, el vencimiento y la cantidad.',
       'Para corregir la existencia (algo roto, vencido o un conteo), usa los ajustes en Catálogo → Ajustes.',
     ],
@@ -130,7 +130,7 @@ export const GUIAS: Record<string, GuiaModulo> = {
       'En «Cuentas por pagar» registra los abonos a cada droguería y mira qué facturas vencen pronto.',
       'Si llegó algo dañado o equivocado, regístralo como devolución a la droguería.',
     ],
-    conecta: 'Al recibir se crean los lotes en Inventario, se aparta para Encargos y el costo da la ganancia en Reportes.',
+    conecta: 'Al recibir se crean los lotes en «Lotes y vencimientos», se aparta para Encargos y el costo da la ganancia en Reportes.',
   },
   '/revisar': {
     para: 'La bandeja del farmacéutico: récipes y permisos que pide la caja.',
@@ -234,7 +234,7 @@ export const GUIAS: Record<string, GuiaModulo> = {
       'Para darle un plan a una farmacia: Farmacias → la farmacia → Editar → Plan.',
       'La farmacia recibe el cambio en menos de 5 minutos: los módulos que no trae desaparecen de su menú.',
     ],
-    consejos: ['Vender, Caja, Récipes, Controlados e Inventario van en todos los planes: sin ellos la farmacia no puede operar.', 'En Farmacias ves cuánto cobras al mes sumando los planes.'],
+    consejos: ['Vender, Caja, Récipes, Controlados y Lotes van en todos los planes: sin ellos la farmacia no puede operar.', 'En Farmacias ves cuánto cobras al mes sumando los planes.'],
   },
   '/equipo': {
     para: 'Quiénes entran al panel central.',

@@ -158,8 +158,8 @@ export default function InventarioPage() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
-        title="Inventario"
-        subtitle="Se vende primero lo que vence antes"
+        title="Lotes y vencimientos"
+        subtitle="Cuánto hay de cada lote y cuándo vence. Se vende primero lo que vence antes"
         actions={rol === 'ADMIN' ? (
           <>
             <Button icon={<FileSpreadsheet className="h-4 w-4" />} onClick={() => setExcel(true)}>Cargar desde Excel</Button>

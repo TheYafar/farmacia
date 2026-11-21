@@ -17,7 +17,7 @@ export const NAV: NavItem[] = [
   { to: '/encargos', label: 'Encargos', short: 'Encargos', icon: Clock, roles: ['REGENTE', 'ADMIN'], grupo: 'Clientes' },
   { to: '/mayor', label: 'Al mayor', short: 'Mayor', icon: Building2, roles: ['ADMIN'], grupo: 'Clientes' },
   { to: '/whatsapp', label: 'WhatsApp', short: 'WhatsApp', icon: MessageCircle, roles: ['REGENTE', 'ADMIN'], grupo: 'Clientes' },
-  { to: '/inventario', label: 'Inventario', short: 'Inventario', icon: Package, roles: ['REGENTE', 'ADMIN'], grupo: 'Inventario' },
+  { to: '/inventario', label: 'Lotes y vencimientos', short: 'Lotes', icon: Package, roles: ['REGENTE', 'ADMIN'], grupo: 'Inventario' },
   { to: '/catalogo', label: 'Catálogo', short: 'Catálogo', icon: Tags, roles: ['REGENTE', 'ADMIN'], grupo: 'Inventario' },
   { to: '/compras', label: 'Compras', short: 'Compras', icon: Truck, roles: ['ADMIN'], grupo: 'Inventario' },
   { to: '/revisar', label: 'Por revisar', short: 'Revisar', icon: ShieldCheck, roles: ['REGENTE', 'ADMIN'], grupo: 'Farmacéutico' },

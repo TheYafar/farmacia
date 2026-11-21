@@ -46,6 +46,8 @@ export default function Ticket({ venta, onCerrar, auto }: { venta: Venta | null;
             <div key={i}>
               <div>{l.producto.nombreComercial} {l.producto.concentracion ?? ''}</div>
               <div className="flex justify-between"><span>{l.cantidad} x {num2(l.precioUsd)} $</span><span>{num2(Number(l.precioUsd) * l.cantidad)} $</span></div>
+              {/* El cliente suele querer el precio en bolívares, con la misma tasa de la venta. */}
+              {cfg?.ticketMostrarBs !== false && <div className="flex justify-end text-[0.9em]">Bs {num2(Number(l.precioUsd) * l.cantidad * Number(venta.tasa))}</div>}
             </div>
           ))}
           <div className="my-2 border-t border-dashed border-black" />
@@ -94,7 +96,7 @@ async function porWhatsapp(venta: Venta, farmacia: string) {
   const f = new Date(venta.creadaEn);
   const texto = [
     `*${farmacia}*`, `Comprobante N.º ${venta.numero} (no fiscal) · ${f.toLocaleDateString('es-VE')} ${f.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}`, '',
-    ...venta.lineas.map((l) => `${l.cantidad} x ${l.producto.nombreComercial} ${l.producto.concentracion ?? ''} — ${num2(Number(l.precioUsd) * l.cantidad)} $`),
+    ...venta.lineas.map((l) => `${l.cantidad} x ${l.producto.nombreComercial} ${l.producto.concentracion ?? ''} — ${num2(Number(l.precioUsd) * l.cantidad)} $ (Bs ${num2(Number(l.precioUsd) * l.cantidad * Number(venta.tasa))})`),
     '', `*Total: ${num2(venta.totalUsd)} $* (Bs ${num2(venta.totalBs)}, tasa ${num2(venta.tasa)})`,
     ...venta.pagos.map((p) => `${NOMBRE_METODO[p.metodo]}: ${num2(p.monto)} ${p.moneda === 'USD' ? '$' : 'Bs'}`),
     '', '¡Gracias por su compra!',

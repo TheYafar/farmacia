@@ -47,8 +47,8 @@ function CajaEnEntrada() {
       <button type="button" className="self-start text-xs text-muted underline" onClick={() => setCodigo(false)}>Cancelar</button>
     </div>
   ) : (
-    <button type="button" onClick={() => setCodigo(true)} className="flex items-center gap-2 text-sm text-muted hover:text-fg">
-      <ArrowRightLeft className="h-4 w-4" aria-hidden />Este equipo no es una caja. <span className="font-semibold text-accent underline">Tengo un código</span>
+    <button type="button" onClick={() => setCodigo(true)} className="flex items-center gap-2 text-left text-sm text-muted hover:text-fg">
+      <ArrowRightLeft className="h-4 w-4 shrink-0" aria-hidden /><span>¿Vas a cobrar en este equipo con una caja que ya existe? <span className="whitespace-nowrap font-semibold text-accent underline">Tengo un código</span></span>
     </button>
   );
 }

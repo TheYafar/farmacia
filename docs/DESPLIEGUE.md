@@ -259,7 +259,7 @@ El servidor de quien vende el sistema funciona también como **panel central**: 
    cd /opt/farmacia/infra && ./crear-superadmin.sh admin.central "Tu nombre"
    ```
    Muestra una clave aleatoria. Entra con ese usuario: verás **Farmacias**, **Casos de soporte** y **Equipo**.
-2. **WhatsApp de soporte** (opcional): en el `.env` del panel central pon `SOPORTE_TELEFONO=584145550192`. Las farmacias enlazadas lo ven en su pantalla de entrada y en Soporte.
+2. **WhatsApp de soporte** (opcional): en el `.env` del panel central pon `SOPORTE_TELEFONO=584145550192`. Las farmacias enlazadas lo ven en su pantalla de entrada y en Soporte. Si también lo pones en el `.env` de cada farmacia, el botón sale aunque todavía no esté enlazada (y en la demo).
 3. **Registrar una farmacia:** Farmacias → Registrar farmacia. Sale un **código de enlace** (empieza por `FT1.`), que solo se muestra una vez.
 4. **En la farmacia**, el dueño va a **Soporte → Enlazar con soporte** y pega el código. Desde ahí la farmacia se reporta sola cada 5 minutos: ventas de hoy, cajas abiertas, tasa, errores recientes, espacio en disco y versión. No se envían datos de clientes.
 5. **Casos:** cualquier usuario de la farmacia puede pedir ayuda desde Soporte. El caso llega al panel con el estado del sistema de ese momento, y la respuesta se ve en la farmacia.

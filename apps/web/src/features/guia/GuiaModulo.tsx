@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { BookOpen, Check, Link2, Lightbulb, X } from 'lucide-react';
 import { Sheet } from '@/components/ui';
 import { GUIAS } from './modulos';
+import { useGuia } from './Guia';
 
 const clave = (ruta: string) => `guiaModulo:${ruta}`;
 const vista = (ruta: string) => { try { return !!localStorage.getItem(clave(ruta)); } catch { return true; } };
@@ -25,7 +26,9 @@ export function AvisoGuiaModulo({ ruta, titulo }: { ruta: string | undefined; ti
   const [, refrescar] = useState(0);
   const [abierta, setAbierta] = useState(false);
   useEffect(() => { setAbierta(false); }, [ruta]);
-  if (!ruta || !GUIAS[ruta] || vista(ruta)) return <HojaGuia ruta={ruta ?? ''} titulo={titulo} abierta={abierta} cerrar={() => setAbierta(false)} />;
+  // Mientras está abierta la guía de bienvenida no se muestra: un aviso a la vez.
+  const bienvenida = useGuia((st) => st.abierta);
+  if (!ruta || !GUIAS[ruta] || vista(ruta) || bienvenida) return <HojaGuia ruta={ruta ?? ''} titulo={titulo} abierta={abierta} cerrar={() => setAbierta(false)} />;
   return (
     <div className="flex items-center justify-center gap-3 border-b border-line bg-accent-soft/60 px-4 py-1.5 text-[13px]">
       <span>¿Primera vez en <b>{titulo}</b>?</span>

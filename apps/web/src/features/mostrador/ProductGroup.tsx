@@ -29,7 +29,7 @@ export default function ProductGroup({ g }: { g: Grupo }) {
           <p className="text-sm text-muted">{g.opciones.length === 1 ? '1 opción' : `${g.opciones.length} opciones · de la más barata a la más cara`}</p>
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {delicado && <Chip tone="warn">{g.principio.riesgo === 'PSICOTROPICO' ? 'Psicotrópico' : 'Antibiótico'}: necesita permiso</Chip>}
+          {delicado && <Chip tone="warn">{g.principio.riesgo === 'PSICOTROPICO' ? 'Psicotrópico' : 'Antibiótico'} · récipe y permiso</Chip>}
           {alergia && <Chip tone="bad" icon={<AlertTriangle className="h-3.5 w-3.5" />}>El cliente es alérgico</Chip>}
         </div>
       </div>
@@ -43,7 +43,7 @@ export default function ProductGroup({ g }: { g: Grupo }) {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-base font-semibold">{o.nombreComercial}</span>
                   {o === masBarato && g.opciones.length > 1 && <Chip tone="ok">Más barato</Chip>}
-                  {o.requiereRecipe && <Chip tone="info">Con récipe</Chip>}
+                  {o.requiereRecipe && !delicado && <Chip tone="info">Necesita récipe</Chip>}
                 </div>
                 <div className="mt-0.5 text-sm text-muted">
                   {o.laboratorio} · Caja de {o.unidadesPorCaja} · {noHay ? <span className="font-semibold text-bad">No hay</span> : <>Hay {o.stockLibre}</>}

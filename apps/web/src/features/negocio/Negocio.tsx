@@ -471,36 +471,71 @@ export function MayoristaPage() {
 }
 
 /* ───────── WhatsApp y recompra ───────── */
-interface Recompra { cedula: string; nombre: string; telefono: string; productoId: string; producto: string; dias: number; texto: string; enviado: boolean; estimado?: boolean }
+interface Recompra { cedula: string; nombre: string; telefono: string; productoId: string; producto: string; precio?: string; dias: number; texto: string; enviado: boolean; estimado?: boolean }
+
+const cuandoSeAcaba = (dias: number) => dias > 0 ? `se le acaba en ${dias} día${dias === 1 ? '' : 's'}` : dias === 0 ? 'se le acaba hoy' : `se le acabó hace ${-dias} día${dias === -1 ? '' : 's'}`;
+
+/** Un solo mensaje por cliente, aunque se le acaben varios productos. */
+function mensajeCliente(items: Recompra[]): string {
+  if (items.length === 1) return items[0]!.texto;
+  const nombre = items[0]!.nombre.split(' ')[0];
+  // Solo los más urgentes, para que el mensaje no sea una lista larga.
+  const lista = items.slice(0, MAX_MENSAJE).map((r) => `• ${r.producto}${r.precio ? ` (${r.precio.replace('.', ',')} $)` : ''}`).join('\n');
+  const resto = items.length > MAX_MENSAJE ? '\n…y otras cosas que sueles comprar.' : '';
+  return `¡Hola ${nombre}! Se te deben estar terminando:\n${lista}${resto}\n¿Te los apartamos? Responde SÍ y te los tenemos listos.`;
+}
+
+/** Productos que van en el mensaje y en la tarjeta de cada cliente. */
+const MAX_MENSAJE = 5;
+
+/** Cuántos clientes se muestran de una vez (los más urgentes primero). */
+const POR_PAGINA = 20;
 
 export function WhatsappPage() {
   const rec = useCargar(() => api<Recompra[]>('/whatsapp/recompra'), []);
   const est = useCargar(() => api<{ enviados30: number; volvieron: number }>('/whatsapp/estadisticas'), []);
-  const enviar = async (r: Recompra) => {
-    const tel = r.telefono.replace(/\D/g, '').replace(/^0/, '58');
-    window.open(`https://wa.me/${tel}?text=${encodeURIComponent(r.texto)}`, '_blank');
-    try { await api('/whatsapp/enviado', { body: { cedula: r.cedula, productoId: r.productoId } }); } catch { /* el mensaje igual se abrió */ }
+  const [mostrar, setMostrar] = useState(POR_PAGINA);
+  const enviar = async (items: Recompra[]) => {
+    const tel = items[0]!.telefono.replace(/\D/g, '').replace(/^0/, '58');
+    window.open(`https://wa.me/${tel}?text=${encodeURIComponent(mensajeCliente(items))}`, '_blank');
+    await Promise.all(items.map((r) => api('/whatsapp/enviado', { body: { cedula: r.cedula, productoId: r.productoId } }).catch(() => { /* el mensaje igual se abrió */ })));
     rec.recargar(); est.recargar();
   };
+  // Un grupo por cliente. Primero los que faltan por avisar y, entre ellos, a quien se le acaba antes.
+  const grupos = Object.values((rec.datos ?? []).reduce<Record<string, Recompra[]>>((g, r) => ((g[r.cedula] ??= []).push(r), g), {}))
+    .map((items) => items.sort((a, b) => a.dias - b.dias))
+    .sort((a, b) => Number(a.every((r) => r.enviado)) - Number(b.every((r) => r.enviado)) || Math.abs(a[0]!.dias) - Math.abs(b[0]!.dias));
+  const porAvisar = grupos.filter((g) => g.some((r) => !r.enviado)).length;
   return (
     <div className="flex flex-col gap-4">
       <PageHeader title="WhatsApp y recompra" subtitle="Clientes a los que se les acaba su tratamiento. Al tocar «Enviar» se abre WhatsApp con el mensaje listo." />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-        <Kpi k="Para avisar hoy" v={String(rec.datos?.filter((r) => !r.enviado).length ?? '—')} />
+        <Kpi k="Clientes por avisar" v={rec.datos ? String(porAvisar) : '—'} />
         <Kpi k="Enviados (30 días)" v={String(est.datos?.enviados30 ?? '—')} />
         <Kpi k="Volvieron a comprar" v={String(est.datos?.volvieron ?? '—')} tone="ok" />
       </div>
-      <Estado c={rec}>{(d) => d.length ? (
+      <Estado c={rec}>{() => grupos.length ? (
         <div className="flex flex-col gap-2">
-          {d.map((r) => (
-            <Card key={r.cedula + r.productoId} className="flex flex-wrap items-center justify-between gap-3 p-3">
-              <div className="min-w-0"><div className="font-semibold">{r.nombre} <span className="font-mono text-xs text-muted">{r.telefono}</span></div>
-                <div className="text-sm text-muted">{r.producto} · {r.dias > 0 ? `se le acaba en ${r.dias} día${r.dias === 1 ? '' : 's'}` : r.dias === 0 ? 'se le acaba hoy' : `se le acabó hace ${-r.dias} días`}{r.estimado ? ' (estimado: 1 al día, compró una vez)' : ''}</div></div>
-              <Button size="sm" variant={r.enviado ? 'secondary' : 'primary'} onClick={() => enviar(r)}>{r.enviado ? 'Enviado ✓ · reenviar' : 'Enviar'}</Button>
-            </Card>
-          ))}
+          {grupos.slice(0, mostrar).map((items) => {
+            const enviado = items.every((r) => r.enviado);
+            return (
+              <Card key={items[0]!.cedula} className="p-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold">{items[0]!.nombre} <span className="font-mono text-xs text-muted">{items[0]!.telefono}</span></div>
+                    <ul className="mt-0.5 text-sm text-muted">
+                      {items.slice(0, MAX_MENSAJE).map((r) => <li key={r.productoId}>{r.producto} · {cuandoSeAcaba(r.dias)}{r.estimado ? ' (estimado: compró una sola vez)' : ''}</li>)}
+                      {items.length > MAX_MENSAJE && <li className="italic">y {items.length - MAX_MENSAJE} más (el mensaje menciona los {MAX_MENSAJE} más urgentes)</li>}
+                    </ul>
+                  </div>
+                  <Button size="sm" variant={enviado ? 'secondary' : 'primary'} onClick={() => enviar(items)}>{enviado ? 'Enviado ✓ · reenviar' : 'Enviar'}</Button>
+                </div>
+              </Card>
+            );
+          })}
+          {grupos.length > mostrar && <Button className="self-center" onClick={() => setMostrar((n) => n + POR_PAGINA)}>Ver más ({grupos.length - mostrar} clientes)</Button>}
         </div>
-      ) : <Card className="p-6 text-center text-sm text-muted">Nadie para avisar hoy. Aparecen aquí los clientes con cédula que compraron el mismo producto 2 o más veces.</Card>}</Estado>
+      ) : <Card className="p-6 text-center text-sm text-muted">Nadie para avisar hoy. Aparecen aquí los clientes con cédula y teléfono a los que se les está acabando lo que compraron.</Card>}</Estado>
     </div>
   );
 }

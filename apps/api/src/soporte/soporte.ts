@@ -155,7 +155,8 @@ export class SoporteService {
       central: c?.centralUrl ?? null,
       ultimoReporte: c?.centralUltimo ?? null,
       error: c?.centralError ?? null,
-      telefono: c?.centralTelefono ?? null,
+      // Aunque no esté enlazada, si la instalación tiene un WhatsApp de soporte se muestra.
+      telefono: c?.centralTelefono || this.config.SOPORTE_TELEFONO || null,
       acceso,
     };
   }

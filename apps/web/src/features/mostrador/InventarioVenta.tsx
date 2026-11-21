@@ -80,8 +80,9 @@ export default function InventarioVenta({ version }: { version: number }) {
                 <div className="truncate text-xs text-muted">{o.laboratorio} · {o.forma} · caja de {o.unidadesPorCaja}</div>
               </div>
               <div className="flex flex-wrap gap-1">
-                {o.principio.riesgo !== 'NORMAL' && <Chip tone="warn">{o.principio.riesgo === 'PSICOTROPICO' ? 'Psicotrópico' : 'Antibiótico'}</Chip>}
-                {o.requiereRecipe && <Chip tone="info">Con récipe</Chip>}
+                {/* Mismas etiquetas que en la búsqueda: un controlado pide récipe y permiso; otros, solo récipe. */}
+                {o.principio.riesgo !== 'NORMAL' ? <Chip tone="warn">{o.principio.riesgo === 'PSICOTROPICO' ? 'Psicotrópico' : 'Antibiótico'} · récipe y permiso</Chip>
+                  : o.requiereRecipe && <Chip tone="info">Necesita récipe</Chip>}
                 {noHay ? <Chip tone="bad">Agotado</Chip> : <Chip tone={poco ? 'warn' : 'neutral'}>Hay {o.stockLibre}</Chip>}
               </div>
               <div className="mt-auto flex items-end justify-between gap-2">

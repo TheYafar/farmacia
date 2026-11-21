@@ -312,7 +312,7 @@ export class WhatsappController {
         const proxima = new Date(f.ultima.getTime() + intervalo);
         const dias = Math.round((proxima.getTime() - Date.now()) / dia);
         const texto = `¡Hola ${f.nombre.split(' ')[0]}! Tu ${f.producto} ${dias > 0 ? `se termina en ${dias} día${dias === 1 ? '' : 's'}` : 'ya se debe haber terminado'}. ¿Te lo apartamos? Precio: ${D(f.precio).toFixed(2)} $. Responde SÍ y te lo tenemos listo.`;
-        return { cedula: f.cedula, nombre: f.nombre, telefono: f.telefono, productoId: f.productoId, producto: f.producto, dias, texto, estimado: veces < 2, enviado: enviados.some((e) => e.cedula === f.cedula && e.productoId === f.productoId) };
+        return { cedula: f.cedula, nombre: f.nombre, telefono: f.telefono, productoId: f.productoId, producto: f.producto, precio: D(f.precio).toFixed(2), dias, texto, estimado: veces < 2, enviado: enviados.some((e) => e.cedula === f.cedula && e.productoId === f.productoId) };
       })
       .filter((f) => Number.isFinite(f.dias) && intervaloValido(f.dias))
       .sort((a, b) => a.dias - b.dias);

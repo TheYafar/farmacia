@@ -22,7 +22,7 @@ import { rutaIncluida, usePlan } from '@/store/plan';
 import { NoIncluido } from '@/features/plan/Plan';
 import SoportePage from '@/features/soporte/SoportePage';
 import CajasPage from '@/features/cajas/Cajas';
-import PrivacidadPage, { AvisoCookies } from '@/features/privacidad/Privacidad';
+import PrivacidadPage, { AvisoCookies, marcarAvisoCookies } from '@/features/privacidad/Privacidad';
 import { CasosPage, EquipoPage, FarmaciasPage, PlanesPage } from '@/features/central/CentralPage';
 
 /** Esconde la ruta a quien no tiene el rol (el servidor igual lo rechazaría). */
@@ -39,6 +39,7 @@ export default function App() {
   const { usuario, listo, restaurar } = useSesion();
   const cargarFarmacia = useCaja((s) => s.cargarFarmacia);
   useEffect(() => { void restaurar(); void cargarFarmacia(); }, [restaurar, cargarFarmacia]);
+  useEffect(() => { if (usuario) marcarAvisoCookies(); }, [usuario]);
 
   if (!listo) return <Cargando texto="Abriendo…" />;
   if (!usuario) {
@@ -61,7 +62,6 @@ export default function App() {
   ];
   return (
     <>
-    <AvisoCookies />
     <Routes>
       <Route element={<AppShell />}>
         {paginas.map(([p, el]) => <Route key={p} path={p} element={<ConRol ruta={p}>{el}</ConRol>} />)}

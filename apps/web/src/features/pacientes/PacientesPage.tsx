@@ -1,7 +1,7 @@
 import { AlertTriangle, MessageCircle, Plus, ShoppingCart, UserSearch } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Avatar, Button, Card, Cargando, Chip, EmptyState, ErrorCarga, SearchInput } from '@/components/ui';
+import { Avatar, Button, Card, Cargando, Chip, EmptyState, ErrorCarga, PageHeader, SearchInput } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
 import { cedula, fecha, initials, usd } from '@/lib/format';
 import type { Paciente } from '@/lib/tipos';
@@ -74,6 +74,8 @@ export default function PacientesPage() {
 
   return (
     <div className="flex flex-col gap-4">
+      <PageHeader title="Clientes" subtitle="Busca por cédula, nombre o teléfono. Con la cédula se guardan sus alergias, récipes y compras."
+        actions={<Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setRegistrar(true)}>Nuevo cliente</Button>} />
       <form onSubmit={buscar} className="flex gap-2">
         <SearchInput id="buscar-cedula" value={q} onChange={(e) => setQ(e.target.value)} onClear={() => setQ('')} placeholder="Cédula, nombre o teléfono y pulsa Enter" aria-label="Buscar cliente" className="flex-1" />
         <Button type="submit" variant="primary" size="lg">Buscar</Button>

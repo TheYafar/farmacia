@@ -360,7 +360,7 @@ export function CobroSheet({ open, onClose, onVendida }: { open: boolean; onClos
               <input id="ref-pm" value={ref} onChange={(e) => setRef(e.target.value.replace(/\D/g, '').slice(0, 20))} inputMode="numeric" placeholder="Número de referencia" className="h-11 rounded-lg border border-line bg-surface px-3 font-mono outline-none focus:border-accent" />
             )}
             <div className="flex flex-wrap gap-1.5">
-              <Button size="sm" variant="primary" onClick={() => agregar(enMoneda(faltaRegistradoBs, metodo))}>Lo que falta: {simbolo(metodo) === '$' ? usd(enMoneda(faltaRegistradoBs, metodo)) : `Bs ${num2(enMoneda(faltaRegistradoBs, metodo))}`}</Button>
+              {(!borrador || faltaBs > 0) && <Button size="sm" variant="primary" onClick={() => agregar(enMoneda(faltaRegistradoBs, metodo))}>Lo que falta: {simbolo(metodo) === '$' ? usd(enMoneda(faltaRegistradoBs, metodo)) : `Bs ${num2(enMoneda(faltaRegistradoBs, metodo))}`}</Button>}
               {metodo === 'EFECTIVO_USD' && BILLETES.map((b) => <Button key={b} size="sm" onClick={() => agregar(b)}>{b} $</Button>)}
             </div>
           </div>
@@ -413,7 +413,7 @@ export function MobileCartBar({ onOpen }: { onOpen: () => void }) {
     <button onClick={onOpen} className="fixed inset-x-3 z-20 flex items-center justify-between rounded-xl bg-accent px-4 py-3 font-semibold text-accent-ink shadow-pop md:hidden" style={{ bottom: 'calc(72px + env(safe-area-inset-bottom))' }}>
       <span className="flex items-center gap-2">
         {bloqueos.length > 0 && <AlertTriangle className="h-4 w-4" />}
-        {unidades} {unidades === 1 ? 'caja' : 'cajas'} · <span className="font-mono">{usd(total)}</span>
+        {unidades} {unidades === 1 ? 'artículo' : 'artículos'} · <span className="font-mono">{usd(total)}</span>
       </span>
       <span>Ver cuenta →</span>
     </button>

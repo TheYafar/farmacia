@@ -8,23 +8,25 @@ import { useSesion } from '@/store/sesion';
 const CLAVE = 'avisoCookies';
 const aceptado = () => { try { return !!localStorage.getItem(CLAVE); } catch { return true; } };
 
-/** Aviso de cookies: sale una vez por equipo, abajo de la pantalla. */
+/** Quien ya entró al sistema vio el aviso en la pantalla de entrada: no se le vuelve a mostrar adentro. */
+export function marcarAvisoCookies() { try { if (!localStorage.getItem(CLAVE)) localStorage.setItem(CLAVE, new Date().toISOString()); } catch { /* sin almacenamiento */ } }
+
+/**
+ * Aviso de cookies: sale solo en la pantalla de entrada, una vez por equipo.
+ * Es corto y en el teléfono va arriba, para no tapar el botón de entrar.
+ */
 export function AvisoCookies() {
   const [visible, setVisible] = useState(false);
   const enPrivacidad = useLocation().pathname.startsWith('/privacidad');
   useEffect(() => { setVisible(!aceptado()); }, []);
   if (!visible) return null;
   return (
-    <div role="region" aria-label="Aviso de cookies" className="fixed inset-x-0 bottom-0 z-50 p-3 md:bottom-4 md:left-auto md:right-4 md:max-w-md md:p-0">
-      <div className="flex flex-col gap-3 rounded-2xl border border-line bg-surface p-4 shadow-pop">
-        <div className="flex gap-3">
-          <Cookie className="mt-0.5 h-5 w-5 shrink-0 text-accent" aria-hidden />
-          <p className="text-sm">Usamos <b>una sola cookie</b>, necesaria para mantener tu sesión abierta en este equipo. No usamos cookies de publicidad, de seguimiento ni de estadísticas.</p>
-        </div>
-        <div className="flex justify-end gap-2">
-          {!enPrivacidad && <Link to="/privacidad"><Button size="sm" variant="ghost">Más información</Button></Link>}
-          <Button size="sm" variant="primary" onClick={() => { try { localStorage.setItem(CLAVE, new Date().toISOString()); } catch { /* sin almacenamiento */ } setVisible(false); }}>Entendido</Button>
-        </div>
+    <div role="region" aria-label="Aviso de cookies" className="fixed inset-x-0 top-0 z-50 p-2 md:bottom-4 md:left-auto md:right-4 md:top-auto md:max-w-md md:p-0">
+      <div className="flex items-center gap-3 rounded-xl border border-line bg-surface px-3 py-2 shadow-pop md:rounded-2xl md:p-4">
+        <Cookie className="h-5 w-5 shrink-0 text-accent" aria-hidden />
+        <p className="min-w-0 flex-1 text-xs md:text-sm">Solo usamos <b>una cookie</b>, para mantener tu sesión abierta. Nada de publicidad ni seguimiento.{' '}
+          {!enPrivacidad && <Link to="/privacidad" className="font-semibold text-accent underline underline-offset-2">Más información</Link>}</p>
+        <Button size="sm" variant="primary" onClick={() => { marcarAvisoCookies(); setVisible(false); }}>Entendido</Button>
       </div>
     </div>
   );

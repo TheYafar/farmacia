@@ -6,6 +6,28 @@ import { AuditoriaService } from '../auditoria/auditoria';
 import { Roles, Usuario, type UsuarioActual } from '../common/seguridad';
 import { Validar } from '../common/validacion';
 
+/** Palabras de la calle para buscar por síntoma (sin acentos y en minúscula) → lo que suele decir el «para qué sirve». */
+const SINONIMOS: [RegExp, string[]][] = [
+  [/cabeza|jaqueca|migran|cuerpo|muela|cólic|colic|golpe/, ['dolor']],
+  [/fiebre|calentura|temperatura/, ['fiebre']],
+  [/gripe|resfri|catarro|estornud|mocos|congest/, ['alergia', 'gripe', 'resfriado']],
+  [/picazon|rasquiña|ronchas|urticaria|alergi/, ['alergia']],
+  [/\btos\b|garganta/, ['tos', 'garganta', 'respirator']],
+  [/tension|presion|hipertens/, ['tension', 'presion', 'hipertens']],
+  [/azucar|glicemia|diabet/, ['diabetes']],
+  [/acidez|gastritis|estomago|agrura|reflujo|ulcera/, ['acidez', 'gastritis', 'estomago']],
+  [/diarrea|deshidrat|vomito/, ['diarrea', 'deshidrat']],
+  [/nervios|ansiedad|angustia|insomnio|dormir/, ['ansiedad', 'insomnio']],
+  [/asma|ahogo|pecho|respirar/, ['asma']],
+  [/colesterol|trigliceri/, ['colesterol']],
+  [/inflamacion|hinchaz|torcedura|esguince/, ['inflamacion']],
+  [/infeccion|orina|urinari/, ['infeccion']],
+  [/pañal|panal|rozadura|escaldad/, ['pañalitis', 'panalitis']],
+  [/vitamina|defensas|cansancio|debilidad/, ['suplemento', 'vitamina']],
+];
+/** Palabras que no dicen nada del síntoma. */
+const VACIAS = new Set(['para', 'algo', 'tiene', 'tengo', 'mucho', 'mucha', 'pastilla', 'pastillas', 'remedio', 'medicina', 'bueno', 'buena', 'unas', 'unos', 'como', 'esta', 'este', 'cuando']);
+
 const hoy = () => new Date(fechaVe());
 const sinTildes = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
@@ -65,6 +87,28 @@ export class CatalogoService {
    * Búsqueda por marca, principio activo, concentración, laboratorio o código de barras.
    * Agrupa por molécula + concentración + forma (bioequivalentes) y ordena de menor a mayor precio.
    */
+  /**
+   * Buscar por síntoma («dolor de cabeza», «la tensión», «tos»): se compara con el «para qué sirve» de cada principio activo.
+   * Devuelve los grupos y la palabra con la que se encontró.
+   */
+  async buscarPorUso(q: string) {
+    const texto = q.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    // Palabras de la calle → palabra que suele estar en el «para qué sirve».
+    const terminos = new Set<string>();
+    for (const [re, t] of SINONIMOS) if (re.test(texto)) t.forEach((x) => terminos.add(x));
+    // Si no es un síntoma conocido, se prueba con las palabras tal cual («alergias», «asma»…).
+    if (!terminos.size) for (const w of texto.split(/[^a-zñ]+/)) if (w.length >= 4 && !VACIAS.has(w)) terminos.add(w.replace(/s$/, ''));
+    if (!terminos.size) return null;
+    const ids = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM "PrincipioActivo" WHERE uso IS NOT NULL AND (${Prisma.join([...terminos].map((t) => Prisma.sql`unaccent(lower(uso)) LIKE ${'%' + t + '%'}`), ' OR ')})`;
+    if (!ids.length) return null;
+    const claves = await this.prisma.producto.findMany({
+      where: { activo: true, principioActivoId: { in: ids.map((x) => x.id) } }, distinct: ['principioActivoId', 'concentracion', 'forma'],
+      select: { principioActivoId: true, concentracion: true, forma: true }, take: 20,
+    });
+    return claves.length ? this.agrupar(claves) : null;
+  }
+
   async buscar(q: string, todo = false) {
     const palabras = q.trim().split(/\s+/).filter(Boolean).slice(0, 6);
     if (!palabras.length && !todo) return { grupos: [] };
@@ -79,7 +123,11 @@ export class CatalogoService {
       WHERE p.activo AND ${todo ? Prisma.sql`TRUE` : Prisma.join(condiciones, ' AND ')}
       LIMIT ${todo ? 20000 : 20}`;
     if (!claves.length) return { grupos: [] };
+    return this.agrupar(claves);
+  }
 
+  /** Arma los grupos (mismo principio, concentración y forma) con sus opciones de la más barata a la más cara. */
+  private async agrupar(claves: { principioActivoId: string; concentracion: string; forma: string }[]) {
     const productos = await this.prisma.producto.findMany({
       where: { activo: true, OR: claves.map((c) => ({ principioActivoId: c.principioActivoId, concentracion: c.concentracion, forma: c.forma })) },
       include: { principioActivo: true, lotes: { where: { vence: { gte: hoy() } }, select: { stockLibre: true, stockReservado: true } } },
@@ -113,10 +161,13 @@ export class CatalogoController {
   @Get('buscar')
   async buscar(@Query('q') q = '') {
     const r = await this.catalogo.buscar(q.slice(0, 100));
-    if (r.grupos.length || q.trim().length < 4) return r;
+    if (r.grupos.length || q.trim().length < 3) return r;
     // Nada encontrado: se intenta corregir la escritura y se dice qué se buscó.
-    const corregido = await this.catalogo.corregir(q.slice(0, 100));
-    return corregido ? { ...(await this.catalogo.buscar(corregido)), corregido } : r;
+    const corregido = q.trim().length >= 4 ? await this.catalogo.corregir(q.slice(0, 100)) : null;
+    if (corregido) return { ...(await this.catalogo.buscar(corregido)), corregido };
+    // Tampoco por nombre: quizás escribieron un síntoma («dolor de cabeza»).
+    const porUso = await this.catalogo.buscarPorUso(q.slice(0, 100));
+    return porUso ? { ...porUso, porUso: true } : r;
   }
 
   /** Principios marcados «Normal» cuyo nombre corresponde a un psicotrópico o antibiótico conocido. */

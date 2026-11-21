@@ -1,4 +1,4 @@
-import { ScanBarcode, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Escaner } from '@/features/gestion/Gestion';
 import InventarioVenta from './InventarioVenta';
@@ -21,6 +21,7 @@ export default function MostradorPage() {
   const [q, setQ] = useState('');
   const [grupos, setGrupos] = useState<Grupo[] | null>(null);
   const [corregido, setCorregido] = useState<string | null>(null);
+  const [porUso, setPorUso] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
@@ -44,8 +45,8 @@ export default function MostradorPage() {
     setCargando(true);
     const t = setTimeout(async () => {
       try {
-        const r = await api<{ grupos: Grupo[]; corregido?: string }>(`/catalogo/buscar?q=${encodeURIComponent(q)}`);
-        if (vivo) { setGrupos(r.grupos); setCorregido(r.corregido ?? null); setError(null); }
+        const r = await api<{ grupos: Grupo[]; corregido?: string; porUso?: boolean }>(`/catalogo/buscar?q=${encodeURIComponent(q)}`);
+        if (vivo) { setGrupos(r.grupos); setCorregido(r.corregido ?? null); setPorUso(!!r.porUso); setError(null); }
       } catch (e) {
         // Sin internet: se busca en la copia del catálogo guardada en este equipo.
         if (vivo && e instanceof ApiError && e.status === 0) { setGrupos(buscarLocal(q)); setError(null); }
@@ -98,7 +99,7 @@ export default function MostradorPage() {
           <SearchInput
             ref={inputRef}
             id="buscar-medicamento"
-            className="flex-1"
+            className="min-w-0 flex-1"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') void onEnter(); }}
@@ -110,9 +111,6 @@ export default function MostradorPage() {
             autoFocus
           />
           <Escaner onCodigo={(c) => void onEnter(c)} />
-          <button className="grid w-12 shrink-0 place-items-center rounded-xl border border-line bg-surface text-muted hover:text-fg xl:hidden" aria-label="Escanear código de barras" onClick={() => avisar('El escáner con la cámara llega en la siguiente versión. Escribe el código o usa el lector', 'info')}>
-            <ScanBarcode className="h-5 w-5" />
-          </button>
         </div>
 
         {error ? <ErrorCarga mensaje={error} /> : !q.trim() ? <InventarioVenta version={vendidas} /> : cargando && !grupos ? <Cargando texto="Buscando…" /> : grupos && grupos.length === 0 ? (
@@ -122,6 +120,7 @@ export default function MostradorPage() {
         ) : (
           <>
             {corregido && grupos?.length ? <p className="text-sm text-muted">No hay «{q.trim()}». Mostrando resultados de <button type="button" className="font-semibold text-accent underline" onClick={() => setQ(corregido)}>{corregido}</button></p> : null}
+            {porUso && grupos?.length ? <p className="rounded-xl bg-info-soft p-3 text-sm text-info">Ningún producto se llama «{q.trim()}». Estos sirven para eso, según su principio activo: <b>{[...new Set(grupos.map((g) => g.principio.uso).filter(Boolean))].join(', ')}</b>. Confirma con el farmacéutico antes de recomendar.</p> : null}
             {grupos?.map((g) => <ProductGroup key={`${g.principio.id}|${g.concentracion}|${g.forma}`} g={g} />)}
           </>
         )}

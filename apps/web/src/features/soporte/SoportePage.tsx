@@ -77,7 +77,7 @@ function Enlazar({ listo }: { listo: () => void }) {
       e.preventDefault(); setEnviando(true); setError(null);
       try { await api('/soporte/enlazar', { body: { codigo } }); avisar('Farmacia enlazada con soporte', 'ok'); void usePlan.getState().cargar(); listo(); } catch (err) { setError(err instanceof ApiError ? err.message : 'No se pudo enlazar'); } finally { setEnviando(false); }
     }}>
-      <Campo etiqueta="Código de enlace" ayuda="Te lo da quien te vendió el sistema. Empieza por FT1.">
+      <Campo etiqueta="Código de enlace" ayuda="Es un texto largo que empieza por FT1. Te lo manda por WhatsApp quien te vendió el sistema: cópialo y pégalo aquí. Se hace una sola vez.">
         <textarea value={codigo} onChange={(e) => setCodigo(e.target.value)} rows={3} required className={claseInput + ' h-auto py-2 font-mono text-xs'} placeholder="FT1.eyJ1Ijoi…" />
       </Campo>
       {error && <Alert tone="bad">{error}</Alert>}
@@ -144,6 +144,11 @@ export default function SoportePage() {
         <Card className="flex flex-col gap-3 p-4">
           <div className="flex items-center gap-2"><Headset className="h-5 w-5 text-accent" aria-hidden /><h2 className="font-bold">Enlazar con soporte</h2></div>
           {dueno ? <Enlazar listo={est.recargar} /> : <p className="text-sm text-muted">Esta farmacia todavía no está enlazada con soporte. Pídele al dueño que lo haga desde esta misma página.</p>}
+          {wa && (
+            <Alert tone="info">
+              ¿Necesitas ayuda ya, o no tienes el código? <a className="font-semibold underline" href={`https://wa.me/${wa}?text=${encodeURIComponent(`Hola, soy de ${nombre} y necesito ayuda con el sistema`)}`} target="_blank" rel="noreferrer">Escríbenos por WhatsApp</a>.
+            </Alert>
+          )}
         </Card>
       ) : (
         <>

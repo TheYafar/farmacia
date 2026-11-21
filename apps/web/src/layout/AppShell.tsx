@@ -37,11 +37,11 @@ function useBadges(rol: string, conEncargos: boolean): Record<string, number> {
 function Brand({ full }: { full?: boolean }) {
   const nombre = useCaja((s) => s.farmacia.nombre);
   return (
-    <div className="flex items-center gap-2.5">
-      <span className="grid h-9 w-9 place-items-center rounded-lg bg-accent">
+    <div className="flex min-w-0 items-center gap-2.5">
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent">
         <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden><path fill="white" d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z" /></svg>
       </span>
-      {full && <span className="truncate font-display text-base font-bold">{nombre}</span>}
+      {full && <span className="line-clamp-2 min-w-0 font-display text-[15px] font-bold leading-tight" title={nombre}>{nombre}</span>}
     </div>
   );
 }
@@ -95,14 +95,14 @@ export default function AppShell() {
   // Título de la pestaña del navegador: la página y la farmacia.
   useEffect(() => { document.title = `${current?.label ?? (pathname.startsWith('/privacidad') ? 'Privacidad y cookies' : 'Inicio')} · ${nombreFarmacia}`; }, [current, pathname, nombreFarmacia]);
 
-  // Grupos del menú: abiertos el de «Vender» y el de la página actual; el resto se abre con un toque y se recuerda.
+  // Grupos del menú: todos abiertos, para que se vea todo lo que hay. Quien quiera, pliega uno con un toque y se recuerda.
   const grupos = GRUPOS.map((grupo) => ({ grupo, items: nav.filter((n) => n.grupo === grupo) })).filter((g) => g.items.length);
-  const [abiertos, setAbiertos] = useState<Grupo[]>(() => {
-    try { return JSON.parse(localStorage.getItem('menuAbierto') ?? '["Vender"]') as Grupo[]; } catch { return ['Vender']; }
+  const [cerrados, setCerrados] = useState<Grupo[]>(() => {
+    try { return JSON.parse(localStorage.getItem('menuCerrado') ?? '[]') as Grupo[]; } catch { return []; }
   });
-  const alternar = (g: Grupo) => setAbiertos((a) => {
+  const alternar = (g: Grupo) => setCerrados((a) => {
     const n = a.includes(g) ? a.filter((x) => x !== g) : [...a, g];
-    try { localStorage.setItem('menuAbierto', JSON.stringify(n)); } catch { /* sin almacenamiento */ }
+    try { localStorage.setItem('menuCerrado', JSON.stringify(n)); } catch { /* sin almacenamiento */ }
     return n;
   });
 
@@ -138,7 +138,7 @@ export default function AppShell() {
         </div>
         <div className="-mx-1 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-1">
           {grupos.length <= 1 ? nav.map(railItem) : grupos.map(({ grupo, items }) => {
-            const abierto = abiertos.includes(grupo) || items.includes(current!);
+            const abierto = !cerrados.includes(grupo) || items.includes(current!);
             const pendientes = items.reduce((a, n) => a + (badges[n.to] ?? 0), 0);
             return (
               <div key={grupo} className="flex flex-col gap-1">
@@ -171,9 +171,10 @@ export default function AppShell() {
       <div className="flex min-w-0 flex-1 flex-col">
         {central ? null : <SinConexion />}
         {usuario.demo && (
-          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-warn-soft px-4 py-1.5 text-center text-[13px] font-semibold text-warn">
-            <span>Estás en la demo: los datos son de ejemplo y se borran cada noche.</span>
-            <button className="underline" onClick={cerrar}>Salir de la demo</button>
+          <div className="flex items-center justify-center gap-3 bg-warn-soft px-3 py-1 text-center text-xs font-semibold text-warn md:py-1.5 md:text-[13px]">
+            <span className="md:hidden">Demo con datos de ejemplo</span>
+            <span className="hidden md:inline">Estás en la demo: los datos son de ejemplo y nadie más los ve.</span>
+            <button className="shrink-0 underline" onClick={cerrar}>Salir de la demo</button>
           </div>
         )}
         <AvisoSoporte />
@@ -184,12 +185,11 @@ export default function AppShell() {
             <span className="truncate font-display text-lg font-bold">{current?.label ?? 'Farmacia'}</span>
             <BotonGuiaModulo ruta={current?.to} titulo={current?.label ?? ''} />
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5 md:gap-2">
             {central ? <span className="whitespace-nowrap rounded-md bg-accent-soft px-2 py-1 text-xs font-semibold text-accent">Panel central</span> : <span className={clsx('whitespace-nowrap rounded-md px-2 py-1 font-mono text-xs', tasa ? 'bg-surface2 text-muted' : 'bg-warn-soft text-warn')} title={tasaModo === 'BCV_EUR' ? 'Los precios en $ se convierten con la tasa del euro del BCV' : 'Tasa con la que se cobra'}>
-              {tasa ? `${tasaModo === 'BCV_EUR' ? 'Euro BCV' : tasaModo === 'BCV_USD' ? 'Dólar BCV' : 'Tasa'}: ${num2(tasa)} Bs` : 'Falta la tasa'}
+              {tasa ? <><span className="hidden sm:inline">{tasaModo === 'BCV_EUR' ? 'Euro BCV' : tasaModo === 'BCV_USD' ? 'Dólar BCV' : 'Tasa'}: </span>{num2(tasa)} Bs</> : 'Falta la tasa'}
             </span>}
             {!central && <button onClick={abrirGuia} className="rounded-lg p-2 text-muted hover:bg-surface2 md:hidden" aria-label="Ver la guía rápida"><HelpCircle className="h-5 w-5" /></button>}
-            <span className="md:hidden"><ThemeToggle /></span>
           </div>
         </header>
 
@@ -240,6 +240,7 @@ export default function AppShell() {
           })}
           <div className="mt-2 flex items-center justify-between border-t border-line px-3 pt-3 text-sm text-muted">
             <span>{usuario.nombre} · {ROLE_LABEL[rol]}</span>
+            <ThemeToggle />
             <button onClick={cerrar} className="flex items-center gap-1.5 font-semibold text-fg"><LogOut className="h-4 w-4" />Salir</button>
           </div>
         </div>

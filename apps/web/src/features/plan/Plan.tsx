@@ -37,7 +37,7 @@ export function TuPlan() {
         <p className="text-sm text-muted">Esta farmacia no tiene un plan asignado: todos los módulos están disponibles. El plan lo asigna quien te vendió el sistema, desde su panel.</p>
       ) : (
         <>
-          <p className="text-sm text-muted">Vender, Caja, Ventas, Récipes, Por revisar, Controlados, Clientes, Inventario, Catálogo, Resumen, Cajas, Usuarios, Auditoría y Soporte vienen en todos los planes. Además:</p>
+          <p className="text-sm text-muted">Vender, Caja, Ventas, Récipes, Por revisar, Controlados, Clientes, Lotes y vencimientos, Catálogo, Resumen, Cajas, Usuarios, Auditoría y Soporte vienen en todos los planes. Además:</p>
           <ul className="grid gap-1.5 sm:grid-cols-2">
             {MODULOS_PLAN.map((m) => (
               <li key={m} className={`flex items-start gap-2 text-sm ${incluye(plan, m) ? '' : 'text-muted'}`}>

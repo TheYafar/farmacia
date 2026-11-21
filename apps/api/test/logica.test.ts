@@ -170,4 +170,14 @@ describe('Lógica del negocio (revisión)', () => {
     const horas = (await admin.get('/reportes/ventas-detalle?desde=2026-03-09&hasta=2026-03-09')).body.porHora as { hora: number }[];
     assert.deepEqual(horas.map((h) => h.hora), [21]);
   });
+
+  it('buscar por síntoma: «dolor de cabeza» encuentra lo que sirve para el dolor', async () => {
+    await prisma.principioActivo.update({ where: { nombre: 'Acetaminofén' }, data: { uso: 'Dolor y fiebre' } });
+    const r = (await cajero.get('/catalogo/buscar?q=' + encodeURIComponent('dolor de cabeza'))).body as { porUso?: boolean; grupos: { principio: { nombre: string } }[] };
+    assert.equal(r.porUso, true);
+    assert.ok(r.grupos.some((g) => g.principio.nombre === 'Acetaminofén'));
+    // Por nombre sigue funcionando igual (sin «porUso»).
+    const n = (await cajero.get('/catalogo/buscar?q=acetaminofen')).body as { porUso?: boolean; grupos: unknown[] };
+    assert.ok(n.grupos.length && !n.porUso);
+  });
 });

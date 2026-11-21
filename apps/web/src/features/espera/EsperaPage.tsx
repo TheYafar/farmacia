@@ -1,11 +1,13 @@
 import { clsx } from 'clsx';
-import { Check, Clock, Package, X } from 'lucide-react';
+import { Check, Clock, Package, Plus, X } from 'lucide-react';
 import { useState } from 'react';
 import type { EstadoEspera } from '@farmacia/shared';
-import { Button, Cargando, Chip, ErrorCarga, PageHeader } from '@/components/ui';
+import { Alert, Button, Campo, Cargando, Chip, ErrorCarga, PageHeader, Sheet, claseInput } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
 import { bs, cedula, fecha, usd } from '@/lib/format';
-import type { Solicitud } from '@/lib/tipos';
+import type { Opcion, Paciente, Solicitud } from '@/lib/tipos';
+import { ElegirProducto } from '@/features/inventario/InventarioPage';
+import RegistrarCliente from '@/features/pacientes/RegistrarCliente';
 import { useCargar } from '@/lib/useCargar';
 import { avisar } from '@/store/avisos';
 import { useSesion } from '@/store/sesion';
@@ -79,14 +81,68 @@ function Tarjeta({ w, recargar }: { w: Solicitud; recargar: () => void }) {
   );
 }
 
+/** Anotar a mano lo que un cliente pidió y no había (también se puede desde Vender, con «Avisar cuando llegue»). */
+function AnotarEncargo({ abierto, cerrar, listo }: { abierto: boolean; cerrar: () => void; listo: () => void }) {
+  const [ced, setCed] = useState('');
+  const [cliente, setCliente] = useState<Paciente | null>(null);
+  const [producto, setProducto] = useState<Opcion | null>(null);
+  const [registrar, setRegistrar] = useState(false);
+  const [ocupado, setOcupado] = useState(false);
+  const limpiar = () => { setCed(''); setCliente(null); setProducto(null); };
+  const buscar = async () => {
+    if (!ced.trim()) return;
+    setOcupado(true);
+    try { setCliente(await api<Paciente>(`/pacientes/${encodeURIComponent(ced.trim())}`)); }
+    catch (e) { if (e instanceof ApiError && e.status === 404) setRegistrar(true); else avisar(e instanceof ApiError ? e.message : 'No se pudo buscar', 'bad'); }
+    finally { setOcupado(false); }
+  };
+  const guardar = async () => {
+    if (!cliente || !producto) return;
+    setOcupado(true);
+    try {
+      await api('/espera', { body: { cedula: cliente.cedula, productoId: producto.id } });
+      avisar(`Anotado: le avisaremos a ${cliente.nombre.split(' ')[0]} cuando llegue ${producto.nombreComercial}`, 'ok');
+      limpiar(); listo();
+    } catch (e) { avisar(e instanceof ApiError ? e.message : 'No se pudo anotar', 'bad'); }
+    finally { setOcupado(false); }
+  };
+  return (
+    <Sheet open={abierto} onClose={() => { limpiar(); cerrar(); }} title="Anotar encargo">
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-muted">Un cliente pidió algo que no hay. Al cargar la compra le llega el aviso por WhatsApp, en el orden en que se anotaron.</p>
+        {cliente ? (
+          <div className="flex items-center justify-between gap-2 rounded-xl bg-surface2 p-3">
+            <div className="min-w-0"><div className="font-semibold">{cliente.nombre}</div><div className="font-mono text-xs text-muted">{cedula(cliente.cedula)} · {cliente.telefono}</div></div>
+            <Button size="sm" variant="ghost" onClick={() => setCliente(null)}>Cambiar</Button>
+          </div>
+        ) : (
+          <Campo etiqueta="Cédula del cliente">
+            <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); void buscar(); }}>
+              <input value={ced} onChange={(e) => setCed(e.target.value)} inputMode="numeric" placeholder="Ej.: 12345678" className={clsx(claseInput, 'flex-1 font-mono')} />
+              <Button type="submit" disabled={ocupado || !ced.trim()}>Buscar</Button>
+            </form>
+          </Campo>
+        )}
+        <Campo etiqueta="Medicamento que pidió"><ElegirProducto valor={producto} onElegir={setProducto} /></Campo>
+        {producto && producto.stockLibre > 0 && <Alert tone="info">De este producto sí hay {producto.stockLibre}: puedes vendérselo de una vez.</Alert>}
+        <Button size="lg" variant="primary" disabled={!cliente || !producto || ocupado} onClick={guardar}>Anotar y avisarle cuando llegue</Button>
+      </div>
+      <RegistrarCliente abierto={registrar} cedulaInicial={ced} onCerrar={() => setRegistrar(false)} onListo={(p) => { setCliente(p); setRegistrar(false); avisar('Cliente registrado', 'ok'); }} />
+    </Sheet>
+  );
+}
+
 export default function EsperaPage() {
   const { datos, error, cargando, recargar } = useCargar(() => api<Solicitud[]>('/espera'), [], 30_000);
   const [tab, setTab] = useState(0);
+  const [anotar, setAnotar] = useState(false);
   const lista = datos ?? [];
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Encargos" subtitle="Medicamentos que los clientes pidieron y no había. Al cargar la compra se les avisa solos." />
+      <PageHeader title="Encargos" subtitle="Medicamentos que los clientes pidieron y no había. Al cargar la compra se les avisa solos."
+        actions={<Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setAnotar(true)}>Anotar encargo</Button>} />
+      <AnotarEncargo abierto={anotar} cerrar={() => setAnotar(false)} listo={() => { setAnotar(false); recargar(); }} />
       {error && <ErrorCarga mensaje={error} reintentar={recargar} />}
       {cargando ? <Cargando /> : (
         <>

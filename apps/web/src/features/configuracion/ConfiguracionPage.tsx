@@ -2,7 +2,7 @@ import { TuPlan } from '@/features/plan/Plan';
 import { clsx } from 'clsx';
 import { Printer, RefreshCw } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
-import { Alert, Button, Campo, Card, Cargando, PageHeader, claseInput } from '@/components/ui';
+import { Alert, Button, Campo, Card, Cargando, Chip, PageHeader, claseInput } from '@/components/ui';
 import { api, guardarTasa, ApiError } from '@/lib/api';
 import { leerMonto, num2 } from '@/lib/format';
 import { redondearBs } from '@farmacia/shared';
@@ -66,6 +66,13 @@ export default function ConfiguracionPage() {
   const base = f.tasaModo === 'BCV_EUR' ? f.bcvEur : f.bcvUsd;
   const final = base == null ? null : f.tasaAjusteTipo === 'BS' ? base + f.tasaAjusteValor : f.tasaAjusteTipo === 'PCT' ? base * (1 + f.tasaAjusteValor / 100) : base;
 
+  // Datos del ticket: el botón dice si hay cambios sin guardar.
+  const datosTicket = {
+    farmaciaNombre: f.farmaciaNombre ?? '', farmaciaRif: f.farmaciaRif ?? '', farmaciaDireccion: f.farmaciaDireccion ?? '', farmaciaTelefono: f.farmaciaTelefono ?? '',
+    ticketPie: f.ticketPie ?? '', ticketAncho: f.ticketAncho, ticketLetra: f.ticketLetra, ticketCopias: f.ticketCopias,
+    ticketAuto: f.ticketAuto, ticketMostrarBs: f.ticketMostrarBs, ticketMostrarTasa: f.ticketMostrarTasa,
+  };
+  const ticketPendiente = !!config && (Object.keys(datosTicket) as (keyof typeof datosTicket)[]).some((k) => String(datosTicket[k]) !== String((config as Configuracion)[k] ?? ''));
   const guardar = async (parte: Partial<Configuracion>, aviso = 'Configuración guardada') => {
     setError(null);
     try {
@@ -136,18 +143,18 @@ export default function ConfiguracionPage() {
       <Seccion titulo="Redondeo de precios en bolívares" sub="Para no cobrar céntimos: el total en Bs se redondea al múltiplo más cercano. Se acepta cualquier pago entre el monto exacto y el redondeado.">
         <div className="flex flex-wrap items-center gap-2">
           {([[0, 'Sin redondeo'], [1, 'A 1 Bs'], [5, 'A 5 Bs'], [10, 'A 10 Bs']] as const).map(([k, t]) => (
-            <button key={k} type="button" onClick={() => cambiar({ redondeoBs: k })} className={clsx('rounded-lg border px-3 py-1.5 text-sm font-semibold', (f.redondeoBs ?? 0) === k ? 'border-accent bg-accent-soft text-accent' : 'border-line')}>{t}</button>
+            <button key={k} type="button" onClick={() => { cambiar({ redondeoBs: k }); void guardar({ redondeoBs: k }, 'Redondeo guardado'); }} className={clsx('rounded-lg border px-3 py-1.5 text-sm font-semibold', (f.redondeoBs ?? 0) === k ? 'border-accent bg-accent-soft text-accent' : 'border-line')}>{t}</button>
           ))}
-          <Button size="sm" onClick={() => void guardar({ redondeoBs: f.redondeoBs ?? 0 }, 'Redondeo guardado')}>Guardar</Button>
+          <span className="text-xs text-muted">Se guarda al tocar.</span>
         </div>
         {tasa ? <p className="font-mono text-sm text-muted">Ejemplo: $8,51 × {num2(tasa)} = Bs {num2(8.51 * tasa)} → <b className="text-fg">Bs {num2(redondearBs(8.51 * tasa, f.redondeoBs ?? 0))}</b></p> : null}
       </Seccion>
 
       <Seccion titulo="IGTF" sub="Impuesto a los pagos en divisas. Pregúntale a tu contador si te toca cobrarlo.">
         <div className="flex flex-wrap items-center gap-3">
-          <Interruptor v={f.igtfActivo} onChange={(v) => cambiar({ igtfActivo: v })}>Cobrar IGTF a los pagos en $ efectivo</Interruptor>
-          <select value={f.igtfPct} onChange={(e) => cambiar({ igtfPct: Number(e.target.value) })} className="h-9 rounded-lg border border-line bg-surface px-2">{[1, 2, 3].map((p) => <option key={p} value={p}>{p} %</option>)}</select>
-          <Button size="sm" onClick={() => void guardar({ igtfActivo: f.igtfActivo, igtfPct: f.igtfPct })}>Guardar</Button>
+          <Interruptor v={f.igtfActivo} onChange={(v) => { cambiar({ igtfActivo: v }); void guardar({ igtfActivo: v, igtfPct: f.igtfPct }, v ? 'IGTF activado' : 'IGTF desactivado'); }}>Cobrar IGTF a los pagos en $ efectivo</Interruptor>
+          <select value={f.igtfPct} onChange={(e) => { const n = Number(e.target.value); cambiar({ igtfPct: n }); void guardar({ igtfActivo: f.igtfActivo, igtfPct: n }, 'IGTF guardado'); }} className="h-9 rounded-lg border border-line bg-surface px-2" aria-label="Porcentaje de IGTF">{[1, 2, 3].map((p) => <option key={p} value={p}>{p} %</option>)}</select>
+          <span className="text-xs text-muted">Se guarda al cambiarlo.</span>
         </div>
       </Seccion>
 
@@ -167,19 +174,17 @@ export default function ConfiguracionPage() {
               <Campo etiqueta="Copias"><select value={f.ticketCopias} onChange={(e) => cambiar({ ticketCopias: Number(e.target.value) })} className={claseInput}>{[1, 2, 3].map((n) => <option key={n}>{n}</option>)}</select></Campo>
             </div>
             <Interruptor v={f.ticketAuto} onChange={(v) => cambiar({ ticketAuto: v })}>Imprimir solo al terminar de cobrar</Interruptor>
-            <Interruptor v={f.ticketMostrarBs} onChange={(v) => cambiar({ ticketMostrarBs: v })}>Mostrar el total en bolívares</Interruptor>
+            <Interruptor v={f.ticketMostrarBs} onChange={(v) => cambiar({ ticketMostrarBs: v })}>Mostrar los precios en bolívares</Interruptor>
             <Interruptor v={f.ticketMostrarTasa} onChange={(v) => cambiar({ ticketMostrarTasa: v })}>Mostrar la tasa y de dónde sale (ej. «BCV dólar + 1 Bs»)</Interruptor>
             <Alert tone="info">
               La impresora se elige en la ventana de imprimir la primera vez (queda recordada). Para imprimir sin que salga esa ventana,
               pon la impresora térmica como predeterminada y abre Chrome con <span className="font-mono">--kiosk-printing</span>.
             </Alert>
             <div className="flex flex-wrap gap-2">
-              <Button variant="primary" onClick={() => void guardar({
-                farmaciaNombre: f.farmaciaNombre ?? '', farmaciaRif: f.farmaciaRif ?? '', farmaciaDireccion: f.farmaciaDireccion ?? '', farmaciaTelefono: f.farmaciaTelefono ?? '',
-                ticketPie: f.ticketPie ?? '', ticketAncho: f.ticketAncho, ticketLetra: f.ticketLetra, ticketCopias: f.ticketCopias,
-                ticketAuto: f.ticketAuto, ticketMostrarBs: f.ticketMostrarBs, ticketMostrarTasa: f.ticketMostrarTasa,
-              }, 'Ticket guardado')}>Guardar ticket</Button>
-              <Button icon={<Printer className="h-4 w-4" />} onClick={() => { setPrueba(true); try { localStorage.setItem('impresoraProbada', '1'); } catch { /* sin almacenamiento */ } }}>Imprimir prueba</Button>
+              <Button variant="primary" disabled={!ticketPendiente} onClick={() => void guardar(datosTicket, 'Ticket guardado')}>{ticketPendiente ? 'Guardar ticket' : 'Ticket guardado ✓'}</Button>
+              {/* La prueba sale con lo que está en pantalla: si hay cambios, se guardan primero. */}
+              <Button icon={<Printer className="h-4 w-4" />} onClick={async () => { if (ticketPendiente) await guardar(datosTicket, 'Ticket guardado'); setPrueba(true); try { localStorage.setItem('impresoraProbada', '1'); } catch { /* sin almacenamiento */ } }}>Imprimir prueba</Button>
+              {ticketPendiente && <Chip tone="warn">Tienes cambios sin guardar</Chip>}
             </div>
           </div>
           <div className="flex flex-col gap-2">
@@ -191,7 +196,9 @@ export default function ConfiguracionPage() {
                 {(f.farmaciaDireccion || f.farmacia.direccion) && <div className="text-center">{f.farmaciaDireccion || f.farmacia.direccion}</div>}
                 <div className="my-1 border-t border-dashed border-black" />
                 <div className="flex justify-between"><span>2 x Atamel 500 mg</span><span>3,60 $</span></div>
+                {f.ticketMostrarBs && <div className="text-right text-[0.9em]">Bs {num2(3.6 * (tasa ?? 0))}</div>}
                 <div className="flex justify-between"><span>1 x Losartán 50 mg</span><span>6,26 $</span></div>
+                {f.ticketMostrarBs && <div className="text-right text-[0.9em]">Bs {num2(6.26 * (tasa ?? 0))}</div>}
                 <div className="my-1 border-t border-dashed border-black" />
                 <div className="flex justify-between font-bold"><span>TOTAL</span><span>9,86 $</span></div>
                 {f.ticketMostrarBs && <div className="flex justify-between"><span>Total Bs</span><span>{num2(9.86 * (tasa ?? 0))}</span></div>}
@@ -199,17 +206,16 @@ export default function ConfiguracionPage() {
                 <div className="mt-1 whitespace-pre-line text-center">{f.ticketPie || '¡Gracias por su compra!'}</div>
               </div>
             </div>
-            <p className="text-xs text-muted">Guarda antes de imprimir la prueba para que salga con estos cambios.</p>
           </div>
         </div>
       </Seccion>
       <Seccion titulo="Privacidad" sub="Las fotos de récipes son datos de salud. Se borran solas al cumplirse el plazo; los datos de la venta se conservan.">
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span>Guardar las fotos de récipes durante</span>
-          <select value={f.recipeRetencionDias} onChange={(e) => cambiar({ recipeRetencionDias: Number(e.target.value) })} className="h-9 rounded-lg border border-line bg-surface px-2">
+          <select value={f.recipeRetencionDias} onChange={(e) => { const n = Number(e.target.value); cambiar({ recipeRetencionDias: n }); void guardar({ recipeRetencionDias: n }, 'Plazo guardado'); }} className="h-9 rounded-lg border border-line bg-surface px-2" aria-label="Plazo para guardar las fotos">
             {[[180, '6 meses'], [365, '1 año'], [730, '2 años'], [1825, '5 años']].map(([d, t]) => <option key={d} value={d}>{t}</option>)}
           </select>
-          <Button size="sm" onClick={() => void guardar({ recipeRetencionDias: f.recipeRetencionDias }, 'Plazo guardado')}>Guardar</Button>
+          <span className="text-xs text-muted">Se guarda al cambiarlo.</span>
         </div>
         <p className="text-xs text-muted">Pregúntale al regente cuánto tiempo exige guardar los récipes de controlados.</p>
       </Seccion>

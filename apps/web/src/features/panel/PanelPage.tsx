@@ -156,8 +156,8 @@ export default function PanelPage() {
       {cargando || !datos ? <Cargando /> : (
         <>
           {!!datos.stockBajo && (
-            <Link to="/catalogo" className="flex items-center justify-between gap-3 rounded-xl bg-warn-soft px-4 py-3 text-sm font-semibold text-warn">
-              <span>{datos.stockBajo} {datos.stockBajo === 1 ? 'producto llegó' : 'productos llegaron'} al stock mínimo</span><span className="underline">Ver en Catálogo</span>
+            <Link to="/inventario?ver=pocos" className="flex items-center justify-between gap-3 rounded-xl bg-warn-soft px-4 py-3 text-sm font-semibold text-warn">
+              <span>{datos.stockBajo} {datos.stockBajo === 1 ? 'producto se está acabando' : 'productos se están acabando'}</span><span className="underline">Ver cuáles</span>
             </Link>
           )}
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">

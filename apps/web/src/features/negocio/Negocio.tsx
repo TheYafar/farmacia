@@ -183,7 +183,7 @@ function DevolverDrogueria({ c, onCerrar, onListo }: { c: CompraF | null; onCerr
 }
 
 export function ComprasPage() {
-  const [tab, setTab] = useState<'Pedido sugerido' | 'Órdenes' | 'Facturas' | 'Cuentas por pagar'>('Pedido sugerido');
+  const [tab, setTab] = useState<'Qué pedir' | 'Pedidos a droguerías' | 'Lo que llegó' | 'Lo que debo'>('Qué pedir');
   const ords = useCargar(() => api<Orden[]>('/proveedores/ordenes'), []);
   const facts = useCargar(() => api<CompraF[]>('/inventario/compras'), []);
   const [recibir, setRecibir] = useState<Orden | null>(null);
@@ -192,7 +192,7 @@ export function ComprasPage() {
     const items = (sug.datos ?? []).filter((x) => (x.proveedor ?? 'Sin droguería') === prov);
     try {
       const o = await api<{ numero: number }>('/proveedores/ordenes', { body: { proveedor: prov === 'Sin droguería' ? 'Por definir' : prov, lineas: items.map((x) => ({ productoId: x.productoId, cantidad: x.pedir })) } });
-      avisar(`Orden #${o.numero} creada para ${prov}`, 'ok'); ords.recargar(); setTab('Órdenes');
+      avisar(`Orden #${o.numero} creada para ${prov}`, 'ok'); ords.recargar(); setTab('Pedidos a droguerías');
     } catch (e) { avisar(msg(e), 'bad'); }
   };
   const anular = async (ruta: string, texto: string) => {
@@ -214,19 +214,19 @@ export function ComprasPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Compras a droguerías" subtitle="Qué pedir, qué llegó y cuánto se debe" />
+      <PageHeader title="Compras a droguerías" subtitle="Qué comprar, qué pediste, qué llegó y cuánto debes" />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi k="Productos por pedir" v={String(sug.datos?.length ?? '—')} />
+        <Kpi k="Conviene comprar" v={String(sug.datos?.length ?? '—')} />
         <Kpi k="Agotados" v={String(sug.datos?.filter((s) => s.stock === 0).length ?? '—')} tone="bad" />
-        <Kpi k="Deuda con droguerías" v={usd(deuda)} />
+        <Kpi k="Le debes a droguerías" v={usd(deuda)} />
         <Kpi k="Facturas vencidas" v={String(vencidas)} tone={vencidas ? 'bad' : undefined} />
       </div>
-      <Tabs tabs={['Pedido sugerido', 'Órdenes', 'Facturas', 'Cuentas por pagar']} value={tab} onChange={setTab} />
-      {tab === 'Pedido sugerido' && (
+      <Tabs tabs={['Qué pedir', 'Pedidos a droguerías', 'Lo que llegó', 'Lo que debo']} value={tab} onChange={setTab} />
+      {tab === 'Qué pedir' && (
         <Estado c={sug}>{(d) => (
           <>
-            <p className="text-sm text-muted">Ventas de los últimos 30 días + clientes esperando − existencia.</p>
-            <Tabla vacio="No hace falta pedir nada por ahora." head={['Producto', 'Droguería', 'Existencia', 'Vendió (30 d)', 'Esperando', 'Pedir', 'Costo aprox.']}
+            <p className="text-sm text-muted">Lo que conviene comprar: lo que vendiste en 30 días, más lo que piden los clientes, menos lo que ya tienes. Toca «Hacer pedido» para mandárselo a la droguería.</p>
+            <Tabla vacio="No hace falta pedir nada por ahora." head={['Producto', 'Droguería', 'Hay', 'Vendiste (30 días)', 'Lo piden', 'Comprar', 'Costará más o menos']}
               rows={d.map((s) => [
                 <span className="font-semibold">{s.nombre}</span>, s.proveedor ?? '—',
                 s.stock === 0 ? <Chip tone="bad">Agotado</Chip> : mono(s.stock), mono(s.vendidos30), s.espera ? <Chip tone="warn">{s.espera}</Chip> : mono(0), mono(<b>{s.pedir}</b>),
@@ -237,7 +237,7 @@ export function ComprasPage() {
                 <Button onClick={() => descargarExcel('pedido-sugerido', ['Producto', 'Droguería', 'Existencia', 'Vendió 30 días', 'Esperando', 'Pedir'], d.map((s) => [s.nombre, s.proveedor, s.stock, s.vendidos30, s.espera, s.pedir]))}>Descargar Excel</Button>
                 {grupos.map((g) => (
                   <span key={g} className="flex gap-1">
-                    <Button variant="primary" onClick={() => void crearOrden(g)}>Crear orden · {g}</Button>
+                    <Button variant="primary" onClick={() => void crearOrden(g)}>Hacer pedido · {g}</Button>
                     <Button onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(textoPedido(g))}`, '_blank')}>WhatsApp</Button>
                   </span>
                 ))}
@@ -246,7 +246,7 @@ export function ComprasPage() {
           </>
         )}</Estado>
       )}
-      {tab === 'Cuentas por pagar' && (
+      {tab === 'Lo que debo' && (
         <Estado c={cxp}>{(d) => (
           <>
             {d.porProveedor.length > 0 && <div className="flex flex-wrap gap-2">{d.porProveedor.map((p) => <Chip key={p.proveedor} tone="info">{p.proveedor}: {usd(p.saldoUsd)}</Chip>)}</div>}
@@ -254,12 +254,12 @@ export function ComprasPage() {
               rows={d.facturas.map((f) => [
                 <span className="font-semibold">{f.proveedor}</span>, mono(f.numeroFactura),
                 <Chip tone={f.vencida ? 'bad' : 'neutral'}>{f.vencida ? 'Vencida ' : ''}{fecha(f.venceEn)}</Chip>, mono(usd(f.totalUsd)), mono(<b>{usd(f.saldoUsd)}</b>),
-                <Button size="sm" onClick={() => setPagar(f)}>Registrar pago</Button>,
+                <Button size="sm" onClick={() => setPagar(f)}>Ya pagué</Button>,
               ])} />
           </>
         )}</Estado>
       )}
-      {tab === 'Órdenes' && (
+      {tab === 'Pedidos a droguerías' && (
         <Estado c={ords}>{(d) => (
           <Tabla vacio="Sin órdenes. Créalas desde el pedido sugerido." head={['N.º', 'Droguería', 'Fecha', 'Productos', 'Estado', '']} rows={d.map((o) => [
             mono(`#${o.numero}`), <span className="font-semibold">{o.proveedor}</span>, mono(fecha(o.creadaEn)),
@@ -273,7 +273,7 @@ export function ComprasPage() {
           ])} />
         )}</Estado>
       )}
-      {tab === 'Facturas' && (
+      {tab === 'Lo que llegó' && (
         <Estado c={facts}>{(d) => (
           <Tabla vacio="Aún no hay compras cargadas." head={['Droguería', 'Factura', 'Fecha', 'Total', 'Devuelto', 'Estado', '']} rows={d.map((c) => [
             <span className="font-semibold">{c.proveedor}</span>, mono(c.numeroFactura), mono(fecha(c.creadaEn)), mono(usd(c.totalUsd)),
@@ -297,7 +297,13 @@ export function ComprasPage() {
 interface Cliente { id: string; rif: string; nombre: string; telefono: string | null; limiteUsd: string; diasCredito: number; descuentoPct: string; deudaUsd: string; vencidoUsd: string }
 interface Pedido { validaHasta: string | null; empleado: string | null; id: string; numero: number; estado: string; totalUsd: string; saldoUsd: string; venceEn: string | null; creadoEn: string; cliente: { nombre: string; rif: string }; lineas: { nombre: string; cantidad: number; precioUsd: string }[] }
 const PASOS = ['COTIZACION', 'PEDIDO', 'DESPACHADO', 'ENTREGADO'];
-const NOMBRE_PASO: Record<string, string> = { COTIZACION: 'Cotización', PEDIDO: 'Pedido', DESPACHADO: 'Despachado', ENTREGADO: 'Entregado', ANULADO: 'Anulado' };
+const NOMBRE_PASO: Record<string, string> = { COTIZACION: 'Cotización', PEDIDO: 'Confirmado', DESPACHADO: 'Enviado', ENTREGADO: 'Recibido', ANULADO: 'Anulado' };
+/** Qué toca hacer en cada paso, dicho en simple: el botón y una línea que lo explica. */
+const SIGUIENTE: Record<string, [string, string]> = {
+  COTIZACION: ['El cliente aceptó', 'Le mandaste los precios. Si los acepta, toca el botón y se aparta la mercancía.'],
+  PEDIDO: ['Ya lo envié', 'Prepara la mercancía. Al enviarla se descuenta del inventario y empieza a contar el crédito.'],
+  DESPACHADO: ['Ya lo recibieron', 'Va en camino. Cuando el cliente lo reciba, márcalo.'],
+};
 
 function NuevoCliente({ abierto, c, onCerrar, onListo }: { abierto: boolean; c?: Cliente | null; onCerrar: () => void; onListo: () => void }) {
   const vacio = { rif: '', nombre: '', telefono: '', limiteUsd: '1000', diasCredito: '15', descuentoPct: '10' };
@@ -370,8 +376,8 @@ function NuevaCotizacion({ clientes, abierto, onCerrar, onListo }: { clientes: C
         ))}
         <Button type="button" icon={<Plus className="h-4 w-4" />} onClick={() => setLineas([...lineas, { producto: null, cantidad: '' }])}>Otro producto</Button>
         <div className="grid grid-cols-2 gap-2">
-          <Campo etiqueta="Vale por (días)"><input inputMode="numeric" value={validez} onChange={(e) => setValidez(e.target.value.replace(/\D/g, ''))} className={claseInput} /></Campo>
-          <Campo etiqueta="Convenio: empleado (opcional)" ayuda="Si retira un empleado y se le cobra a la empresa"><input value={empleado} onChange={(e) => setEmpleado(e.target.value)} placeholder="Nombre y cédula" className={claseInput} /></Campo>
+          <Campo etiqueta="Los precios valen por (días)"><input inputMode="numeric" value={validez} onChange={(e) => setValidez(e.target.value.replace(/\D/g, ''))} className={claseInput} /></Campo>
+          <Campo etiqueta="¿Lo retira un empleado? (opcional)" ayuda="Si un trabajador de la empresa lo busca y se le cobra a la empresa"><input value={empleado} onChange={(e) => setEmpleado(e.target.value)} placeholder="Nombre y cédula" className={claseInput} /></Campo>
         </div>
         <div className="flex justify-between font-semibold"><span>Total con precio de mayor</span>{mono(usd(total))}</div>
         {error && <Alert tone="bad">{error}</Alert>}
@@ -441,14 +447,15 @@ export function MayoristaPage() {
             <Card key={p.id} className="flex flex-col gap-2 p-4">
               <div className="flex justify-between gap-2"><div><div className="font-semibold">#{p.numero} · {p.cliente.nombre}</div>
                 <div className="text-xs text-muted">{p.lineas.map((l) => `${l.cantidad} × ${l.nombre}`).join(' · ')}</div>
-                {p.empleado && <div className="text-xs text-muted">Convenio · retira {p.empleado}</div>}
+                {p.empleado && <div className="text-xs text-muted">Lo retira {p.empleado} (se le cobra a la empresa)</div>}
                 {p.estado === 'COTIZACION' && p.validaHasta && (new Date(p.validaHasta) < new Date() ? <Chip tone="bad">Vencida</Chip> : <span className="text-xs text-muted">Vale hasta {fecha(p.validaHasta)}</span>)}</div>
                 <div className="text-right">{mono(<b>{usd(p.totalUsd)}</b>)}{Number(p.saldoUsd) > 0 && ['DESPACHADO', 'ENTREGADO'].includes(p.estado) && <div className="text-xs text-bad">Debe {usd(p.saldoUsd)}</div>}</div></div>
+              {SIGUIENTE[p.estado] && <p className="text-xs text-muted">{SIGUIENTE[p.estado]![1]}</p>}
               <div className="flex flex-wrap gap-1">{p.estado === 'ANULADO' ? <Chip tone="bad">Anulado</Chip> : PASOS.map((s, i) => { const k = PASOS.indexOf(p.estado); return <Chip key={s} tone={i < k || (i === k && s === 'ENTREGADO') ? 'ok' : i === k ? 'accent' : 'neutral'}>{i <= k ? '✓ ' : ''}{NOMBRE_PASO[s]}</Chip>; })}</div>
               <div className="flex flex-wrap gap-2">
-                {p.estado !== 'ENTREGADO' && p.estado !== 'ANULADO' && <Button size="sm" variant="primary" onClick={() => accion(p, 'avanzar')}>Marcar «{NOMBRE_PASO[PASOS[PASOS.indexOf(p.estado) + 1]]}»</Button>}
+                {SIGUIENTE[p.estado] && <Button size="sm" variant="primary" onClick={() => accion(p, 'avanzar')}>{SIGUIENTE[p.estado]![0]}</Button>}
                 {['COTIZACION', 'PEDIDO'].includes(p.estado) && <Button size="sm" variant="ghost" onClick={() => accion(p, 'anular')}>Anular</Button>}
-                {['DESPACHADO', 'ENTREGADO'].includes(p.estado) && Number(p.saldoUsd) > 0 && <Button size="sm" onClick={() => setAbonar(p)}>Registrar abono</Button>}
+                {['DESPACHADO', 'ENTREGADO'].includes(p.estado) && Number(p.saldoUsd) > 0 && <Button size="sm" onClick={() => setAbonar(p)}>Me pagó (abono)</Button>}
                 {p.estado !== 'ANULADO' && <Button size="sm" variant="ghost" onClick={() => imprimirDocumento(p, cli.datos?.find((c) => c.rif === p.cliente.rif))}>{p.estado === 'COTIZACION' ? 'Cotización PDF' : 'Nota de entrega PDF'}</Button>}
               </div>
             </Card>

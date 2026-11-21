@@ -1,4 +1,4 @@
-import { redondearBs } from '@farmacia/shared';
+import { fechaVe, redondearBs } from '@farmacia/shared';
 import { useConfig } from '@/store/config';
 export { formatearCedula as cedula } from '@farmacia/shared';
 
@@ -14,7 +14,8 @@ export const normalizar = (s: string) => s.toLowerCase().normalize('NFD').replac
 export const initials = (name: string) =>
   name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join('');
 
-export const daysUntil = (iso: string) => Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
+/** Días que faltan para una fecha, contando por días de Venezuela (0 = hoy, negativo = ya pasó). */
+export const daysUntil = (iso: string) => Math.round((Date.parse(`${iso.slice(0, 10)}T00:00:00Z`) - Date.parse(`${fechaVe()}T00:00:00Z`)) / 86_400_000);
 
 export const fecha = (iso: string) => new Date(iso).toLocaleDateString('es-VE', { day: '2-digit', month: 'short' });
 export const hora = (iso: string) => new Date(iso).toLocaleTimeString('es-VE', { hour: 'numeric', minute: '2-digit' });

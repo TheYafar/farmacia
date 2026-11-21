@@ -50,7 +50,7 @@ export default function InventarioVenta({ version }: { version: number }) {
   useEffect(() => setVer(POR_PAGINA), [categoria, conExistencia]);
 
   if (!items) return <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">{Array.from({ length: 6 }, (_, i) => <div key={i} className="h-36 animate-pulse rounded-2xl bg-surface2" />)}</div>;
-  if (!items.length) return <EmptyState icon={<Package className="h-8 w-8" />} title="Todavía no hay productos">Cárgalos en Catálogo o con Excel en Inventario.</EmptyState>;
+  if (!items.length) return <EmptyState icon={<Package className="h-8 w-8" />} title="Todavía no hay productos">Ve a Inventario y toca «Producto nuevo» o «Cargar todo desde Excel».</EmptyState>;
   const agotados = items.filter((i) => i.stockLibre === 0).length;
 
   return (

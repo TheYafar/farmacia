@@ -53,7 +53,7 @@ const REGENTE: Contenido = {
   ],
   consejos: [
     'Revisa «Por revisar» seguido: el cajero espera tu permiso con el cliente al frente.',
-    'En Catálogo te avisamos si un psicotrópico o antibiótico está cargado como «Normal».',
+    'En Inventario te avisamos si un psicotrópico o antibiótico está cargado como «Normal».',
   ],
 };
 

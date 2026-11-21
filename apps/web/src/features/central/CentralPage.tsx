@@ -378,7 +378,7 @@ export function PlanesPage() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader title="Planes" subtitle="Lo que trae cada plan. Al cambiarlo, las farmacias con ese plan lo reciben en menos de 5 minutos." />
-      <Alert tone="info">En todos los planes van: Vender, Caja, Ventas, Récipes, Por revisar, Controlados, Clientes, Lotes y vencimientos, Catálogo, Resumen, Cajas, Usuarios, Auditoría y Soporte. Sin ellos la farmacia no puede operar ni cumplir con los controlados.</Alert>
+      <Alert tone="info">En todos los planes van: Vender, Caja, Ventas, Récipes, Por revisar, Controlados, Clientes, Inventario, Resumen, Cajas, Usuarios, Auditoría y Soporte. Sin ellos la farmacia no puede operar ni cumplir con los controlados.</Alert>
       <div className="grid gap-3 md:grid-cols-3">
         {datos?.map((p) => (
           <Card key={p.id} className="flex flex-col gap-3 p-5">

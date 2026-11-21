@@ -1,5 +1,5 @@
 import { BadRequestException, Body, ConflictException, Controller, Get, HttpCode, Module, NotFoundException, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { ajusteSchema, compraSchema, devolucionProveedorSchema, importacionSchema, recibirOrdenSchema, type AjusteInput, type CompraInput, type DevolucionProveedorInput, type ImportacionInput, type RecibirOrdenInput } from '@farmacia/shared';
+import { ajusteSchema, compraSchema, existenciaSchema, type ExistenciaInput, devolucionProveedorSchema, importacionSchema, recibirOrdenSchema, type AjusteInput, type CompraInput, type DevolucionProveedorInput, type ImportacionInput, type RecibirOrdenInput } from '@farmacia/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
@@ -29,10 +29,13 @@ export class InventarioController {
   /** Lotes ordenados por vencimiento. `dias=30` muestra solo lo que vence en 30 días o menos. */
   @Get('lotes')
   @Roles('REGENTE', 'ADMIN')
-  lotes(@Query('dias') dias?: string) {
+  lotes(@Query('dias') dias?: string, @Query('productoId') productoId?: string) {
     const n = Number(dias);
     return this.prisma.lote.findMany({
-      where: { OR: [{ stockLibre: { gt: 0 } }, { stockReservado: { gt: 0 } }], vence: Number.isFinite(n) && n > 0 ? { lte: new Date(Date.now() + n * 86_400_000) } : undefined },
+      where: {
+        OR: [{ stockLibre: { gt: 0 } }, { stockReservado: { gt: 0 } }], vence: Number.isFinite(n) && n > 0 ? { lte: new Date(Date.now() + n * 86_400_000) } : undefined,
+        productoId: productoId && /^[0-9a-f-]{36}$/i.test(productoId) ? productoId : undefined,
+      },
       orderBy: { vence: 'asc' },
       take: 500,
       include: { producto: { select: { nombreComercial: true, concentracion: true, laboratorio: true } } },
@@ -56,6 +59,31 @@ export class InventarioController {
         const lote = await tx.lote.findUniqueOrThrow({ where: { id: b.loteId }, select: { productoId: true } });
         avisos = await this.espera.asignar(tx, lote.productoId);
       }
+      return a;
+    });
+    await this.espera.enviar(avisos);
+    return r;
+  }
+
+  /**
+   * Mercancía sin factura: la existencia al empezar a usar el sistema, o lo que apareció al contar.
+   * Si el lote ya existe se suma; si no, se crea. Queda como ajuste (entrada) en el historial.
+   */
+  @Post('existencia')
+  @Roles('REGENTE', 'ADMIN')
+  async existencia(@Body(new Validar(existenciaSchema)) b: ExistenciaInput, @Usuario() u: UsuarioActual) {
+    let avisos: ReservaLista[] = [];
+    const r = await this.prisma.$transaction(async (tx) => {
+      const p = await tx.producto.findUnique({ where: { id: b.productoId }, select: { id: true } });
+      if (!p) throw new NotFoundException('Producto no encontrado');
+      const numero = b.numeroLote?.trim() || `S/L-${b.vence.replace(/-/g, '')}`;
+      const ya = await tx.lote.findUnique({ where: { productoId_numero: { productoId: b.productoId, numero } } });
+      const lote = ya
+        ? await tx.lote.update({ where: { id: ya.id }, data: { stockLibre: { increment: b.cantidad } } })
+        : await tx.lote.create({ data: { productoId: b.productoId, numero, vence: new Date(b.vence), stockLibre: b.cantidad } });
+      const a = await tx.ajusteInventario.create({ data: { loteId: lote.id, cantidad: b.cantidad, motivo: b.motivo, nota: b.nota ?? 'Mercancía sin factura', usuarioId: u.id } });
+      await this.auditoria.registrar({ usuarioId: u.id, accion: 'AJUSTE_INVENTARIO', entidad: 'Lote', entidadId: lote.id, datos: { cantidad: b.cantidad, motivo: b.motivo, nota: b.nota, sinFactura: true } }, tx);
+      avisos = await this.espera.asignar(tx, b.productoId);
       return a;
     });
     await this.espera.enviar(avisos);

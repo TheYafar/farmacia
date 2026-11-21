@@ -184,7 +184,7 @@ export function Toaster() {
 }
 
 /** Hoja inferior en teléfono, panel centrado en pantallas grandes. */
-export function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
+export function Sheet({ open, onClose, title, children, grande }: { open: boolean; onClose: () => void; title: string; children: ReactNode; grande?: boolean }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -194,7 +194,7 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 md:items-center" onClick={onClose} role="dialog" aria-modal aria-label={title}>
-      <div className="pb-safe max-h-[88vh] w-full overflow-auto rounded-t-2xl bg-bg p-4 md:max-w-md md:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className={`pb-safe max-h-[88vh] w-full overflow-auto rounded-t-2xl bg-bg p-4 md:rounded-2xl ${grande ? 'md:max-w-2xl' : 'md:max-w-md'}`} onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-bold">{title}</h2>
           <Button variant="ghost" size="sm" onClick={onClose} aria-label="Cerrar"><X className="h-4 w-4" /></Button>

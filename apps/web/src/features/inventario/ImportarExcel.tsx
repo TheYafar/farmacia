@@ -79,7 +79,7 @@ export default function ImportarExcel({ abierto, onCerrar, onListo }: { abierto:
               <dt className="text-muted">Lotes con existencia</dt><dd className="text-right font-mono">{reporte.lotes}</dd>
             </dl>
             {!!reporte.controladosDeducidos?.length && (
-              <Alert tone="warn">Se marcarán como controlados (la columna Riesgo venía vacía): {reporte.controladosDeducidos.join(', ')}. Pedirán récipe y permiso del farmacéutico. Si alguno no lo es, cámbialo en Catálogo.</Alert>
+              <Alert tone="warn">Se marcarán como controlados (la columna Riesgo venía vacía): {reporte.controladosDeducidos.join(', ')}. Pedirán récipe y permiso del farmacéutico. Si alguno no lo es, cámbialo en Inventario → «Componentes».</Alert>
             )}
             {reporte.errores.length > 0 ? (
               <Alert tone="bad">

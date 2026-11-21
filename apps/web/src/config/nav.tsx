@@ -1,4 +1,4 @@
-import { Layers, MonitorSmartphone, Headset, LifeBuoy, Store, UsersRound, BarChart3, Settings, ClipboardList, Receipt, Tags, BookLock, Building2, MessageCircle, PieChart, Truck, Camera, Clock, Package, ShieldCheck, ShoppingCart, UserCog, Users, Wallet } from 'lucide-react';
+import { Layers, MonitorSmartphone, Headset, LifeBuoy, Store, UsersRound, BarChart3, Settings, ClipboardList, Receipt, BookLock, Building2, MessageCircle, PieChart, Truck, Camera, Clock, Package, ShieldCheck, ShoppingCart, UserCog, Users, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Rol } from '@farmacia/shared';
 
@@ -17,8 +17,7 @@ export const NAV: NavItem[] = [
   { to: '/encargos', label: 'Encargos', short: 'Encargos', icon: Clock, roles: ['REGENTE', 'ADMIN'], grupo: 'Clientes' },
   { to: '/mayor', label: 'Al mayor', short: 'Mayor', icon: Building2, roles: ['ADMIN'], grupo: 'Clientes' },
   { to: '/whatsapp', label: 'WhatsApp', short: 'WhatsApp', icon: MessageCircle, roles: ['REGENTE', 'ADMIN'], grupo: 'Clientes' },
-  { to: '/inventario', label: 'Lotes y vencimientos', short: 'Lotes', icon: Package, roles: ['REGENTE', 'ADMIN'], grupo: 'Inventario' },
-  { to: '/catalogo', label: 'Catálogo', short: 'Catálogo', icon: Tags, roles: ['REGENTE', 'ADMIN'], grupo: 'Inventario' },
+  { to: '/inventario', label: 'Inventario', short: 'Inventario', icon: Package, roles: ['REGENTE', 'ADMIN'], grupo: 'Inventario' },
   { to: '/compras', label: 'Compras', short: 'Compras', icon: Truck, roles: ['ADMIN'], grupo: 'Inventario' },
   { to: '/revisar', label: 'Por revisar', short: 'Revisar', icon: ShieldCheck, roles: ['REGENTE', 'ADMIN'], grupo: 'Farmacéutico' },
   { to: '/controlados', label: 'Controlados', short: 'Libro', icon: BookLock, roles: ['REGENTE', 'ADMIN'], grupo: 'Farmacéutico' },

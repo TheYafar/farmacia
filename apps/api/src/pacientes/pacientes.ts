@@ -60,6 +60,11 @@ export class PacientesController {
         veces: h._count._all,
         ultimaVez: ultimas.find((v) => v.lineas.some((l) => l.productoId === h.productoId))?.creadaEn ?? null,
       })),
+      // Sus últimas compras, para responder «¿qué me llevé la otra vez?».
+      compras: (await this.prisma.venta.findMany({
+        where: { cedula, estado: 'COMPLETADA' }, orderBy: { creadaEn: 'desc' }, take: 8,
+        select: { id: true, numero: true, creadaEn: true, totalUsd: true, lineas: { select: { cantidad: true, producto: { select: { nombreComercial: true, concentracion: true } } } } },
+      })).map((v) => ({ id: v.id, numero: v.numero, creadaEn: v.creadaEn, totalUsd: v.totalUsd.toFixed(2), productos: v.lineas.map((l) => `${l.cantidad} × ${l.producto.nombreComercial} ${l.producto.concentracion}`) })),
       recipes: await this.prisma.recipe.findMany({ where: { cedula }, orderBy: { creadoEn: 'desc' }, take: 10, select: { id: true, estado: true, creadoEn: true } }),
       esperas: await this.prisma.solicitudEspera.findMany({
         where: { cedula, estado: { in: ['EN_ESPERA', 'NOTIFICADO', 'PAGADO_CUSTODIA'] } },

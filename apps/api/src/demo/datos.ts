@@ -260,7 +260,7 @@ export async function sembrarDemo(prisma: PrismaClient) {
     const pagado = 'abono' in pd ? Math.round(total * pd.abono * 100) / 100 : 0;
     await prisma.pedidoMayor.create({
       data: {
-        clienteId: pd.cliente.id, estado: pd.estado, totalUsd: D(total), pagadoUsd: D(pagado), creadoPorId: duena.id, creadoEn: creado, empleado: 'Lcda. Andreína (compras)',
+        clienteId: pd.cliente.id, estado: pd.estado, totalUsd: D(total), pagadoUsd: D(pagado), creadoPorId: duena.id, creadoEn: creado, empleado: pd.estado === 'PEDIDO' ? 'Andreína Gómez, V-15.222.333' : null,
         validaHasta: pd.estado === 'COTIZACION' ? new Date(ahora + 3 * DIA) : null,
         despachadoEn: despachado ? creado : null,
         venceEn: despachado ? new Date(creado.getTime() + pd.cliente.diasCredito * DIA) : null,

@@ -421,6 +421,17 @@ export const ajusteSchema = z.object({
 });
 export type AjusteInput = z.infer<typeof ajusteSchema>;
 
+/** Mercancía sin factura (existencia inicial o lo que apareció al contar): crea o suma a un lote. */
+export const existenciaSchema = z.object({
+  productoId: z.string().uuid(),
+  cantidad: z.number().int().min(1).max(100_000),
+  vence: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha de vencimiento inválida'),
+  numeroLote: z.string().trim().max(40).optional(),
+  motivo: z.enum(['CONTEO', 'OTRO']).default('CONTEO'),
+  nota: z.string().trim().max(200).optional(),
+});
+export type ExistenciaInput = z.infer<typeof existenciaSchema>;
+
 export const medicoSchema = z.object({
   nombre: texto(120),
   mpps: z.string().trim().regex(/^\d{3,8}$/, 'MPPS: solo números').optional(),

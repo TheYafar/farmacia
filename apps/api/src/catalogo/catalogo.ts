@@ -263,20 +263,24 @@ export class CatalogoController {
   @Get('productos')
   @Roles('REGENTE', 'ADMIN')
   async productos(@Query('q') q = '', @Query('bajo') bajo?: string) {
-    const filas = await this.prisma.$queryRaw<{ id: string; stock: bigint; costo: Prisma.Decimal | null }[]>`
+    const filas = await this.prisma.$queryRaw<{ id: string; stock: bigint; vencidas: bigint; proximo: Date | null; costo: Prisma.Decimal | null }[]>`
       SELECT p.id, COALESCE(sum(l."stockLibre") FILTER (WHERE l.vence >= (now() AT TIME ZONE 'America/Caracas')::date), 0) AS stock,
+        COALESCE(sum(l."stockLibre" + l."stockReservado") FILTER (WHERE l.vence < (now() AT TIME ZONE 'America/Caracas')::date), 0) AS vencidas,
+        min(l.vence) FILTER (WHERE l.vence >= (now() AT TIME ZONE 'America/Caracas')::date AND l."stockLibre" + l."stockReservado" > 0) AS proximo,
         COALESCE((SELECT cl."costoUsd" / GREATEST(cl."factorVenta", 1) FROM "CompraLinea" cl JOIN "Compra" c ON c.id = cl."compraId"
           WHERE cl."productoId" = p.id AND cl."costoUsd" > 0 ORDER BY c."creadaEn" DESC LIMIT 1), p."costoRefUsd") AS costo
       FROM "Producto" p LEFT JOIN "Lote" l ON l."productoId" = p.id GROUP BY p.id`;
     const stock = new Map(filas.map((f) => [f.id, Number(f.stock)]));
     const costo = new Map(filas.map((f) => [f.id, f.costo === null ? null : new Prisma.Decimal(f.costo)]));
+    // Para la lista del inventario: lo vencido que hay que retirar y cuándo vence lo próximo.
+    const vence = new Map(filas.map((f) => [f.id, { vencidas: Number(f.vencidas), proximoVence: f.proximo }]));
     const t = q.trim().slice(0, 60);
     const lista = await this.prisma.producto.findMany({
       where: t ? { OR: [{ nombreComercial: { contains: t, mode: 'insensitive' } }, { laboratorio: { contains: t, mode: 'insensitive' } }, { codigoBarras: t }, { principioActivo: { nombre: { contains: t, mode: 'insensitive' } } }] } : undefined,
-      include: { principioActivo: { select: { id: true, nombre: true, riesgo: true } } }, orderBy: { nombreComercial: 'asc' }, take: 300,
+      include: { principioActivo: { select: { id: true, nombre: true, riesgo: true } } }, orderBy: { nombreComercial: 'asc' }, take: 1000,
     });
     const r = lista.map((p) => ({
-      ...p, precioUsd: p.precioUsd.toFixed(2), ivaPct: p.ivaPct.toNumber(), stock: stock.get(p.id) ?? 0,
+      ...p, precioUsd: p.precioUsd.toFixed(2), ivaPct: p.ivaPct.toNumber(), stock: stock.get(p.id) ?? 0, ...vence.get(p.id),
       costoUsd: costo.get(p.id)?.toFixed(2) ?? null,
       margenPct: costo.get(p.id) && p.precioUsd.gt(0) ? p.precioUsd.sub(costo.get(p.id)!).div(p.precioUsd).mul(100).toDecimalPlaces(0).toNumber() : null, bajo: p.activo && p.stockMinimo > 0 && (stock.get(p.id) ?? 0) <= p.stockMinimo }));
     return bajo ? r.filter((p) => p.bajo) : r;

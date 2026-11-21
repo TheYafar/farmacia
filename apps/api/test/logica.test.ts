@@ -180,4 +180,19 @@ describe('Lógica del negocio (revisión)', () => {
     const n = (await cajero.get('/catalogo/buscar?q=acetaminofen')).body as { porUso?: boolean; grupos: unknown[] };
     assert.ok(n.grupos.length && !n.porUso);
   });
+
+  it('mercancía sin factura: crea el lote, suma, queda en el historial y la ficha lo muestra', async () => {
+    const r = await admin.post('/inventario/existencia', { productoId: d.generico.id, cantidad: 7, vence: '2030-01-31', nota: 'Existencia inicial' });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    const lotes = (await admin.get(`/inventario/lotes?productoId=${d.generico.id}`)).body as { numero: string; stockLibre: number }[];
+    assert.ok(lotes.some((l) => l.numero === 'S/L-20300131' && l.stockLibre === 7));
+    // Otra vez con la misma fecha: se suma al mismo lote.
+    await admin.post('/inventario/existencia', { productoId: d.generico.id, cantidad: 3, vence: '2030-01-31' });
+    const otra = (await admin.get(`/inventario/lotes?productoId=${d.generico.id}`)).body as { numero: string; stockLibre: number }[];
+    assert.equal(otra.find((l) => l.numero === 'S/L-20300131')!.stockLibre, 10);
+    const hist = (await admin.get('/inventario/ajustes')).body as { cantidad: number }[];
+    assert.ok(hist.filter((a) => a.cantidad > 0).length >= 2);
+    // El cajero no puede.
+    assert.equal((await cajero.post('/inventario/existencia', { productoId: d.generico.id, cantidad: 1, vence: '2030-01-31' })).status, 403);
+  });
 });

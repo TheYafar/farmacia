@@ -1,8 +1,8 @@
 import { clsx } from 'clsx';
-import { ChevronDown, HelpCircle, LogOut, Moon, MonitorSmartphone, MoreHorizontal, Sun } from 'lucide-react';
+import { ArrowLeft, ChevronDown, HelpCircle, LogOut, Moon, MonitorSmartphone, MoreHorizontal, Sun } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { GRUPOS, NAV, ROLE_LABEL, type Grupo, type NavItem } from '@/config/nav';
+import { GRUPOS, INICIO, NAV, ROLE_LABEL, type Grupo, type NavItem } from '@/config/nav';
 import { api } from '@/lib/api';
 import { num2 } from '@/lib/format';
 import { useCargar } from '@/lib/useCargar';
@@ -91,6 +91,10 @@ export default function AppShell() {
   const current = NAV.filter((n) => n.roles.includes(rol)).find((n) => pathname === n.to || pathname.startsWith(`${n.to}/`));
   const [moreOpen, setMoreOpen] = useState(false);
   const cerrar = async () => { await salir(); navigate('/'); };
+  // «Volver»: a la pantalla anterior de la app; si se entró directo (o es la primera), a la de inicio.
+  const inicio = INICIO[rol];
+  const enInicio = pathname === inicio;
+  const volver = () => { if (((window.history.state as { idx?: number } | null)?.idx ?? 0) > 0) navigate(-1); else navigate(inicio); };
   const nombreFarmacia = useCaja((s) => s.farmacia.nombre);
   // Título de la pestaña del navegador: la página y la farmacia.
   useEffect(() => { document.title = `${current?.label ?? (pathname.startsWith('/privacidad') ? 'Privacidad y cookies' : 'Inicio')} · ${nombreFarmacia}`; }, [current, pathname, nombreFarmacia]);
@@ -132,10 +136,10 @@ export default function AppShell() {
   return (
     <div className="flex h-full">
       <nav aria-label="Menú principal" className="hidden w-[88px] shrink-0 flex-col gap-1 border-r border-line bg-surface px-2 py-4 md:flex xl:w-60 xl:px-3">
-        <div className="mb-4 flex justify-center xl:justify-start xl:px-2">
+        <NavLink to={inicio} className="mb-4 flex justify-center rounded-lg xl:justify-start xl:px-2" title="Ir al inicio">
           <span className="xl:hidden"><Brand /></span>
           <span className="hidden xl:block"><Brand full /></span>
-        </div>
+        </NavLink>
         <div className="-mx-1 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-1">
           {grupos.length <= 1 ? nav.map(railItem) : grupos.map(({ grupo, items }) => {
             const abierto = !cerrados.includes(grupo) || items.includes(current!);
@@ -181,7 +185,12 @@ export default function AppShell() {
         <Guia />
         <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-line bg-surface/95 px-4 py-2.5 backdrop-blur md:px-6" style={{ paddingTop: 'max(0.625rem, env(safe-area-inset-top))' }}>
           <div className="flex min-w-0 items-center gap-2.5">
-            <span className="md:hidden"><Brand /></span>
+            {enInicio ? <span className="md:hidden"><Brand /></span> : (
+              <button type="button" onClick={volver} aria-label="Volver" title="Volver"
+                className="-ml-1 flex h-10 shrink-0 items-center gap-1 rounded-lg border border-line bg-surface px-2 text-sm font-semibold text-muted hover:bg-surface2 hover:text-fg md:px-2.5">
+                <ArrowLeft className="h-5 w-5" aria-hidden /><span className="hidden md:inline">Volver</span>
+              </button>
+            )}
             <span className="truncate font-display text-lg font-bold">{current?.label ?? 'Farmacia'}</span>
             <BotonGuiaModulo ruta={current?.to} titulo={current?.label ?? ''} />
           </div>

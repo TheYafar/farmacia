@@ -68,6 +68,10 @@ export interface Solicitud {
   estado: EstadoEspera;
   solicitadaEn: string;
   venceReserva: string | null;
+  /** Cuándo la farmacia le avisó que llegó (null = todavía no). */
+  notificadaEn?: string | null;
+  /** Para los que esperan: cuántas hay libres en el estante. */
+  hay?: number;
   referenciaPagoMovil: string | null;
   gaveta: string | null;
   paciente: { nombre: string; telefono: string };

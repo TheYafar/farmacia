@@ -208,7 +208,8 @@ export type ClienteEmpresaInput = z.infer<typeof clienteEmpresaSchema>;
 
 export const pedidoMayorSchema = z.object({
   clienteId: z.string().uuid(),
-  lineas: z.array(z.object({ productoId: z.string().uuid(), cantidad: z.number().int().positive().max(100_000) })).min(1).max(200),
+  /** `precioUsd` opcional: si se escribe a mano, se usa ese precio en vez del de mayor calculado. */
+  lineas: z.array(z.object({ productoId: z.string().uuid(), cantidad: z.number().int().positive().max(100_000), precioUsd: z.number().positive().max(100_000).optional() })).min(1).max(200),
   /** Días que vale la cotización (precio y stock). */
   validezDias: z.number().int().min(1).max(60).default(7),
   /** Convenio: empleado de la empresa que retira. */
@@ -459,7 +460,22 @@ export type PreciosMasivoInput = z.infer<typeof preciosMasivoSchema>;
 export const codigo2faSchema = z.object({ codigo: z.string().trim().regex(/^\d{6}$/, 'El código tiene 6 números') });
 
 const opcional = (max: number) => z.string().trim().max(max).optional().transform((v) => (v === '' ? null : v));
+export const libroManualSchema = z.object({
+  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida'),
+  tipo: z.enum(['ENTRADA', 'SALIDA']),
+  productoId: z.string().uuid().optional(),
+  producto: texto(160),
+  lote: z.string().trim().max(40).default('—'),
+  cantidad: z.number().int().positive().max(100_000),
+  paciente: z.string().trim().max(160).default('—'),
+  medico: z.string().trim().max(160).default('—'),
+  documento: texto(200),
+});
+export type LibroManualInput = z.infer<typeof libroManualSchema>;
+
 export const configuracionGeneralSchema = z.object({
+  encargosAuto: z.boolean().optional(),
+  reservaHoras: z.number().int().min(0).max(168).optional(),
   tasaModo: z.enum(['BCV_USD', 'BCV_EUR', 'MANUAL']).optional(),
   tasaAjusteTipo: z.enum(['NINGUNO', 'BS', 'PCT']).optional(),
   tasaAjusteValor: z.number().min(0).max(100_000).optional(),

@@ -72,20 +72,23 @@ export const GUIAS: Record<string, GuiaModulo> = {
   '/encargos': {
     para: 'Llevar lo que los clientes pidieron y no había, en orden de llegada.',
     pasos: [
-      'Los encargos se anotan desde Vender con «Avisar cuando llegue» (el cliente con su cédula).',
-      'Cuando cargas una compra que trae ese producto, se le aparta una caja al primero de la fila por 3 horas.',
-      'Si paga (por ejemplo, por pago móvil), toca «Ya pagó», escribe la referencia y la gaveta donde lo guardas.',
-      'Cuando lo busca, toca «Ya lo buscó».',
+      'Anota un encargo con «Anotar encargo», o desde Vender con «Avisar cuando llegue».',
+      'Cuando llega la mercancía: en automático se le aparta una caja al primero de la fila; en manual ves «¡Ya hay!» y tocas «Apartarle una caja».',
+      'Toca «Avisarle por WhatsApp»: se abre WhatsApp con el mensaje listo. Desde ese momento corre el tiempo para pagar.',
+      'Si paga, toca «Ya pagó», escribe la referencia y la gaveta donde lo guardas. Cuando lo busca, toca «Ya lo buscó».',
       'Si ya no lo quiere, toca «Ya no lo quiere»: la caja apartada pasa al siguiente.',
     ],
-    consejos: ['Si no paga a tiempo, la reserva vence sola y pasa al siguiente de la fila.'],
-    conecta: 'Se llena desde Vender y se mueve sola al cargar Compras. Lo que más piden sale en el Resumen.',
+    consejos: [
+      'En Configuración → «Automático o manual» eliges si se aparta solo o lo decides tú, y cuánto tiempo tiene para pagar (o que no venza).',
+      'El tiempo para pagar empieza cuando le avisas, no cuando llega la mercancía: nadie pierde su turno sin enterarse.',
+    ],
+    conecta: 'Se llena desde Vender y se mueve al cargar mercancía en Inventario. Lo que más piden sale en el Resumen.',
   },
   '/mayor': {
     para: 'Vender a clínicas, farmacias o empresas con precio de mayor y a crédito.',
     pasos: [
       'Toca «Nuevo cliente» y anota su RIF, cuánto crédito le das, a cuántos días y su descuento.',
-      'Toca «Nueva cotización», elige el cliente y los productos con sus cantidades. Mándale el PDF.',
+      'Toca «Nueva cotización», elige el cliente y los productos con sus cantidades. El precio de mayor sale solo, pero lo puedes cambiar. Mándale el PDF.',
       'Cada pedido te dice qué sigue: «El cliente aceptó», «Ya lo envié» y «Ya lo recibieron».',
       'Cuando te pague, toca «Me pagó (abono)». Arriba ves cuánto te deben y cuánto está vencido.',
     ],
@@ -95,10 +98,10 @@ export const GUIAS: Record<string, GuiaModulo> = {
     para: 'Recordarles a los clientes que se les está acabando su tratamiento.',
     pasos: [
       'La lista muestra a quién se le acaba pronto, según lo que compró y cuándo.',
-      'Toca «Enviar»: se abre WhatsApp con el mensaje listo.',
-      'Envíalo desde WhatsApp. Queda marcado como enviado.',
+      'Toca «Enviar»: ves el mensaje y lo puedes cambiar como quieras.',
+      'Toca «Abrir WhatsApp» y envíalo desde ahí. Queda marcado como enviado.',
     ],
-    consejos: ['Si el cliente compró una sola vez, la fecha es un estimado (una pastilla al día).', 'Para que salga aquí, el cliente tiene que tener cédula y teléfono en su ficha.'],
+    consejos: ['Nada se envía solo: siempre lo envías tú desde WhatsApp.', 'Si el cliente compró una sola vez, la fecha es un estimado (una pastilla al día).', 'Para que salga aquí, el cliente tiene que tener cédula y teléfono en su ficha.'],
   },
   '/inventario': {
     para: 'Todo lo que tienes para vender: cuánto hay, a cuánto lo vendes y cuándo vence.',
@@ -121,7 +124,7 @@ export const GUIAS: Record<string, GuiaModulo> = {
     para: 'Todo lo de las droguerías: qué comprar, qué pediste, qué llegó y cuánto les debes.',
     pasos: [
       'En «Qué pedir» el sistema te dice qué conviene comprar según lo que vendes y lo que piden los clientes.',
-      'Toca «Hacer pedido» para crear el pedido a esa droguería, o mándaselo por WhatsApp.',
+      'Cambia las cantidades si quieres (0 = no pedirlo) y toca «Hacer pedido», o mándaselo por WhatsApp. Para pedir otra cosa, toca «Pedido a mano».',
       'Cuando llegue, recíbelo en «Pedidos a droguerías» anotando lo que llegó de verdad y cuándo vence.',
       'En «Lo que debo» toca «Ya pagué» cuando le pagues a una droguería.',
     ],
@@ -139,13 +142,13 @@ export const GUIAS: Record<string, GuiaModulo> = {
     consejos: ['Revísalo seguido: el cajero espera tu respuesta con el cliente al frente.'],
   },
   '/controlados': {
-    para: 'El libro de psicotrópicos, que se llena solo.',
+    para: 'El libro de psicotrópicos, que se llena solo y que también puedes completar a mano.',
     pasos: [
-      'No tienes que escribir nada: cada venta y compra de un controlado se anota sola, con cliente, médico y récipe.',
-      'Elige las fechas para ver los movimientos.',
-      'Toca «Imprimir» o «Descargar Excel» para presentarlo.',
+      'Cada venta y compra de un controlado se anota sola, con cliente, médico y récipe.',
+      'Para lo que no pasó por el sistema (el libro de papel de antes, una corrección), toca «Anotar a mano».',
+      'Elige las fechas para ver los movimientos. Toca «Imprimir» o «Descargar Excel» para presentarlo.',
     ],
-    consejos: ['No se puede editar. Si algo está mal, se corrige con una devolución o un ajuste, que también queda anotado.'],
+    consejos: ['Lo anotado a mano sale marcado como «anotado a mano».', 'Nada se borra: si algo quedó mal, anota el movimiento contrario.'],
   },
   '/resumen': {
     para: 'Ver de un vistazo cómo va la farmacia hoy.',

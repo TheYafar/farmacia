@@ -220,4 +220,60 @@ describe('Lógica del negocio (revisión)', () => {
     assert.equal((await admin.borrar(`/catalogo/productos/${d.generico.id}/foto`)).status, 204);
     assert.equal((await request(app.getHttpServer()).get(`/api/v1/fotos/${foto}`)).status, 404);
   });
+
+  it('encargos en modo manual: llega mercancía y no se aparta sola; se aparta y el tiempo corre desde el aviso', async () => {
+    await prisma.configuracion.upsert({ where: { id: 1 }, create: { id: 1, encargosAuto: false, reservaHoras: 0 }, update: { encargosAuto: false, reservaHoras: 0 } });
+    await prisma.lote.updateMany({ where: { productoId: d.generico.id }, data: { stockLibre: 0 } });
+    const lote = await prisma.lote.findFirstOrThrow({ where: { productoId: d.generico.id, numero: 'PRONTO' } });
+    const e = await admin.post('/espera', { cedula: d.paciente.cedula, productoId: d.generico.id });
+    assert.equal(e.status, 201, JSON.stringify(e.body));
+    // Llega mercancía (corrección de cantidad): en modo manual nadie queda apartado.
+    await admin.post('/inventario/ajustes', { loteId: lote.id, cantidad: 3, motivo: 'CONTEO' });
+    let s = await prisma.solicitudEspera.findUniqueOrThrow({ where: { id: e.body.id } });
+    assert.equal(s.estado, 'EN_ESPERA');
+    const lista = (await admin.get('/espera')).body as { id: string; hay?: number }[];
+    assert.equal(lista.find((x) => x.id === e.body.id)!.hay, 3, 'la pantalla ve que ya hay');
+    // La farmacia aparta: todavía no corre el tiempo.
+    assert.equal((await admin.post(`/espera/${e.body.id}/apartar`)).status, 204);
+    s = await prisma.solicitudEspera.findUniqueOrThrow({ where: { id: e.body.id } });
+    assert.equal(s.estado, 'NOTIFICADO'); assert.equal(s.venceReserva, null);
+    // Le avisa: con «no vence» (0 horas) sigue sin fecha límite.
+    assert.equal((await admin.post(`/espera/${e.body.id}/avisado`)).status, 204);
+    s = await prisma.solicitudEspera.findUniqueOrThrow({ where: { id: e.body.id } });
+    assert.ok(s.notificadaEn); assert.equal(s.venceReserva, null);
+  });
+
+  it('encargos en modo automático: se aparta solo y las horas para pagar cuentan desde el aviso', async () => {
+    await prisma.configuracion.upsert({ where: { id: 1 }, create: { id: 1, encargosAuto: true, reservaHoras: 24 }, update: { encargosAuto: true, reservaHoras: 24 } });
+    await prisma.lote.updateMany({ where: { productoId: d.generico.id }, data: { stockLibre: 0 } });
+    const lote = await prisma.lote.findFirstOrThrow({ where: { productoId: d.generico.id, numero: 'PRONTO' } });
+    const e = await admin.post('/espera', { cedula: d.paciente.cedula, productoId: d.generico.id });
+    await admin.post('/inventario/ajustes', { loteId: lote.id, cantidad: 2, motivo: 'CONTEO' });
+    let s = await prisma.solicitudEspera.findUniqueOrThrow({ where: { id: e.body.id } });
+    assert.equal(s.estado, 'NOTIFICADO'); assert.equal(s.venceReserva, null, 'no corre hasta avisarle');
+    await admin.post(`/espera/${e.body.id}/avisado`);
+    s = await prisma.solicitudEspera.findUniqueOrThrow({ where: { id: e.body.id } });
+    const horas = (s.venceReserva!.getTime() - s.notificadaEn!.getTime()) / 3_600_000;
+    assert.ok(Math.abs(horas - 24) < 0.01);
+    await prisma.configuracion.update({ where: { id: 1 }, data: { encargosAuto: true, reservaHoras: 3 } });
+  });
+
+  it('libro de psicotrópicos: un movimiento anotado a mano aparece marcado', async () => {
+    const r = await regente.post('/libro/manual', { fecha: '2026-11-02', tipo: 'ENTRADA', producto: 'Clonazepam 2 mg', lote: 'A1', cantidad: 30, documento: 'Libro anterior, folio 12' });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    const libro = (await regente.get('/libro/controlados?desde=2026-11-01&hasta=2026-11-30')).body as { documento: string; cantidad: number }[];
+    assert.ok(libro.some((m) => m.documento.includes('anotado a mano') && m.cantidad === 30));
+    assert.equal((await cajero.post('/libro/manual', { fecha: '2026-11-02', tipo: 'SALIDA', producto: 'X', cantidad: 1, documento: 'x' })).status, 403);
+  });
+
+  it('al mayor: el precio escrito a mano reemplaza al de mayor calculado', async () => {
+    const c = await admin.post('/mayorista/clientes', { rif: 'J-12345678-9', nombre: 'Clínica Prueba', limiteUsd: 1000, descuentoPct: 10 });
+    assert.equal(c.status, 201, JSON.stringify(c.body));
+    const r = await admin.post('/mayorista/pedidos', { clienteId: c.body.id, lineas: [{ productoId: d.generico.id, cantidad: 10, precioUsd: 0.5 }, { productoId: d.marca.id, cantidad: 1 }] });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    const lineas = await prisma.pedidoMayorLinea.findMany({ where: { pedido: { numero: r.body.numero } } });
+    assert.equal(Number(lineas.find((l) => l.productoId === d.generico.id)!.precioUsd), 0.5);
+    const marca = await prisma.producto.findUniqueOrThrow({ where: { id: d.marca.id } });
+    assert.equal(Number(lineas.find((l) => l.productoId === d.marca.id)!.precioUsd), Math.round(Number(marca.precioUsd) * 0.9 * 100) / 100);
+  });
 });

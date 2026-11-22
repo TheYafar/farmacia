@@ -636,6 +636,10 @@ model Configuracion {
   redondeoBs        Int     @default(0)
   /// Días que se guardan las fotos de récipes; después se borran solas.
   recipeRetencionDias Int   @default(730)
+  /// Encargos: al llegar mercancía se aparta sola para quien espera (true) o lo decide la farmacia (false).
+  encargosAuto      Boolean @default(true)
+  /// Horas para pagar una caja apartada, contadas desde que se le avisa. 0 = no vence (se cancela a mano).
+  reservaHoras      Int     @default(3)
 
   /// Enlace con el panel central de soporte (dirección y clave cifrada).
   centralUrl        String?
@@ -803,4 +807,23 @@ model CajaEquipo {
   quitadoEn  DateTime?
 
   @@index([cajaId])
+}
+
+/// Movimiento del libro de psicotrópicos escrito a mano (lo que no pasó por el sistema: el libro anterior, una corrección).
+/// No se edita ni se borra: un error se corrige con otro movimiento.
+model LibroManual {
+  id          String   @id @default(uuid()) @db.Uuid
+  fecha       DateTime @db.Date
+  tipo        String
+  productoId  String?  @db.Uuid
+  producto    String
+  lote        String
+  cantidad    Int
+  paciente    String
+  medico      String
+  documento   String
+  usuarioId   String   @db.Uuid
+  creadoEn    DateTime @default(now())
+
+  @@index([fecha])
 }

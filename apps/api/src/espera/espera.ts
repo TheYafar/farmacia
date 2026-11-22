@@ -34,33 +34,67 @@ export class EsperaService {
    * Se llama dentro de la misma transacción que sube el stock. Devuelve los avisos a enviar después de guardar.
    */
   async asignar(tx: Tx, productoId: string): Promise<ReservaLista[]> {
+    // En modo manual la farmacia decide a quién apartarle (botón «Apartar» en Encargos).
+    const conf = await tx.configuracion.findUnique({ where: { id: 1 }, select: { encargosAuto: true } });
+    if (conf && !conf.encargosAuto) return [];
     const pendientes = await tx.solicitudEspera.findMany({
       where: { productoId, estado: 'EN_ESPERA' },
       orderBy: { solicitadaEn: 'asc' },
       include: { paciente: true, producto: true },
     });
     if (!pendientes.length) return [];
-
     const lotes = await bloquearLotes(tx, productoId);
-    const tasa = await this.tasa.actual(tx);
     const avisos: ReservaLista[] = [];
     for (const s of pendientes) {
-      const lote = lotes.find((l) => l.stockLibre > 0);
-      if (!lote) break;
-      lote.stockLibre -= 1;
-      const venceReserva = new Date(Date.now() + HORAS_RESERVA * 3_600_000);
-      await tx.lote.update({ where: { id: lote.id }, data: { stockLibre: { decrement: 1 }, stockReservado: { increment: 1 } } });
-      await tx.solicitudEspera.update({ where: { id: s.id }, data: { estado: 'NOTIFICADO', loteId: lote.id, notificadaEn: new Date(), venceReserva } });
-      avisos.push({
-        telefono: s.paciente.telefono,
-        nombre: s.paciente.nombre,
-        producto: `${s.producto.nombreComercial} ${s.producto.concentracion}`,
-        precioUsd: s.producto.precioUsd.toFixed(2),
-        precioBs: s.producto.precioUsd.mul(tasa.valor).toFixed(2),
-        venceReserva,
-      });
+      const aviso = await this.apartarUno(tx, s, lotes);
+      if (!aviso) break;
+      avisos.push(aviso);
     }
     return avisos;
+  }
+
+  /**
+   * Aparta una caja para un encargo. El tiempo para pagar no corre todavía: empieza cuando la farmacia
+   * le avisa al cliente («Avisarle por WhatsApp»), así nadie pierde su turno sin haberse enterado.
+   */
+  private async apartarUno(tx: Tx, s: Prisma.SolicitudEsperaGetPayload<{ include: { paciente: true; producto: true } }>, lotes: { id: string; stockLibre: number }[]) {
+    const lote = lotes.find((l) => l.stockLibre > 0);
+    if (!lote) return null;
+    lote.stockLibre -= 1;
+    await tx.lote.update({ where: { id: lote.id }, data: { stockLibre: { decrement: 1 }, stockReservado: { increment: 1 } } });
+    await tx.solicitudEspera.update({ where: { id: s.id }, data: { estado: 'NOTIFICADO', loteId: lote.id, notificadaEn: null, venceReserva: null } });
+    const tasa = await this.tasa.actual(tx);
+    return {
+      telefono: s.paciente.telefono, nombre: s.paciente.nombre, producto: `${s.producto.nombreComercial} ${s.producto.concentracion}`,
+      precioUsd: s.producto.precioUsd.toFixed(2), precioBs: s.producto.precioUsd.mul(tasa.valor).toFixed(2), venceReserva: new Date(Date.now() + HORAS_RESERVA * 3_600_000),
+    } satisfies ReservaLista;
+  }
+
+  /** Modo manual: apartarle una caja a este cliente (si hay). */
+  async apartar(id: string, u: UsuarioActual) {
+    await this.prisma.$transaction(async (tx) => {
+      const s = await tx.solicitudEspera.findUnique({ where: { id }, include: { paciente: true, producto: true } });
+      if (!s) throw new NotFoundException('La solicitud no existe');
+      if (s.estado !== 'EN_ESPERA') throw new ConflictException('Este encargo ya tiene su caja apartada o está cerrado');
+      const ok = await this.apartarUno(tx, s, await bloquearLotes(tx, s.productoId));
+      if (!ok) throw new ConflictException('Todavía no hay de este producto. Cárgalo en Inventario → «Llegó mercancía»');
+      await this.auditoria.registrar({ usuarioId: u.id, accion: 'ESPERA_APARTADA', entidad: 'SolicitudEspera', entidadId: id }, tx);
+    });
+  }
+
+  /** La farmacia le avisó al cliente: desde ahora corre el tiempo para pagar (si está configurado). */
+  async avisado(id: string, u: UsuarioActual) {
+    const s = await this.prisma.solicitudEspera.findUnique({ where: { id } });
+    if (!s || s.estado !== 'NOTIFICADO') throw new ConflictException('Solo se avisa cuando ya hay una caja apartada');
+    const conf = await this.prisma.configuracion.findUnique({ where: { id: 1 }, select: { reservaHoras: true } });
+    const horas = conf?.reservaHoras ?? HORAS_RESERVA;
+    const ahora = new Date();
+    await this.prisma.solicitudEspera.update({
+      where: { id },
+      // Si se vuelve a avisar, no se reinicia el tiempo.
+      data: { notificadaEn: s.notificadaEn ?? ahora, venceReserva: s.venceReserva ?? (horas > 0 ? new Date(ahora.getTime() + horas * 3_600_000) : null) },
+    });
+    await this.auditoria.registrar({ usuarioId: u.id, accion: 'ESPERA_AVISADA', entidad: 'SolicitudEspera', entidadId: id });
   }
 
   async enviar(avisos: ReservaLista[]) {
@@ -194,14 +228,30 @@ export class EsperaController {
   }
 
   @Get()
-  listar(@Query('estado') estado?: string) {
+  async listar(@Query('estado') estado?: string) {
     const e = ESTADOS_ESPERA.includes(estado as EstadoEspera) ? (estado as EstadoEspera) : undefined;
-    return this.prisma.solicitudEspera.findMany({
+    const lista = await this.prisma.solicitudEspera.findMany({
       where: { estado: e },
       orderBy: { solicitadaEn: 'asc' },
       take: 300,
       include: { paciente: { select: { nombre: true, telefono: true } }, producto: { select: { nombreComercial: true, concentracion: true, precioUsd: true } } },
     });
+    // Para los que esperan: cuántas hay libres (en modo manual, la farmacia ve que ya llegó y decide a quién apartar).
+    const ids = [...new Set(lista.filter((s) => s.estado === 'EN_ESPERA').map((s) => s.productoId))];
+    const libres = ids.length ? await this.prisma.lote.groupBy({ by: ['productoId'], where: { productoId: { in: ids }, vence: { gte: new Date(fechaVe()) } }, _sum: { stockLibre: true } }) : [];
+    return lista.map((s) => ({ ...s, hay: s.estado === 'EN_ESPERA' ? libres.find((l) => l.productoId === s.productoId)?._sum.stockLibre ?? 0 : undefined }));
+  }
+
+  @Post(':id/apartar')
+  @HttpCode(204)
+  apartar(@Param('id', ParseUUIDPipe) id: string, @Usuario() u: UsuarioActual) {
+    return this.espera.apartar(id, u);
+  }
+
+  @Post(':id/avisado')
+  @HttpCode(204)
+  avisado(@Param('id', ParseUUIDPipe) id: string, @Usuario() u: UsuarioActual) {
+    return this.espera.avisado(id, u);
   }
 
   @Post(':id/confirmar-pago')

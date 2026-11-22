@@ -5,6 +5,10 @@ export interface Configuracion {
   tasaModo: 'BCV_USD' | 'BCV_EUR' | 'MANUAL';
   tasaAjusteTipo: 'NINGUNO' | 'BS' | 'PCT';
   tasaAjusteValor: number;
+  /** Encargos: apartar solo al llegar mercancía (true) o que lo decida la farmacia (false). */
+  encargosAuto: boolean;
+  /** Horas para pagar una caja apartada desde que se le avisa (0 = no vence). */
+  reservaHoras: number;
   bcvUsd: number | null; bcvEur: number | null; bcvFecha: string | null; bcvConsultado: string | null; bcvOrigen: string | null;
   tasaCalculada: { valor: string; fuente: string } | null;
   igtfActivo: boolean; igtfPct: number;

@@ -140,6 +140,36 @@ export default function ConfiguracionPage() {
         )}
       </Seccion>
 
+      <Seccion titulo="Automático o manual" sub="Decide qué hace el sistema solo y qué prefieres hacer tú. Lo puedes cambiar cuando quieras.">
+        <div className="flex flex-col gap-2">
+          <span className="text-sm font-semibold">Encargos: cuando llega lo que un cliente pidió</span>
+          <div className="grid gap-2 md:grid-cols-2">
+            <Opcion activa={f.encargosAuto} onClick={() => { cambiar({ encargosAuto: true }); void guardar({ encargosAuto: true }, 'Encargos en automático'); }} titulo="Automático" detalle="Se le aparta una caja solo, al primero de la fila. Tú solo le avisas por WhatsApp." />
+            <Opcion activa={!f.encargosAuto} onClick={() => { cambiar({ encargosAuto: false }); void guardar({ encargosAuto: false }, 'Encargos en manual'); }} titulo="Manual" detalle="No se aparta nada solo. En Encargos ves «¡Ya hay!» y tú decides a quién apartarle." />
+          </div>
+        </div>
+        <div className="flex flex-col gap-2">
+          <span className="text-sm font-semibold">Tiempo para pagar una caja apartada</span>
+          <div className="flex flex-wrap items-center gap-2">
+            {([[3, '3 horas'], [24, '1 día'], [48, '2 días'], [0, 'No vence']] as const).map(([h, t]) => (
+              <button key={h} type="button" onClick={() => { cambiar({ reservaHoras: h }); void guardar({ reservaHoras: h }, 'Tiempo guardado'); }} className={clsx('rounded-lg border px-3 py-1.5 text-sm font-semibold', f.reservaHoras === h ? 'border-accent bg-accent-soft text-accent' : 'border-line')}>{t}</button>
+            ))}
+          </div>
+          <p className="text-xs text-muted">{f.reservaHoras > 0 ? `Empieza a contar cuando le avisas. Si no paga en ese tiempo, la caja pasa al siguiente de la fila.` : 'La caja queda apartada hasta que tú toques «Ya no lo quiere».'}</p>
+        </div>
+        <div className="rounded-xl bg-surface2 p-3 text-sm">
+          <b>En los demás módulos también puedes hacerlo a mano:</b>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted">
+            <li><b className="text-fg">Tasa:</b> automática del BCV o escrita por ti (arriba).</li>
+            <li><b className="text-fg">Compras:</b> el sistema sugiere qué pedir, pero puedes cambiar las cantidades o hacer un pedido a mano.</li>
+            <li><b className="text-fg">WhatsApp:</b> puedes cambiar el mensaje antes de enviarlo.</li>
+            <li><b className="text-fg">Al mayor:</b> el precio se calcula con el descuento del cliente, pero puedes escribirlo tú.</li>
+            <li><b className="text-fg">Controlados:</b> el libro se llena solo y también puedes anotar movimientos a mano.</li>
+            <li><b className="text-fg">Inventario:</b> «Corregir cantidad» para lo que no pasó por el sistema.</li>
+          </ul>
+        </div>
+      </Seccion>
+
       <Seccion titulo="Redondeo de precios en bolívares" sub="Para no cobrar céntimos: el total en Bs se redondea al múltiplo más cercano. Se acepta cualquier pago entre el monto exacto y el redondeado.">
         <div className="flex flex-wrap items-center gap-2">
           {([[0, 'Sin redondeo'], [1, 'A 1 Bs'], [5, 'A 5 Bs'], [10, 'A 10 Bs']] as const).map(([k, t]) => (

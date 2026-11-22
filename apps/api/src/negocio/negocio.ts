@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import {
   clienteEmpresaSchema, abonoSchema, ordenCompraSchema, pedidoMayorSchema,
-  type ClienteEmpresaInput, type AbonoInput, type OrdenCompraInput, type PedidoMayorInput, fechaVe, inicioDiaVe, sumarDias } from '@farmacia/shared';
+  type ClienteEmpresaInput, type AbonoInput, type OrdenCompraInput, type PedidoMayorInput, fechaVe, inicioDiaVe, sumarDias, libroManualSchema, type LibroManualInput } from '@farmacia/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria';
 import { Modulo, Roles, Usuario, type UsuarioActual } from '../common/seguridad';
@@ -196,7 +196,8 @@ export class MayoristaController {
     const lineas = b.lineas.map((l) => {
       const p = productos.find((x) => x.id === l.productoId);
       if (!p) throw new NotFoundException('Producto no encontrado');
-      return { productoId: p.id, cantidad: l.cantidad, precioUsd: D(p.precioUsd).times(factor).toDecimalPlaces(2) };
+      // Precio escrito a mano en la cotización, o el de mayor del cliente (detal menos su descuento).
+      return { productoId: p.id, cantidad: l.cantidad, precioUsd: l.precioUsd ? D(l.precioUsd).toDecimalPlaces(2) : D(p.precioUsd).times(factor).toDecimalPlaces(2) };
     });
     const total = lineas.reduce((a, l) => a.plus(l.precioUsd.times(l.cantidad)), D(0));
     const p = await this.prisma.pedidoMayor.create({
@@ -348,7 +349,7 @@ const intervaloValido = (dias: number) => dias <= 5 && dias >= -20;
 @Controller('libro')
 @Roles('REGENTE', 'ADMIN')
 export class LibroController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly auditoria: AuditoriaService) {}
 
   /**
    * Movimientos de productos psicotrópicos, armados solos: ventas, devoluciones de clientes, compras,
@@ -394,6 +395,7 @@ export class LibroController {
     const usuarios = new Map((await this.prisma.usuario.findMany({ where: { id: { in: [...devoluciones.map((x) => x.usuarioId), ...devProveedor.map((x) => x.usuarioId), ...ajustes.map((x) => x.usuarioId)] } }, select: { id: true, nombre: true } })).map((u) => [u.id, u.nombre]));
     const compras = new Map((await this.prisma.compra.findMany({ where: { id: { in: devProveedor.map((x) => x.compraId) } }, select: { id: true, proveedor: true, numeroFactura: true } })).map((c) => [c.id, c]));
 
+    const usuariosManual = new Map((await this.prisma.usuario.findMany({ select: { id: true, nombre: true } })).map((x) => [x.id, x.nombre]));
     type Fila = { fecha: Date; tipo: 'ENTRADA' | 'SALIDA'; producto: string; lote: string; cantidad: number; paciente: string; medico: string; documento: string; responsable: string };
     const filas: Fila[] = [
       ...salidas.map((x) => ({
@@ -436,8 +438,24 @@ export class LibroController {
           paciente: `${x.pedido.cliente.nombre} · ${x.pedido.cliente.rif}`, medico: '—', documento: `Despacho al mayor #${x.pedido.numero}`, responsable: '—',
         }] : [];
       })),
+      // Lo escrito a mano (el libro anterior, correcciones): se marca para que se distinga.
+      ...(await this.prisma.libroManual.findMany({ where: { fecha: { gte: d, lt: h } } })).map((x) => ({
+        fecha: x.fecha, tipo: x.tipo as 'ENTRADA' | 'SALIDA', producto: x.producto, lote: x.lote, cantidad: x.cantidad,
+        paciente: x.paciente, medico: x.medico, documento: `${x.documento} (anotado a mano)`, responsable: usuariosManual.get(x.usuarioId) ?? '—',
+      })),
     ];
     return filas.sort((a, b) => b.fecha.getTime() - a.fecha.getTime());
+  }
+
+  /**
+   * Anotar un movimiento a mano: lo que no pasó por el sistema (el libro de antes, una compra sin factura cargada…).
+   * No se puede editar ni borrar: si algo quedó mal, se anota el movimiento contrario.
+   */
+  @Post('manual')
+  async manual(@Body(new Validar(libroManualSchema)) b: LibroManualInput, @Usuario() u: UsuarioActual) {
+    const m = await this.prisma.libroManual.create({ data: { ...b, fecha: new Date(b.fecha), usuarioId: u.id } });
+    await this.auditoria.registrar({ usuarioId: u.id, accion: 'LIBRO_MANUAL', entidad: 'LibroManual', entidadId: m.id, datos: { tipo: b.tipo, producto: b.producto, cantidad: b.cantidad } });
+    return m;
   }
 }
 

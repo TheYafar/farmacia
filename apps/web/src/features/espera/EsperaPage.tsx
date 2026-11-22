@@ -1,5 +1,5 @@
 import { clsx } from 'clsx';
-import { Check, Clock, Package, Plus, X } from 'lucide-react';
+import { Check, Clock, MessageCircle, Package, Plus, X } from 'lucide-react';
 import { useState } from 'react';
 import type { EstadoEspera } from '@farmacia/shared';
 import { Alert, Button, Campo, Cargando, Chip, ErrorCarga, PageHeader, Sheet, claseInput } from '@/components/ui';
@@ -11,10 +11,11 @@ import RegistrarCliente from '@/features/pacientes/RegistrarCliente';
 import { useCargar } from '@/lib/useCargar';
 import { avisar } from '@/store/avisos';
 import { useSesion } from '@/store/sesion';
+import { useConfig } from '@/store/config';
 
 const COLS: { id: EstadoEspera[]; title: string; tone: 'neutral' | 'warn' | 'ok'; hint: string }[] = [
-  { id: ['EN_ESPERA'], title: 'Esperando que llegue', tone: 'neutral', hint: 'Se avisa por WhatsApp en el orden en que se anotaron' },
-  { id: ['NOTIFICADO'], title: 'Ya llegó, falta pagar', tone: 'warn', hint: 'Se le envió el precio y los datos de Pago Móvil' },
+  { id: ['EN_ESPERA'], title: 'Esperando que llegue', tone: 'neutral', hint: 'Cuando llegue, se le aparta una caja al primero de la fila' },
+  { id: ['NOTIFICADO'], title: 'Ya llegó, falta pagar', tone: 'warn', hint: 'Tiene una caja apartada. Avísale por WhatsApp con el botón' },
   { id: ['PAGADO_CUSTODIA'], title: 'Pagado, en la gaveta', tone: 'ok', hint: 'Guardado con su nombre hasta que lo busque' },
   { id: ['ENTREGADO', 'EXPIRADO', 'CANCELADO'], title: 'Terminados', tone: 'neutral', hint: 'Entregados, cancelados o que no pagaron a tiempo' },
 ];
@@ -27,6 +28,7 @@ function restante(iso: string | null) {
 
 function Tarjeta({ w, recargar }: { w: Solicitud; recargar: () => void }) {
   const tasa = useSesion((s) => s.tasa);
+  const horas = useConfig((s) => s.config?.reservaHoras) ?? 3;
   const [ref, setRef] = useState('');
   const [gaveta, setGaveta] = useState('');
   // Productos controlados o con alergia: hace falta el permiso del farmacéutico antes de cobrar el encargo.
@@ -48,9 +50,26 @@ function Tarjeta({ w, recargar }: { w: Solicitud; recargar: () => void }) {
       </div>
       <span className="text-xs text-muted">{w.paciente.nombre} · {cedula(w.cedula)}</span>
       {w.estado === 'EN_ESPERA' && <span className="text-xs text-muted">Lo pidió el {fecha(w.solicitadaEn)}</span>}
+      {/* Ya llegó y nadie se lo apartó (modo manual, o llegó para otro de la fila): la farmacia decide. */}
+      {w.estado === 'EN_ESPERA' && (w.hay ?? 0) > 0 && (
+        <div className="flex flex-col gap-1.5 rounded-md bg-ok-soft p-2">
+          <span className="text-xs font-semibold text-ok">¡Ya hay! {w.hay === 1 ? 'Queda 1' : `Quedan ${w.hay}`} en el estante</span>
+          <Button size="sm" variant="primary" onClick={() => accion(`/espera/${w.id}/apartar`, undefined, 'Caja apartada. Ahora avísale por WhatsApp')}>Apartarle una caja</Button>
+        </div>
+      )}
       {w.estado === 'NOTIFICADO' && (
         <>
-          <Chip tone="warn" icon={<Clock className="h-3 w-3" />} className="self-start">Tiene {restante(w.venceReserva)} para pagar</Chip>
+          {!w.notificadaEn
+            ? <Chip tone="bad" className="self-start">Todavía no le has avisado</Chip>
+            : w.venceReserva ? <Chip tone="warn" icon={<Clock className="h-3 w-3" />} className="self-start">Le avisaste. Tiene {restante(w.venceReserva)} para pagar</Chip>
+            : <Chip tone="ok" className="self-start">Le avisaste el {fecha(w.notificadaEn)}</Chip>}
+          <Button size="sm" variant={w.notificadaEn ? 'secondary' : 'primary'} icon={<MessageCircle className="h-4 w-4" />} onClick={() => {
+            const tel = w.paciente.telefono.replace(/\D/g, '').replace(/^0/, '58');
+            const plazo = horas > 0 ? ` Te la guardamos por ${horas} ${horas === 1 ? 'hora' : 'horas'}.` : '';
+            const texto = `¡Hola ${w.paciente.nombre.split(' ')[0]}! Ya llegó tu ${w.producto.nombreComercial} ${w.producto.concentracion} y te apartamos una caja. Precio: ${usd(w.producto.precioUsd)} (${bs(w.producto.precioUsd, tasa)}).${plazo} Puedes pagar por Pago Móvil respondiendo este mensaje, o pasar por la farmacia.`;
+            window.open(`https://wa.me/${tel}?text=${encodeURIComponent(texto)}`, '_blank');
+            void accion(`/espera/${w.id}/avisado`);
+          }}>{w.notificadaEn ? 'Avisarle otra vez' : 'Avisarle por WhatsApp'}</Button>
           <span className="font-mono text-xs">{usd(w.producto.precioUsd)} · {bs(w.producto.precioUsd, tasa)}</span>
           <div className="flex gap-1.5">
             <input value={ref} onChange={(e) => setRef(e.target.value.replace(/\D/g, '').slice(0, 20))} placeholder="Nº de referencia" inputMode="numeric" className="h-8 min-w-0 flex-1 rounded-md border border-line bg-bg px-2 font-mono text-xs outline-none focus:border-accent" aria-label="Referencia de Pago Móvil" />
@@ -136,11 +155,12 @@ export default function EsperaPage() {
   const { datos, error, cargando, recargar } = useCargar(() => api<Solicitud[]>('/espera'), [], 30_000);
   const [tab, setTab] = useState(0);
   const [anotar, setAnotar] = useState(false);
+  const encargosAuto = useConfig((st) => st.config?.encargosAuto);
   const lista = datos ?? [];
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Encargos" subtitle="Medicamentos que los clientes pidieron y no había. Al cargar la compra se les avisa solos."
+      <PageHeader title="Encargos" subtitle="Lo que los clientes pidieron y no había. Cuando llegue, se le aparta una caja y tú le avisas por WhatsApp."
         actions={<Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setAnotar(true)}>Anotar encargo</Button>} />
       <AnotarEncargo abierto={anotar} cerrar={() => setAnotar(false)} listo={() => { setAnotar(false); recargar(); }} />
       {error && <ErrorCarga mensaje={error} reintentar={recargar} />}
@@ -159,7 +179,7 @@ export default function EsperaPage() {
               return (
                 <section key={c.title} className={clsx('flex min-w-0 flex-col gap-2 rounded-xl bg-surface2 p-2.5', tab !== i && 'hidden md:flex')}>
                   <div className="flex items-center justify-between px-1"><h2 className="text-sm font-bold">{c.title}</h2><Chip tone={c.tone}>{items.length}</Chip></div>
-                  <p className="px-1 text-xs text-muted">{c.hint}</p>
+                  <p className="px-1 text-xs text-muted">{c.id[0] === 'EN_ESPERA' && encargosAuto === false ? 'Cuando llegue verás «¡Ya hay!» y tú decides a quién apartarle' : c.hint}</p>
                   <ul className="flex flex-col gap-2">
                     {items.length ? items.map((w) => <Tarjeta key={w.id} w={w} recargar={recargar} />) : <li className="flex flex-col items-center gap-1 py-6 text-xs text-muted"><Package className="h-5 w-5" />Sin casos</li>}
                   </ul>

@@ -182,16 +182,56 @@ function DevolverDrogueria({ c, onCerrar, onListo }: { c: CompraF | null; onCerr
   );
 }
 
+/** Pedido a una droguería armado a mano: cualquier producto y cantidad, sin depender de lo sugerido. */
+function PedidoAMano({ abierto, onCerrar, onListo }: { abierto: boolean; onCerrar: () => void; onListo: () => void }) {
+  const [prov, setProv] = useState('');
+  const [lineas, setLineas] = useState<{ producto: Opcion | null; cantidad: string }[]>([{ producto: null, cantidad: '' }]);
+  const [droguerias, setDroguerias] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { if (abierto) { setProv(''); setLineas([{ producto: null, cantidad: '' }]); setError(null); api<string[]>('/proveedores/lista').then(setDroguerias).catch(() => {}); } }, [abierto]);
+  return (
+    <Sheet open={abierto} onClose={onCerrar} title="Pedido a mano">
+      <form className="flex flex-col gap-3" onSubmit={async (e) => {
+        e.preventDefault(); setError(null);
+        const ok = lineas.filter((l) => l.producto && Number(l.cantidad) > 0);
+        if (!ok.length) { setError('Agrega al menos un producto con su cantidad'); return; }
+        try {
+          const o = await api<{ numero: number }>('/proveedores/ordenes', { body: { proveedor: prov, lineas: ok.map((l) => ({ productoId: l.producto!.id, cantidad: Number(l.cantidad) })) } });
+          avisar(`Pedido #${o.numero} creado para ${prov}`, 'ok'); onListo();
+        } catch (err) { setError(msg(err)); }
+      }}>
+        <Campo etiqueta="¿A qué droguería?"><input required list="drog-mano" value={prov} onChange={(e) => setProv(e.target.value)} className={claseInput} /><datalist id="drog-mano">{droguerias.map((d) => <option key={d} value={d} />)}</datalist></Campo>
+        {lineas.map((l, i) => (
+          <div key={i} className="flex flex-col gap-2 rounded-xl border border-line p-3">
+            <div className="flex items-center justify-between text-sm font-semibold">Producto {i + 1}
+              {lineas.length > 1 && <button type="button" onClick={() => setLineas(lineas.filter((_, j) => j !== i))} className="text-muted hover:text-bad" aria-label="Quitar"><Trash2 className="h-4 w-4" /></button>}</div>
+            <ElegirProducto valor={l.producto} onElegir={(o) => setLineas(lineas.map((x, j) => (j === i ? { ...x, producto: o } : x)))} />
+            <Campo etiqueta="¿Cuántas?"><input inputMode="numeric" value={l.cantidad} onChange={(e) => setLineas(lineas.map((x, j) => (j === i ? { ...x, cantidad: e.target.value.replace(/\D/g, '') } : x)))} className={claseInput + ' font-mono'} /></Campo>
+          </div>
+        ))}
+        <Button type="button" icon={<Plus className="h-4 w-4" />} onClick={() => setLineas([...lineas, { producto: null, cantidad: '' }])}>Otro producto</Button>
+        {error && <Alert tone="bad">{error}</Alert>}
+        <Button type="submit" variant="primary" size="lg">Crear pedido</Button>
+      </form>
+    </Sheet>
+  );
+}
+
 export function ComprasPage() {
   const [tab, setTab] = useState<'Qué pedir' | 'Pedidos a droguerías' | 'Lo que llegó' | 'Lo que debo'>('Qué pedir');
   const ords = useCargar(() => api<Orden[]>('/proveedores/ordenes'), []);
   const facts = useCargar(() => api<CompraF[]>('/inventario/compras'), []);
   const [recibir, setRecibir] = useState<Orden | null>(null);
   const [devolver, setDevolver] = useState<CompraF | null>(null);
+  // Cuánto pedir: lo sugerido, o lo que escriba el dueño (0 = no pedirlo).
+  const [cant, setCant] = useState<Record<string, string>>({});
+  const cuanto = (x: Sugerido) => (cant[x.productoId] !== undefined ? Number(cant[x.productoId]) || 0 : x.pedir);
+  const [aMano, setAMano] = useState(false);
   const crearOrden = async (prov: string) => {
-    const items = (sug.datos ?? []).filter((x) => (x.proveedor ?? 'Sin droguería') === prov);
+    const items = (sug.datos ?? []).filter((x) => (x.proveedor ?? 'Sin droguería') === prov && cuanto(x) > 0);
+    if (!items.length) { avisar('No hay nada que pedir a esa droguería (todas las cantidades están en 0)', 'bad'); return; }
     try {
-      const o = await api<{ numero: number }>('/proveedores/ordenes', { body: { proveedor: prov === 'Sin droguería' ? 'Por definir' : prov, lineas: items.map((x) => ({ productoId: x.productoId, cantidad: x.pedir })) } });
+      const o = await api<{ numero: number }>('/proveedores/ordenes', { body: { proveedor: prov === 'Sin droguería' ? 'Por definir' : prov, lineas: items.map((x) => ({ productoId: x.productoId, cantidad: cuanto(x) })) } });
       avisar(`Orden #${o.numero} creada para ${prov}`, 'ok'); ords.recargar(); setTab('Pedidos a droguerías');
     } catch (e) { avisar(msg(e), 'bad'); }
   };
@@ -208,7 +248,7 @@ export function ComprasPage() {
 
   const textoPedido = (prov: string) => {
     const items = (sug.datos ?? []).filter((s) => (s.proveedor ?? 'Sin droguería') === prov);
-    return `Buenos días, pedido de la farmacia:\n${items.map((s) => `• ${s.nombre}: ${s.pedir}`).join('\n')}\nGracias.`;
+    return `Buenos días, pedido de la farmacia:\n${items.filter((s) => cuanto(s) > 0).map((s) => `• ${s.nombre}: ${cuanto(s)}`).join('\n')}\nGracias.`;
   };
   const grupos = [...new Set((sug.datos ?? []).map((s) => s.proveedor ?? 'Sin droguería'))];
 
@@ -225,12 +265,18 @@ export function ComprasPage() {
       {tab === 'Qué pedir' && (
         <Estado c={sug}>{(d) => (
           <>
-            <p className="text-sm text-muted">Lo que conviene comprar: lo que vendiste en 30 días, más lo que piden los clientes, menos lo que ya tienes. Toca «Hacer pedido» para mandárselo a la droguería.</p>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <p className="max-w-2xl text-sm text-muted">Lo que conviene comprar: lo que vendiste en 30 días, más lo que piden los clientes, menos lo que ya tienes. <b className="text-fg">Puedes cambiar cada cantidad</b> (0 = no pedirlo) y luego tocar «Hacer pedido».</p>
+              <Button icon={<Plus className="h-4 w-4" />} onClick={() => setAMano(true)}>Pedido a mano</Button>
+            </div>
+            <PedidoAMano abierto={aMano} onCerrar={() => setAMano(false)} onListo={() => { setAMano(false); ords.recargar(); setTab('Pedidos a droguerías'); }} />
             <Tabla vacio="No hace falta pedir nada por ahora." head={['Producto', 'Droguería', 'Hay', 'Vendiste (30 días)', 'Lo piden', 'Comprar', 'Costará más o menos']}
               rows={d.map((s) => [
                 <span className="font-semibold">{s.nombre}</span>, s.proveedor ?? '—',
-                s.stock === 0 ? <Chip tone="bad">Agotado</Chip> : mono(s.stock), mono(s.vendidos30), s.espera ? <Chip tone="warn">{s.espera}</Chip> : mono(0), mono(<b>{s.pedir}</b>),
-                s.costoUnidadUsd ? mono(usd(Number(s.costoUnidadUsd) * s.pedir)) : '—',
+                s.stock === 0 ? <Chip tone="bad">Agotado</Chip> : mono(s.stock), mono(s.vendidos30), s.espera ? <Chip tone="warn">{s.espera}</Chip> : mono(0),
+                <input inputMode="numeric" value={cant[s.productoId] ?? String(s.pedir)} onChange={(e) => setCant({ ...cant, [s.productoId]: e.target.value.replace(/\D/g, '') })}
+                  className={clsx(claseInput, 'h-9 w-20 text-center font-mono font-bold', cuanto(s) !== s.pedir && 'border-accent bg-accent-soft')} aria-label={`Cuántas pedir de ${s.nombre}`} />,
+                s.costoUnidadUsd ? mono(usd(Number(s.costoUnidadUsd) * cuanto(s))) : '—',
               ])} />
             {d.length > 0 && (
               <div className="flex flex-wrap justify-end gap-2">
@@ -345,17 +391,20 @@ function NuevaCotizacion({ clientes, abierto, onCerrar, onListo }: { clientes: C
   const [clienteId, setClienteId] = useState('');
   const [validez, setValidez] = useState('7');
   const [empleado, setEmpleado] = useState('');
-  const [lineas, setLineas] = useState<{ producto: Opcion | null; cantidad: string }[]>([{ producto: null, cantidad: '' }]);
+  const [lineas, setLineas] = useState<{ producto: Opcion | null; cantidad: string; precio?: string }[]>([{ producto: null, cantidad: '' }]);
   const [error, setError] = useState<string | null>(null);
   const cli = clientes.find((c) => c.id === clienteId);
-  const total = lineas.reduce((a, l) => a + (l.producto ? Number(l.producto.precioUsd) * (1 - Number(cli?.descuentoPct ?? 0) / 100) * (Number(l.cantidad) || 0) : 0), 0);
+  // Precio de mayor: el de detal menos el descuento del cliente, salvo que se escriba otro a mano.
+  const calculado = (o: Opcion) => Math.round(Number(o.precioUsd) * (1 - Number(cli?.descuentoPct ?? 0) / 100) * 100) / 100;
+  const precioDe = (l: { producto: Opcion | null; precio?: string }) => (!l.producto ? 0 : l.precio !== undefined && l.precio !== '' ? Number(l.precio.replace(',', '.')) || 0 : calculado(l.producto));
+  const total = lineas.reduce((a, l) => a + precioDe(l) * (Number(l.cantidad) || 0), 0);
   return (
     <Sheet open={abierto} onClose={onCerrar} title="Nueva cotización">
       <form className="flex flex-col gap-3" onSubmit={async (e) => {
         e.preventDefault(); setError(null);
         if (lineas.some((l) => !l.producto || !Number(l.cantidad))) { setError('Elige producto y cantidad en cada línea'); return; }
         try {
-          const r = await api<{ numero: number; totalUsd: string }>('/mayorista/pedidos', { body: { clienteId, validezDias: Number(validez) || 7, empleado: empleado || undefined, lineas: lineas.map((l) => ({ productoId: l.producto!.id, cantidad: Number(l.cantidad) })) } });
+          const r = await api<{ numero: number; totalUsd: string }>('/mayorista/pedidos', { body: { clienteId, validezDias: Number(validez) || 7, empleado: empleado || undefined, lineas: lineas.map((l) => ({ productoId: l.producto!.id, cantidad: Number(l.cantidad), precioUsd: l.precio ? precioDe(l) : undefined })) } });
           avisar(`Cotización #${r.numero} por ${usd(r.totalUsd)}`, 'ok');
           setLineas([{ producto: null, cantidad: '' }]); onListo(); onCerrar();
         } catch (err) { setError(msg(err)); }
@@ -371,7 +420,12 @@ function NuevaCotizacion({ clientes, abierto, onCerrar, onListo }: { clientes: C
               {lineas.length > 1 && <button type="button" onClick={() => setLineas(lineas.filter((_, j) => j !== i))} aria-label="Quitar"><Trash2 className="h-4 w-4 text-muted" /></button>}
             </div>
             <ElegirProducto valor={l.producto} onElegir={(o) => setLineas(lineas.map((x, j) => (j === i ? { ...x, producto: o } : x)))} />
-            <Campo etiqueta="Cantidad (cajas)"><input inputMode="numeric" value={l.cantidad} onChange={(e) => setLineas(lineas.map((x, j) => (j === i ? { ...x, cantidad: e.target.value.replace(/\D/g, '') } : x)))} className={claseInput} /></Campo>
+            <div className="grid grid-cols-2 gap-2">
+              <Campo etiqueta="Cantidad (cajas)"><input inputMode="numeric" value={l.cantidad} onChange={(e) => setLineas(lineas.map((x, j) => (j === i ? { ...x, cantidad: e.target.value.replace(/\D/g, '') } : x)))} className={claseInput} /></Campo>
+              <Campo etiqueta="Precio por caja ($)" ayuda={l.producto ? (l.precio ? `Escrito a mano (el de mayor sería ${usd(calculado(l.producto))})` : 'Precio de mayor del cliente. Puedes cambiarlo') : undefined}>
+                <input inputMode="decimal" disabled={!l.producto} value={l.precio ?? (l.producto ? String(calculado(l.producto)).replace('.', ',') : '')} onChange={(e) => setLineas(lineas.map((x, j) => (j === i ? { ...x, precio: e.target.value.replace(/[^\d.,]/g, '') } : x)))} className={clsx(claseInput, 'font-mono', l.precio && 'border-accent bg-accent-soft')} />
+              </Campo>
+            </div>
           </div>
         ))}
         <Button type="button" icon={<Plus className="h-4 w-4" />} onClick={() => setLineas([...lineas, { producto: null, cantidad: '' }])}>Otro producto</Button>
@@ -379,7 +433,7 @@ function NuevaCotizacion({ clientes, abierto, onCerrar, onListo }: { clientes: C
           <Campo etiqueta="Los precios valen por (días)"><input inputMode="numeric" value={validez} onChange={(e) => setValidez(e.target.value.replace(/\D/g, ''))} className={claseInput} /></Campo>
           <Campo etiqueta="¿Lo retira un empleado? (opcional)" ayuda="Si un trabajador de la empresa lo busca y se le cobra a la empresa"><input value={empleado} onChange={(e) => setEmpleado(e.target.value)} placeholder="Nombre y cédula" className={claseInput} /></Campo>
         </div>
-        <div className="flex justify-between font-semibold"><span>Total con precio de mayor</span>{mono(usd(total))}</div>
+        <div className="flex justify-between font-semibold"><span>Total</span>{mono(usd(total))}</div>
         {error && <Alert tone="bad">{error}</Alert>}
         <Button type="submit" variant="primary" size="lg">Crear cotización</Button>
       </form>
@@ -502,9 +556,14 @@ export function WhatsappPage() {
   const rec = useCargar(() => api<Recompra[]>('/whatsapp/recompra'), []);
   const est = useCargar(() => api<{ enviados30: number; volvieron: number }>('/whatsapp/estadisticas'), []);
   const [mostrar, setMostrar] = useState(POR_PAGINA);
+  // Antes de enviar se muestra el mensaje: se puede cambiar o enviar tal cual.
+  const [editando, setEditando] = useState<Recompra[] | null>(null);
+  const [texto, setTexto] = useState('');
+  const preparar = (items: Recompra[]) => { setTexto(mensajeCliente(items)); setEditando(items); };
   const enviar = async (items: Recompra[]) => {
     const tel = items[0]!.telefono.replace(/\D/g, '').replace(/^0/, '58');
-    window.open(`https://wa.me/${tel}?text=${encodeURIComponent(mensajeCliente(items))}`, '_blank');
+    window.open(`https://wa.me/${tel}?text=${encodeURIComponent(texto)}`, '_blank');
+    setEditando(null);
     await Promise.all(items.map((r) => api('/whatsapp/enviado', { body: { cedula: r.cedula, productoId: r.productoId } }).catch(() => { /* el mensaje igual se abrió */ })));
     rec.recargar(); est.recargar();
   };
@@ -515,7 +574,18 @@ export function WhatsappPage() {
   const porAvisar = grupos.filter((g) => g.some((r) => !r.enviado)).length;
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="WhatsApp y recompra" subtitle="Clientes a los que se les acaba su tratamiento. Al tocar «Enviar» se abre WhatsApp con el mensaje listo." />
+      <PageHeader title="WhatsApp y recompra" subtitle="Clientes a los que se les acaba su tratamiento. Al tocar «Enviar» ves el mensaje, lo cambias si quieres y se abre WhatsApp." />
+      <Sheet open={!!editando} onClose={() => setEditando(null)} title={`Mensaje para ${editando?.[0]?.nombre.split(' ')[0] ?? ''}`}>
+        <div className="flex flex-col gap-3">
+          <Campo etiqueta="Puedes cambiar el mensaje" ayuda="Se abre WhatsApp con este texto. Nada se envía hasta que tú lo envíes desde WhatsApp.">
+            <textarea rows={7} value={texto} onChange={(e) => setTexto(e.target.value)} className={claseInput + ' h-auto py-2'} />
+          </Campo>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="primary" size="lg" disabled={!texto.trim()} onClick={() => editando && void enviar(editando)}>Abrir WhatsApp</Button>
+            <Button onClick={() => editando && setTexto(mensajeCliente(editando))}>Volver al mensaje original</Button>
+          </div>
+        </div>
+      </Sheet>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <Kpi k="Clientes por avisar" v={rec.datos ? String(porAvisar) : '—'} />
         <Kpi k="Enviados (30 días)" v={String(est.datos?.enviados30 ?? '—')} />
@@ -535,7 +605,7 @@ export function WhatsappPage() {
                       {items.length > MAX_MENSAJE && <li className="italic">y {items.length - MAX_MENSAJE} más (el mensaje menciona los {MAX_MENSAJE} más urgentes)</li>}
                     </ul>
                   </div>
-                  <Button size="sm" variant={enviado ? 'secondary' : 'primary'} onClick={() => enviar(items)}>{enviado ? 'Enviado ✓ · reenviar' : 'Enviar'}</Button>
+                  <Button size="sm" variant={enviado ? 'secondary' : 'primary'} onClick={() => preparar(items)}>{enviado ? 'Enviado ✓ · reenviar' : 'Enviar'}</Button>
                 </div>
               </Card>
             );
@@ -550,16 +620,63 @@ export function WhatsappPage() {
 /* ───────── Libro de psicotrópicos ───────── */
 interface Mov { fecha: string; tipo: 'ENTRADA' | 'SALIDA'; producto: string; lote: string; cantidad: number; paciente: string; medico: string; documento: string; responsable: string }
 
+/** Anotar en el libro algo que no pasó por el sistema (el libro de papel anterior, una corrección). */
+function AnotarLibro({ abierto, onCerrar, onListo }: { abierto: boolean; onCerrar: () => void; onListo: () => void }) {
+  const ini = () => ({ fecha: fechaVe(), tipo: 'SALIDA' as 'ENTRADA' | 'SALIDA', producto: '', lote: '', cantidad: '', paciente: '', medico: '', documento: '' });
+  const [f, setF] = useState(ini);
+  const [error, setError] = useState<string | null>(null);
+  const controlados = useCargar(() => (abierto ? api<{ nombreComercial: string; concentracion: string; principioActivo: { riesgo: string } }[]>('/catalogo/productos') : Promise.resolve([])), [abierto]);
+  useEffect(() => { if (abierto) { setF(ini()); setError(null); } }, [abierto]);
+  const c = (x: Partial<ReturnType<typeof ini>>) => setF((v) => ({ ...v, ...x }));
+  return (
+    <Sheet open={abierto} onClose={onCerrar} title="Anotar en el libro a mano">
+      <form className="flex flex-col gap-3" onSubmit={async (e) => {
+        e.preventDefault(); setError(null);
+        try {
+          await api('/libro/manual', { body: { fecha: f.fecha, tipo: f.tipo, producto: f.producto, lote: f.lote || undefined, cantidad: Number(f.cantidad), paciente: f.paciente || undefined, medico: f.medico || undefined, documento: f.documento } });
+          avisar('Anotado en el libro', 'ok'); onListo(); onCerrar();
+        } catch (err) { setError(err instanceof ApiError ? [err.message, ...err.errores.map((x) => x.mensaje)].join('. ') : 'No se pudo guardar'); }
+      }}>
+        <Alert tone="info">Úsalo solo para lo que no pasó por el sistema: el libro de papel de antes, o una corrección. Las ventas y compras se anotan solas. Lo anotado a mano no se puede borrar: si te equivocas, anota el movimiento contrario.</Alert>
+        <div className="grid grid-cols-2 gap-2">
+          {(['ENTRADA', 'SALIDA'] as const).map((t) => (
+            <button key={t} type="button" onClick={() => c({ tipo: t })} className={clsx('rounded-lg border px-3 py-2.5 text-sm font-semibold', f.tipo === t ? 'border-accent bg-accent-soft text-accent' : 'border-line bg-surface')}>{t === 'ENTRADA' ? 'Entró (compra)' : 'Salió (venta)'}</button>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Campo etiqueta="Fecha"><input type="date" required max={fechaVe()} value={f.fecha} onChange={(e) => c({ fecha: e.target.value })} className={claseInput} /></Campo>
+          <Campo etiqueta="Cantidad"><input required inputMode="numeric" value={f.cantidad} onChange={(e) => c({ cantidad: e.target.value.replace(/\D/g, '') })} className={claseInput + ' font-mono'} /></Campo>
+        </div>
+        <Campo etiqueta="Producto"><input required list="libro-productos" value={f.producto} onChange={(e) => c({ producto: e.target.value })} placeholder="Ej.: Clonazepam 2 mg" className={claseInput} />
+          <datalist id="libro-productos">{(controlados.datos ?? []).filter((p) => p.principioActivo.riesgo === 'PSICOTROPICO').map((p) => <option key={p.nombreComercial + p.concentracion} value={`${p.nombreComercial} ${p.concentracion}`} />)}</datalist></Campo>
+        <Campo etiqueta="Lote (opcional)"><input value={f.lote} onChange={(e) => c({ lote: e.target.value })} className={claseInput} /></Campo>
+        {f.tipo === 'SALIDA' && (
+          <div className="grid grid-cols-2 gap-2">
+            <Campo etiqueta="Paciente (nombre y cédula)"><input value={f.paciente} onChange={(e) => c({ paciente: e.target.value })} className={claseInput} /></Campo>
+            <Campo etiqueta="Médico (nombre y MPPS)"><input value={f.medico} onChange={(e) => c({ medico: e.target.value })} className={claseInput} /></Campo>
+          </div>
+        )}
+        <Campo etiqueta="Documento" ayuda={f.tipo === 'ENTRADA' ? 'Ej.: Factura 0123 de Droguería Andina' : 'Ej.: Récipe del 02/11, libro anterior folio 12'}><input required value={f.documento} onChange={(e) => c({ documento: e.target.value })} className={claseInput} /></Campo>
+        {error && <Alert tone="bad">{error}</Alert>}
+        <Button type="submit" variant="primary" size="lg">Anotar en el libro</Button>
+      </form>
+    </Sheet>
+  );
+}
+
 export function LibroPage() {
   const hoy = fechaVe();
   const [desde, setDesde] = useState(hoy.slice(0, 8) + '01');
   const [hasta, setHasta] = useState(hoy);
   const lib = useCargar(() => api<Mov[]>(`/libro/controlados?desde=${desde}&hasta=${hasta}`), [desde, hasta]);
   const cab = ['Fecha', 'Movimiento', 'Producto', 'Lote', 'Cantidad', 'Paciente', 'Médico', 'Documento', 'Responsable'];
+  const [manual, setManual] = useState(false);
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Libro de psicotrópicos" subtitle="Se llena solo con cada venta y compra de productos controlados"
+      <AnotarLibro abierto={manual} onCerrar={() => setManual(false)} onListo={lib.recargar} />
+      <PageHeader title="Libro de psicotrópicos" subtitle="Se llena solo con cada venta y compra de controlados. Si hace falta, también puedes anotar a mano."
         actions={<>
+          <Button icon={<Plus className="h-4 w-4" />} onClick={() => setManual(true)}>Anotar a mano</Button>
           <Button onClick={() => window.print()}>Imprimir</Button>
           <Button variant="primary" disabled={!lib.datos?.length} onClick={() => descargarExcel('libro-controlados', cab, (lib.datos ?? []).map((m) => [fecha(m.fecha), m.tipo, m.producto, m.lote, m.cantidad, m.paciente, m.medico, m.documento, m.responsable]))}>Descargar Excel</Button>
         </>} />

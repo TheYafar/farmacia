@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { create } from 'zustand';
 import { Ban, Check, ChevronLeft, ChevronRight, Lightbulb, X } from 'lucide-react';
 import { Button } from '@/components/ui';
@@ -104,9 +105,9 @@ export default function Guia() {
   ];
   const p = pasos[paso]!;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 md:items-center md:p-4" role="dialog" aria-modal aria-label="Guía rápida">
-      <div className="pb-safe flex max-h-[92vh] w-full flex-col overflow-auto rounded-t-2xl bg-bg md:max-w-lg md:rounded-2xl">
+      <div className="pb-safe flex max-h-[92vh] max-h-[92dvh] w-full flex-col overflow-auto rounded-t-2xl bg-bg md:max-w-lg md:rounded-2xl">
         <div className="relative bg-gradient-to-br from-[#0d8a67] to-[#063f30] px-5 pb-5 pt-5 text-white">
           <button onClick={terminar} className="absolute right-3 top-3 rounded-lg p-1.5 text-white/80 hover:bg-white/10" aria-label="Cerrar guía"><X className="h-5 w-5" /></button>
           <div className="text-sm text-white/75">Hola, {usuario!.nombre.split(' ')[0]} 👋{usuario!.demo ? ' · Demo' : ''}</div>
@@ -131,6 +132,7 @@ export default function Guia() {
             : <Button variant="primary" onClick={terminar}>¡Empezar!</Button>}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

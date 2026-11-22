@@ -1,6 +1,7 @@
 import { clsx } from 'clsx';
 import { AlertTriangle, Info, Lock, Search, X } from 'lucide-react';
 import { forwardRef, useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useSesion } from '@/store/sesion';
 import { useAvisos } from '@/store/avisos';
 import { bs, usd } from '@/lib/format';
@@ -183,24 +184,44 @@ export function Toaster() {
   );
 }
 
-/** Hoja inferior en teléfono, panel centrado en pantallas grandes. */
+/** Hojas abiertas, de abajo hacia arriba: «Escape» cierra solo la de encima. */
+const pila: symbol[] = [];
+
+/**
+ * Hoja inferior en teléfono, panel centrado en pantallas grandes.
+ * Se dibuja directamente en <body> (portal): así ninguna barra o tarjeta que la contenga la recorta ni la desplaza.
+ */
 export function Sheet({ open, onClose, title, children, grande }: { open: boolean; onClose: () => void; title: string; children: ReactNode; grande?: boolean }) {
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+    const yo = Symbol(title);
+    pila.push(yo);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && pila[pila.length - 1] === yo) { e.stopImmediatePropagation(); onClose(); } };
+    // En captura: la hoja corta los eventos de teclado que salen de ella, y Escape tiene que llegar igual.
+    window.addEventListener('keydown', onKey, true);
+    // La página de atrás no se mueve mientras la hoja está abierta.
+    const antes = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      pila.splice(pila.indexOf(yo), 1);
+      if (!pila.length) document.body.style.overflow = antes;
+    };
+  }, [open, onClose, title]);
   if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 md:items-center" onClick={onClose} role="dialog" aria-modal aria-label={title}>
-      <div className={`pb-safe max-h-[88vh] w-full overflow-auto rounded-t-2xl bg-bg p-4 md:rounded-2xl ${grande ? 'md:max-w-2xl' : 'md:max-w-md'}`} onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-bold">{title}</h2>
-          <Button variant="ghost" size="sm" onClick={onClose} aria-label="Cerrar"><X className="h-4 w-4" /></Button>
+  return createPortal(
+    // Los eventos de la hoja no siguen hacia los componentes que la abrieron (formularios, filas que se pueden tocar…).
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 md:items-center md:p-4" role="dialog" aria-modal aria-label={title}
+      onClick={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) onClose(); }}
+      onSubmit={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+      <div className={`pb-safe flex max-h-[88vh] max-h-[88dvh] w-full flex-col rounded-t-2xl bg-bg md:max-h-[90vh] md:rounded-2xl ${grande ? 'md:max-w-2xl' : 'md:max-w-md'}`}>
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-4 py-3">
+          <h2 className="min-w-0 text-lg font-bold leading-tight">{title}</h2>
+          <Button variant="ghost" size="sm" onClick={onClose} aria-label="Cerrar"><X className="h-5 w-5" /></Button>
         </div>
-        {children}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
